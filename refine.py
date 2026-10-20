@@ -3,7 +3,7 @@
 warm() at hotkey-down picks GPU (Vulkan, bigger model) if the card is idle with enough free VRAM,
 else CPU (smaller model), so the model is loading while you speak. Stopped after IDLE seconds unused.
 """
-import atexit, ctypes, difflib, json, os, re, shutil, signal, socket, subprocess, sys, threading, time, urllib.request
+import atexit, ctypes, difflib, json, os, queue, re, shutil, signal, socket, subprocess, sys, threading, time, urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -138,7 +138,7 @@ _proc, _mode, _hold, _last = None, None, False, 0.0
 
 
 def _die_with_parent():  # Linux, in the child: if dictate exits or crashes, the server (and its VRAM) goes too
-    ctypes.CDLL("libc.so.6").prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+    ctypes.CDLL("libc.so.6").prctl(1, signal.SIGKILL)  # PR_SET_PDEATHSIG; llama-server can hang on SIGTERM
 
 
 # how each OS starts the server: no console window on Windows; tied to our lifetime on Linux
@@ -147,6 +147,24 @@ SPAWN = ({"creationflags": 0x08000000} if sys.platform == "win32" else  # CREATE
 
 
 _lock = threading.Lock()
+_launches = queue.Queue()
+
+
+def _launcher():
+    """Starts the server from one thread that lives as long as the app: Linux's parent-death signal
+    fires when the *thread* that started a child exits, so a short-lived worker must never start it."""
+    while True:
+        cmd, done = _launches.get()
+        done.put(subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **SPAWN))
+
+
+threading.Thread(target=_launcher, daemon=True).start()
+
+
+def _launch(cmd):
+    done = queue.Queue()
+    _launches.put((cmd, done))
+    return done.get()
 
 
 def gpu_free(need_mb):
@@ -189,9 +207,8 @@ def warm(mode=None):
         _mode = mode or ("gpu" if gpu_ok() else "cpu")
         gpu = ["-ngl", "99"] if sys.platform == "darwin" else ["--device", "Vulkan0", "-ngl", "99"]  # Metal / Vulkan
         dev = gpu if _mode == "gpu" else ["--device", "none", "-ngl", "0"]
-        _proc = subprocess.Popen([SERVER, "-m", MODELS[_mode], "--host", "127.0.0.1", "--port", str(PORT), "-c", "4096",
-                                  "--no-webui", "--reasoning", "off", "-t", str(min(8, os.cpu_count() or 4)), *dev],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **SPAWN)
+        _proc = _launch([SERVER, "-m", MODELS[_mode], "--host", "127.0.0.1", "--port", str(PORT), "-c", "4096",
+                         "--no-webui", "--reasoning", "off", "-t", str(min(8, os.cpu_count() or 4)), *dev])
         print("refine: loading", MODELS[_mode].name, "on", _mode)
 
 
@@ -205,7 +222,11 @@ def stop(if_idle=False):
     with _lock:
         if _proc and not (if_idle and (_hold or time.monotonic() - _last < IDLE)):
             _proc.terminate()
-            _proc.wait()
+            try:
+                _proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:  # llama-server sometimes ignores SIGTERM
+                _proc.kill()
+                _proc.wait()
             _proc = None
             print("refine: unloaded")
 
