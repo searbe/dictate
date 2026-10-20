@@ -238,7 +238,7 @@ def warm(mode=None):
         dev = gpu if _mode == "gpu" else ["--device", "none", "-ngl", "0"]
         _proc = _launch([SERVER, "-m", MODELS[_mode], "--host", "127.0.0.1", "--port", str(PORT), "-c", "4096",
                          "--no-webui", "--reasoning", "off", "-t", str(min(8, os.cpu_count() or 4)), *dev])
-        print("refine: loading", MODELS[_mode].name, "on", _mode)
+        print("refine: loading", MODELS[_mode].name, "on", _mode, flush=True)
 
 
 def release():
@@ -257,7 +257,7 @@ def stop(if_idle=False):
                 _proc.kill()
                 _proc.wait()
             _proc = None
-            print("refine: unloaded")
+            print("refine: unloaded", flush=True)
 
 
 def _reaper():

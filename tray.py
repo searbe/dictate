@@ -26,6 +26,7 @@ class Tray:
     def update(self):
         """Redraw the tray icon (call when the dictation state changes)."""
         if sys.platform.startswith("linux") and hasattr(self, "conn"):
+            self.pixmaps = None  # re-rendered when Plasma next asks for the image
             self.conn.emit_signal(None, "/StatusNotifierItem", "org.kde.StatusNotifierItem", "NewIcon", None)
         elif sys.platform == "win32":
             surface = self.render(SIZES[0])
@@ -77,21 +78,29 @@ class Tray:
                   "RegisterStatusNotifierItem", GLib.Variant("(s)", (self.name,)), None, 0, -1, None, None)
 
     def _sni_property(self, conn, sender, path, iface, prop):
+        # Plasma asks for each property separately (~9 calls per icon change), on our GTK thread:
+        # render the image only when it's asked for, once per state, or the red dot can't repaint
+        if prop == "IconPixmap":
+            if getattr(self, "pixmaps", None) is None:
+                self.pixmaps = GLib.Variant.new_array(None, [self._pixmap(px) for px in SIZES])
+            return self.pixmaps
         return {
             "Category": GLib.Variant("s", "ApplicationStatus"), "Id": GLib.Variant("s", "dictate"),
-            "Title": GLib.Variant("s", "Dictate"), "Status": GLib.Variant("s", "Active"),
-            "IconName": GLib.Variant("s", ""), "IconPixmap": GLib.Variant("a(iiay)", [self._pixmap(px) for px in SIZES]),
+            "Title": GLib.Variant("s", "Dictate"), "Status": GLib.Variant("s", "Active"), "IconName": GLib.Variant("s", ""),
             "ToolTip": GLib.Variant("(sa(iiay)ss)", ("", [], "Dictate", "Hold Ctrl+Win to dictate")),
             "ItemIsMenu": GLib.Variant("b", True),  # any click opens the menu
             "Menu": GLib.Variant("o", "/MenuBar"),
         }.get(prop)
 
     def _pixmap(self, px):
-        """The icon as SNI wants it: (w, h, non-premultiplied ARGB32 bytes in network byte order)."""
+        """The icon as SNI wants it: (w, h, non-premultiplied ARGB32 bytes in network byte order).
+        The bytes are wrapped in one go: GLib.Variant("ay", ...) would build them one by one (~30 ms)."""
         import numpy as np
         surface = self.render(px)
         surface.flush()
         bgra = np.frombuffer(surface.get_data(), np.uint8).reshape(px, px, 4).astype(np.float32)  # cairo: BGRA, premultiplied
         alpha = bgra[..., 3:4]
         bgra[..., :3] = np.where(alpha > 0, bgra[..., :3] * 255 / np.maximum(alpha, 1), 0)
-        return px, px, bgra[..., ::-1].astype(np.uint8).tobytes()  # → ARGB
+        argb = GLib.Bytes.new(bgra[..., ::-1].astype(np.uint8).tobytes())
+        return GLib.Variant.new_tuple(GLib.Variant("i", px), GLib.Variant("i", px),
+                                      GLib.Variant.new_from_bytes(GLib.VariantType("ay"), argb, True))

@@ -3,7 +3,7 @@
 Linux reads keyboards with evdev, records with pw-record and pastes through uinput (works on Wayland).
 Windows and macOS use pynput for keys and sounddevice for the microphone.
 """
-import subprocess, sys, threading, wave
+import subprocess, sys, threading, time, wave
 from pathlib import Path
 from gi.repository import GLib
 
@@ -22,9 +22,11 @@ class Chord:
 
     def __init__(self, callback):
         self.callback, self.held, self.active, self.alt, self.letter = callback, {}, False, False, None
+        self.pressed_at = None  # when the chord's key was physically pressed (wall clock), for latency logs
 
-    def key(self, ident, kind, down):
-        """ident: a stable id for the physical key; kind: "ctrl", "meta", "alt", a letter, or None."""
+    def key(self, ident, kind, down, at=None):
+        """ident: a stable id for the physical key; kind: "ctrl", "meta", "alt", a letter, or None;
+        at: when the key was physically pressed, if the OS says (else now)."""
         if down:
             if ident in self.held:
                 return  # auto-repeat
@@ -41,7 +43,7 @@ class Chord:
         if on != self.active:
             self.active = on
             if on:
-                self.alt, self.letter = "alt" in kinds, None
+                self.alt, self.letter, self.pressed_at = "alt" in kinds, None, at or time.time()
             GLib.idle_add(self.callback, on, self.alt, self.letter)
 
 
@@ -55,7 +57,7 @@ if LINUX:
              **{getattr(e, f"KEY_{c}"): c.lower() for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
 
     class Hotkey(threading.Thread):
-        """Watches every keyboard via evdev (global, works on Wayland)."""
+        """Watches every keyboard via evdev (global, works on Wayland). The kernel timestamps each key."""
 
         def __init__(self, callback):
             super().__init__(daemon=True)
@@ -70,7 +72,7 @@ if LINUX:
                 for key, _ in self.sel.select():
                     for ev in key.fileobj.read():
                         if ev.type == e.EV_KEY and ev.value != 2:
-                            self.chord.key(ev.code, KINDS.get(ev.code), ev.value == 1)
+                            self.chord.key(ev.code, KINDS.get(ev.code), ev.value == 1, ev.timestamp())
 
     class Recorder:
         def start(self, path):
@@ -111,7 +113,7 @@ else:
         """Global key listener via pynput (on macOS this needs Input Monitoring permission)."""
 
         def __init__(self, callback):
-            chord = Chord(callback)
+            self.chord = chord = Chord(callback)
             self.listener = keyboard.Listener(on_press=lambda k: chord.key(*_ident_kind(k), True),
                                               on_release=lambda k: chord.key(*_ident_kind(k), False))
 

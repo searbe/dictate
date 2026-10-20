@@ -38,6 +38,11 @@ BODY = {  # (top, bottom) gradient colours per state
     "rec": ((1.0, 0.39, 0.36), (0.85, 0.20, 0.22)),
     "busy": ((0.20, 0.21, 0.24), (0.11, 0.12, 0.14)),
 }
+def log(msg):
+    """Timestamped, flushed at once (stdout is buffered when launched from the desktop): see journalctl."""
+    print(f"{datetime.now():%H:%M:%S.%f}"[:-3], msg, flush=True)
+
+
 def load_json(path, default):
     try:
         return json.loads(path.read_text())
@@ -101,7 +106,8 @@ class App:
         self.app = activewin.snapshot()
         activewin.start()
         remote.start()
-        osio.Hotkey(self.on_hotkey).start()
+        self.hotkey = osio.Hotkey(self.on_hotkey)
+        self.hotkey.start()
         threading.Thread(target=stt.load, daemon=True).start()  # warm up so first dictation is fast
         self.paster = osio.Paster()  # created after Hotkey so we don't listen to ourselves
         w.show_all()
@@ -229,26 +235,28 @@ class App:
         if down and not self.rec and self.cfg["remote_guard"] and remote.on_remote_screen():
             return  # the keyboard is driving another computer through Synergy
         if down and not self.rec:
+            pressed = self.hotkey.chord.pressed_at
             self.app = activewin.snapshot()  # where the text will go (before any of our windows take focus)
             self.wav = tempfile.mktemp(suffix=".wav", prefix="dictate-")
             self.rec = osio.Recorder()
             self.rec.start(self.wav)
             self.set_state("rec")
+            log(f"recording: {(time.time() - pressed) * 1000:.0f} ms after the key was pressed" if pressed else "recording")
         if down and (self.cfg["refine"] or alt):
             refine.warm()  # load the model while the user is still speaking
         elif not down and self.rec:
-            self.rec.stop()
-            self.rec = None
+            rec, self.rec = self.rec, None
             self.set_state("busy")
             refining = self.cfg["refine"] or alt  # Alt asks for a style, which always includes cleanup
-            threading.Thread(target=self.process, args=(self.wav, refining, alt, letter, self.app), daemon=True).start()
+            threading.Thread(target=self.process, args=(rec, self.wav, refining, alt, letter, self.app), daemon=True).start()
 
-    def process(self, wav, refining, alt, letter, app):
-        """Transcribe → cleanup → a style: Alt+letter's, or (Alt alone / unknown letter) ask which,
-        or (no Alt) the style matching the focused app, else the default style."""
+    def process(self, rec, wav, refining, alt, letter, app):
+        """Stop recording → transcribe → cleanup → a style: Alt+letter's, or (Alt alone / unknown letter)
+        ask which, or (no Alt) the style matching the focused app, else the default style."""
         raw = text = style = ""
         ctx = activewin.describe(app)
         try:
+            rec.stop()  # here, not on the GTK thread: pw-record takes ~0.35 s to finish the file
             raw = text = stt.transcribe(wav)
             if refining and raw:
                 text = refine.cleanup(raw, ctx)
