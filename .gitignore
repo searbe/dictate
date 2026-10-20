@@ -2,7 +2,10 @@
 .venv/
 bin/
 models/
+gtk/
 dictate.desktop
+Dictate.lnk
+*.part
 # Per-user data: history, settings, styles, vocabulary
 data/
 __pycache__/

@@ -1,36 +1,37 @@
 #!/usr/bin/env python3
-"""Dictate: hold Ctrl+Win to record, release to transcribe and paste.
+"""Dictate: hold Ctrl+Win (Ctrl+Cmd on a Mac) to record, release to transcribe and paste.
 
-Floating icon (drag to move, right-click for menu). GTK3 + python-evdev,
-records with pw-record, transcribes locally (stt.py), cleans up / restyles the text
-(refine.py); windows live in windows.py. Works on KDE Wayland: GTK is forced onto XWayland so the
-icon can stay on top and be positioned; hotkeys and the Ctrl+V paste go through
-evdev/uinput so they are global.
+Floating icon (drag to move, right-click for menu), drawn with GTK3. The hotkey, recording and paste
+are in osio.py, transcription in stt.py, clean-up / restyling in refine.py, windows in windows.py.
+On KDE Wayland, GTK is forced onto XWayland so the icon can stay on top and be positioned.
 """
 import os, sys
-VENV_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv/bin/python")
+HERE = os.path.dirname(os.path.abspath(__file__))
+VENV_PY = os.path.join(HERE, ".venv", "Scripts", "pythonw.exe") if sys.platform == "win32" else os.path.join(HERE, ".venv/bin/python")
 if sys.prefix == sys.base_prefix and os.path.exists(VENV_PY):  # launched with system python → use ours
     os.execv(VENV_PY, [VENV_PY, *sys.argv])
-os.environ["GDK_BACKEND"] = "x11"
+if sys.platform.startswith("linux"):
+    os.environ["GDK_BACKEND"] = "x11"
+elif sys.platform == "win32":  # GTK runtime unpacked into ./gtk by setup-windows.ps1
+    GTK = os.path.join(HERE, "gtk")
+    os.add_dll_directory(os.path.join(GTK, "bin"))
+    os.environ["PATH"] = os.path.join(GTK, "bin") + os.pathsep + os.environ["PATH"]
+    os.environ["GI_TYPELIB_PATH"] = os.path.join(GTK, "lib", "girepository-1.0")
+    os.environ["XDG_DATA_DIRS"] = os.path.join(GTK, "share")
 
-import json, math, selectors, signal, subprocess, tempfile, threading, time
+import json, math, signal, tempfile, threading, time
 from datetime import datetime
 from pathlib import Path
 import cairo, gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
-import evdev
-from evdev import ecodes as e
-import activewin, refine, stt, windows
+import activewin, osio, refine, stt, windows
 
 DATA = Path(__file__).parent / "data"  # everything stays inside this folder
 HISTORY = DATA / "history.jsonl"
 STATE = DATA / "state.json"
 SIZE, R = 52, 17  # window size, icon radius (margin leaves room for the pulse ring)
-HOTKEY = ({e.KEY_LEFTCTRL, e.KEY_RIGHTCTRL}, {e.KEY_LEFTMETA, e.KEY_RIGHTMETA})
-ALT = {e.KEY_LEFTALT, e.KEY_RIGHTALT}
-TERMINALS = ("konsole", "terminal", "kitty", "alacritty", "wezterm", "foot", "ghostty", "yakuake")
-LETTERS = {getattr(e, f"KEY_{c}"): c.lower() for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}
+TERMINALS = ("konsole", "terminal", "kitty", "alacritty", "wezterm", "foot", "ghostty", "yakuake")  # Linux paste
 ACCENT = (0.49, 0.55, 1.0)
 BODY = {  # (top, bottom) gradient colours per state
     "idle": ((0.20, 0.21, 0.24), (0.11, 0.12, 0.14)),
@@ -42,39 +43,6 @@ def load_json(path, default):
         return json.loads(path.read_text())
     except (OSError, ValueError):
         return default
-
-
-class Hotkey(threading.Thread):
-    """Watches all keyboards; calls callback(down, alt, letter) on the GTK thread when the combo changes.
-    On release, alt says whether Alt was touched during the hold and letter is any A–Z pressed with Alt."""
-
-    def __init__(self, callback):
-        super().__init__(daemon=True)
-        self.callback, self.held, self.active, self.alt, self.letter = callback, set(), False, False, None
-        self.sel = selectors.DefaultSelector()
-        for path in evdev.list_devices():
-            dev = evdev.InputDevice(path)
-            if e.KEY_LEFTCTRL in dev.capabilities().get(e.EV_KEY, []):
-                self.sel.register(dev, selectors.EVENT_READ)
-
-    def run(self):
-        while True:
-            for key, _ in self.sel.select():
-                for ev in key.fileobj.read():
-                    if ev.type != e.EV_KEY or ev.value == 2:
-                        continue
-                    (self.held.add if ev.value else self.held.discard)(ev.code)
-                    if self.active and ev.value and ev.code in ALT:
-                        self.alt = True
-                        GLib.idle_add(self.callback, True, True, None)  # lets the app start loading the model
-                    elif self.active and ev.value and ev.code in LETTERS and self.held & ALT:
-                        self.letter = LETTERS[ev.code]
-                    on = all(self.held & group for group in HOTKEY)
-                    if on != self.active:
-                        self.active = on
-                        if on:
-                            self.alt, self.letter = bool(self.held & ALT), None
-                        GLib.idle_add(self.callback, on, self.alt, self.letter)
 
 
 class App:
@@ -96,8 +64,9 @@ class App:
         w.connect("enter-notify-event", lambda *_: self.hover(True))
         w.connect("leave-notify-event", lambda *_: self.hover(False))
         w.connect("destroy", Gtk.main_quit)
-        for sig in (signal.SIGTERM, signal.SIGINT):  # quit cleanly so exit hooks (e.g. unloading the KWin script) run
-            GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, Gtk.main_quit)
+        if not osio.WINDOWS:  # quit cleanly so exit hooks (e.g. unloading the KWin script) run
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, Gtk.main_quit)
 
         self.menu = Gtk.Menu()
         toggle = Gtk.CheckMenuItem(label="Refine text", active=self.cfg["refine"])
@@ -117,11 +86,11 @@ class App:
         self.state, self.hovered, self.rec, self.wav, self.anim, self.save_id = "idle", False, None, None, None, None
         self.t0 = time.monotonic()
         self.clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
-        self.app = dict(activewin.current)
+        self.app = activewin.snapshot()
         activewin.start()
-        Hotkey(self.on_hotkey).start()
+        osio.Hotkey(self.on_hotkey).start()
         threading.Thread(target=stt.load, daemon=True).start()  # warm up so first dictation is fast
-        self.kbd = evdev.UInput()  # created after Hotkey so we don't listen to ourselves
+        self.paster = osio.Paster()  # created after Hotkey so we don't listen to ourselves
         w.show_all()
 
     # --- icon ---
@@ -228,15 +197,15 @@ class App:
     # --- recording pipeline ---
     def on_hotkey(self, down, alt, letter):
         if down and not self.rec:
-            self.app = dict(activewin.current)  # where the text will go (before any of our windows take focus)
+            self.app = activewin.snapshot()  # where the text will go (before any of our windows take focus)
             self.wav = tempfile.mktemp(suffix=".wav", prefix="dictate-")
-            self.rec = subprocess.Popen(["pw-record", "--rate", "16000", "--channels", "1", "--format", "s16", self.wav])
+            self.rec = osio.Recorder()
+            self.rec.start(self.wav)
             self.set_state("rec")
         if down and (self.cfg["refine"] or alt):
             refine.warm()  # load the model while the user is still speaking
         elif not down and self.rec:
-            self.rec.terminate()
-            self.rec.wait()
+            self.rec.stop()
             self.rec = None
             self.set_state("busy")
             refining = self.cfg["refine"] or alt  # Alt asks for a style, which always includes cleanup
@@ -280,15 +249,8 @@ class App:
             f.write(json.dumps(entry) + "\n")
         self.copy(text)
         if paste:  # wait for the clipboard to reach Wayland (and, after the picker, for focus to return)
-            terminal = any(t in app["cls"].lower() for t in TERMINALS)
-            GLib.timeout_add(delay, self.send_paste, terminal)
-
-    def send_paste(self, terminal):
-        mods = (e.KEY_LEFTCTRL, e.KEY_LEFTSHIFT) if terminal else (e.KEY_LEFTCTRL,)  # terminals paste with Ctrl+Shift+V
-        keys = [(k, 1) for k in mods] + [(e.KEY_V, 1), (e.KEY_V, 0)] + [(k, 0) for k in reversed(mods)]
-        for code, val in keys:
-            self.kbd.write(e.EV_KEY, code, val)
-            self.kbd.syn()
+            terminal = osio.LINUX and any(t in app["cls"].lower() for t in TERMINALS)
+            GLib.timeout_add(delay, self.paster.paste, terminal)
 
     def copy(self, text):
         self.clip.set_text(text, -1)

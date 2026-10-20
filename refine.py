@@ -3,11 +3,11 @@
 warm() at hotkey-down picks GPU (Vulkan, bigger model) if the card is idle with enough free VRAM,
 else CPU (smaller model), so the model is loading while you speak. Stopped after IDLE seconds unused.
 """
-import ctypes, difflib, json, re, signal, socket, subprocess, threading, time, urllib.request
+import atexit, ctypes, difflib, json, os, re, shutil, signal, socket, subprocess, sys, threading, time, urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).parent
-SERVER = ROOT / "bin/llama/llama-server"
+SERVER = ROOT / "bin/llama" / ("llama-server.exe" if sys.platform == "win32" else "llama-server")
 MODELS = {"gpu": ROOT / "models/qwen3.5-9b-q4_k_m.gguf", "cpu": ROOT / "models/qwen3.5-4b-q4_k_m.gguf"}
 IDLE = 30            # seconds unused before unloading
 SPARE_VRAM_MB = 2000  # free VRAM needed beyond the model's own size to use the GPU
@@ -137,15 +137,31 @@ def save_vocab(text):
 _proc, _mode, _hold, _last = None, None, False, 0.0
 
 
-def _die_with_parent():  # runs in the child: if dictate exits or crashes, the server (and its VRAM) goes too
+def _die_with_parent():  # Linux, in the child: if dictate exits or crashes, the server (and its VRAM) goes too
     ctypes.CDLL("libc.so.6").prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG
+
+
+# how each OS starts the server: no console window on Windows; tied to our lifetime on Linux
+SPAWN = ({"creationflags": 0x08000000} if sys.platform == "win32" else  # CREATE_NO_WINDOW
+         {"preexec_fn": _die_with_parent} if sys.platform.startswith("linux") else {})
 
 
 _lock = threading.Lock()
 
 
 def gpu_free(need_mb):
-    """True if the discrete GPU has need_mb of VRAM free and isn't busy (read from amdgpu sysfs)."""
+    """True if the GPU has need_mb of memory free and isn't busy.
+    Linux: AMD cards via amdgpu sysfs. Windows: NVIDIA cards via nvidia-smi (others use the CPU).
+    macOS: Apple Silicon shares system RAM with the GPU, so just require 16 GB or more."""
+    if sys.platform == "darwin":
+        mem = subprocess.run(["sysctl", "-n", "hw.memsize"], capture_output=True, text=True).stdout
+        return mem.strip().isdigit() and int(mem) >= 16 << 30
+    if sys.platform == "win32":
+        if not shutil.which("nvidia-smi"):
+            return False
+        out = subprocess.run(["nvidia-smi", "--query-gpu=memory.free,utilization.gpu", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, **SPAWN).stdout.split(",")
+        return len(out) == 2 and int(out[0]) > need_mb and int(out[1]) < MAX_GPU_BUSY
     for dev in Path("/sys/class/drm").glob("card*/device"):
         try:
             total, used, busy = (int((dev / f).read_text()) for f in
@@ -171,10 +187,11 @@ def warm(mode=None):
         if _proc and _proc.poll() is None:
             return
         _mode = mode or ("gpu" if gpu_ok() else "cpu")
-        dev = ["--device", "Vulkan0", "-ngl", "99"] if _mode == "gpu" else ["--device", "none", "-ngl", "0"]
+        gpu = ["-ngl", "99"] if sys.platform == "darwin" else ["--device", "Vulkan0", "-ngl", "99"]  # Metal / Vulkan
+        dev = gpu if _mode == "gpu" else ["--device", "none", "-ngl", "0"]
         _proc = subprocess.Popen([SERVER, "-m", MODELS[_mode], "--host", "127.0.0.1", "--port", str(PORT), "-c", "4096",
-                                  "--no-webui", "--reasoning", "off", "-t", "8", *dev],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=_die_with_parent)
+                                  "--no-webui", "--reasoning", "off", "-t", str(min(8, os.cpu_count() or 4)), *dev],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **SPAWN)
         print("refine: loading", MODELS[_mode].name, "on", _mode)
 
 
@@ -200,6 +217,7 @@ def _reaper():
 
 
 threading.Thread(target=_reaper, daemon=True).start()
+atexit.register(stop)
 
 
 def _post(path, body=None, timeout=60):

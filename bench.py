@@ -5,7 +5,7 @@ Runs the default cleanup (and the default style) with every models/*.gguf on the
 its time, and any problem the safety checks would have caught. Doesn't touch history or settings."""
 import json, os, sys, time
 from pathlib import Path
-VENV_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv/bin/python")
+VENV_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv", *(("Scripts", "python.exe") if sys.platform == "win32" else ("bin", "python")))
 if sys.prefix == sys.base_prefix and os.path.exists(VENV_PY):
     os.execv(VENV_PY, [VENV_PY, *sys.argv])
 import refine
