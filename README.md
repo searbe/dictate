@@ -3,7 +3,7 @@
 **Talk instead of type: hold a hotkey, speak, and your words appear as clean, punctuated text in whatever app you're using.**
 
 - **Faster than typing.** Most people speak about three times faster than they type.
-- **Reads like you wrote it.** Ums, stutters and "Tuesday, no, Wednesday" are cleaned up, and it can format for Slack, email or WhatsApp.
+- **Reads like you wrote it.** Ums, stutters and "Tuesday, no, Wednesday" are cleaned up, and it can format for Slack, email, WhatsApp or AI agents.
 - **Private and free.** Everything runs on your own computer, with no account, subscription or audio sent anywhere.
 
 ## Using it

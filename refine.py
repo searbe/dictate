@@ -32,7 +32,7 @@ Output only the refined message. Apply this refinement style:
 CLEANUP = """Make the minimal edits needed so the text reads the way the speaker intended:
 - Remove filler words (um, uh, you know, like) and stutters or repeated words.
 - Apply self-corrections, keeping only the corrected version.
-- Fix punctuation and capitalisation.
+- Fix punctuation and capitalisation. Only real questions get a question mark; instructions ("tell me what fails") end with a full stop.
 - Fix words the transcriber mis-heard as a similar-sounding word, when the context makes the intended word
   obvious (e.g. "run on booth" -> "run on boot", "get hub" -> "GitHub").
 - Keep the speaker's own wording, tone and meaning. Don't make it more formal.
@@ -93,6 +93,27 @@ Output: Hi John,
 Just checking in on the contract. Did you get a chance to look at it yet? We'd like to sign by Friday if possible.
 
 Thanks,"""},
+    {"name": "AI agent", "key": "a", "apps": "claude, chatgpt, codex, cursor, copilot, gemini", "prompt": """An instruction or question for an AI assistant or coding agent (e.g. Claude Code, ChatGPT, Cursor): clear and unambiguous.
+- Keep everything the speaker said: the context and reasoning as well as every request, requirement, constraint and question, in their words. Never add requirements or drop any.
+- Keep names exact: files, functions, commands, products and error messages. Put code, file names and commands in `backticks`.
+- Turn spoken symbols into the real ones: "dot py" -> .py, "dash k" -> -k, "slash" -> /, "underscore" -> _.
+- Instructions end with a full stop; only real questions get a question mark.
+- If the speaker asks for several separate things, list them as bullets; otherwise use short plain paragraphs.
+- Keep the speaker's direct tone. No greeting, sign-off, pleasantries or emoji.
+
+Examples:
+Input: Update the readme so that somebody who is completely unfamiliar with this can understand what it is by reading the opening line and can understand why it brings them value. Keep it short and succinct.
+Output: Update the README so that:
+- somebody completely unfamiliar with this can understand what it is from the opening line
+- they understand why it brings them value
+
+Keep it short and succinct.
+
+Input: The login test is failing again, I think it started after yesterday's merge. Can you look at auth dot py and find out why, but don't change the database schema. Run it with pytest dash k login.
+Output: The login test is failing again; I think it started after yesterday's merge. Can you look at `auth.py` and find out why? Don't change the database schema. Run it with `pytest -k login`.
+
+Input: I ran the build on my laptop and it gave me, well, have a look at the log, something which doesn't look like a normal linker error. Can you help me work out what's wrong?
+Output: I ran the build on my laptop and it gave me something that doesn't look like a normal linker error (have a look at the log). Can you help me work out what's wrong?"""},
 ]
 
 
