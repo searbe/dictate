@@ -4,10 +4,12 @@ Linux reads keyboards with evdev, records with pw-record and pastes through uinp
 Windows and macOS use pynput for keys and sounddevice for the microphone.
 """
 import subprocess, sys, threading, wave
+from pathlib import Path
 from gi.repository import GLib
 
 LINUX, WINDOWS, MAC = sys.platform.startswith("linux"), sys.platform == "win32", sys.platform == "darwin"
 RATE = 16000
+SCRIPT = Path(__file__).with_name("dictate.py")
 # macOS virtual key codes (ANSI layout) for A–Z; Option changes the typed character, so match the key itself
 MAC_LETTERS = dict(zip((0, 11, 8, 2, 14, 3, 5, 4, 34, 38, 40, 37, 46, 45, 31, 35, 12, 15, 1, 17, 32, 9, 13, 7, 16, 6),
                        "abcdefghijklmnopqrstuvwxyz"))
@@ -140,3 +142,57 @@ else:
         def paste(self, terminal):
             with self.kbd.pressed(K.cmd if MAC else K.ctrl):
                 self.kbd.tap("v")
+
+
+# --- run at startup: KDE/XDG autostart entry, the Windows Run registry key, or a macOS LaunchAgent ---
+if LINUX:
+    AUTOSTART = Path.home() / ".config/autostart/dictate.desktop"
+
+    def autostart_enabled():
+        return AUTOSTART.exists()
+
+    def set_autostart(on):
+        if on:
+            AUTOSTART.parent.mkdir(parents=True, exist_ok=True)
+            AUTOSTART.write_text(f'[Desktop Entry]\nType=Application\nName=Dictate\n'
+                                 f'Exec="{sys.executable}" "{SCRIPT}"\nIcon=audio-input-microphone\n')
+        else:
+            AUTOSTART.unlink(missing_ok=True)
+
+elif WINDOWS:
+    import winreg
+    RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+    def autostart_enabled():
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as key:
+            try:
+                winreg.QueryValueEx(key, "Dictate")
+                return True
+            except FileNotFoundError:
+                return False
+
+    def set_autostart(on):
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE) as key:
+            if on:
+                pythonw = Path(sys.executable).with_name("pythonw.exe")  # no console window
+                winreg.SetValueEx(key, "Dictate", 0, winreg.REG_SZ, f'"{pythonw}" "{SCRIPT}"')
+            else:
+                try:
+                    winreg.DeleteValue(key, "Dictate")
+                except FileNotFoundError:
+                    pass
+
+else:
+    import plistlib
+    AGENT = Path.home() / "Library/LaunchAgents/local.dictate.plist"
+
+    def autostart_enabled():
+        return AGENT.exists()
+
+    def set_autostart(on):
+        if on:
+            AGENT.parent.mkdir(parents=True, exist_ok=True)
+            AGENT.write_bytes(plistlib.dumps({"Label": "local.dictate", "RunAtLoad": True,
+                                              "ProgramArguments": [sys.executable, str(SCRIPT)]}))
+        else:
+            AGENT.unlink(missing_ok=True)

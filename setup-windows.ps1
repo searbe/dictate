@@ -28,7 +28,7 @@ if ($LASTEXITCODE) { throw "pip install failed" }
 & .venv\Scripts\python fetch.py
 if ($LASTEXITCODE) { throw "model download failed" }
 
-# A shortcut in this folder; copy it to shell:startup to start Dictate when you log in
+# A shortcut in this folder to start Dictate (use "Run at startup" in its menu to start it at login)
 $Shortcut = (New-Object -ComObject WScript.Shell).CreateShortcut("$PSScriptRoot\Dictate.lnk")
 $Shortcut.TargetPath = "$PSScriptRoot\.venv\Scripts\pythonw.exe"
 $Shortcut.Arguments = "`"$PSScriptRoot\dictate.py`""
@@ -37,4 +37,4 @@ $Shortcut.Save()
 
 Write-Host ""
 Write-Host "Done. Double-click Dictate.lnk (or run: .venv\Scripts\python dictate.py)."
-Write-Host "Hold Ctrl+Win to dictate. To start it at login, copy Dictate.lnk into the folder opened by Win+R > shell:startup"
+Write-Host "Hold Ctrl+Win to dictate. Tick 'Run at startup' in its menu to start it when you log in."

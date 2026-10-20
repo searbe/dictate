@@ -25,7 +25,7 @@ from pathlib import Path
 import cairo, gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
-import activewin, osio, refine, stt, windows
+import activewin, osio, refine, stt, tray, windows
 
 DATA = Path(__file__).parent / "data"  # everything stays inside this folder
 HISTORY = DATA / "history.jsonl"
@@ -76,15 +76,23 @@ class App:
         self.default_menu = Gtk.Menu()
         default.set_submenu(self.default_menu)
         self.menu.append(default)
-        for label, cb in (("History", self.show_history), ("Refinement styles…", windows.StyleManager), (None, None), ("Quit", Gtk.main_quit)):
+        for label, cb in (("History", self.show_history), ("Refinement styles…", windows.StyleManager), (None, None)):
             item = Gtk.MenuItem(label=label) if label else Gtk.SeparatorMenuItem()
             if cb:
                 item.connect("activate", lambda _, cb=cb: cb())
             self.menu.append(item)
+        startup = Gtk.CheckMenuItem(label="Run at startup", active=osio.autostart_enabled())
+        startup.connect("toggled", lambda t: osio.set_autostart(t.get_active()))
+        self.menu.append(startup)
+        quit_item = Gtk.MenuItem(label="Quit")
+        quit_item.connect("activate", lambda _: Gtk.main_quit())
+        self.menu.append(quit_item)
         self.menu.show_all()
+        self.build_default_menu()
 
         self.state, self.hovered, self.rec, self.wav, self.anim, self.save_id = "idle", False, None, None, None, None
         self.t0 = time.monotonic()
+        self.tray = tray.Tray(self.menu, self.render_icon, self.build_default_menu)  # same menu in the system tray
         self.clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         self.app = activewin.snapshot()
         activewin.start()
@@ -101,10 +109,19 @@ class App:
         if s == "idle":
             self.anim = None
         self.win.queue_draw()
+        self.tray.update()
 
     def hover(self, on):
         self.hovered = on
         self.win.queue_draw()
+
+    def render_icon(self, px):
+        """The icon in its current state as a px-by-px image (for the system tray)."""
+        surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, px, px)
+        cr = cairo.Context(surface)
+        cr.scale(px / SIZE, px / SIZE)
+        self.draw(None, cr)
+        return surface
 
     def draw(self, _, cr):
         cr.set_operator(cairo.OPERATOR_SOURCE)

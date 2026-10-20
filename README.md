@@ -8,7 +8,7 @@ Hold **Ctrl+Win** (Ctrl+Cmd on a Mac) to record, release to transcribe and paste
 - **Vocabulary** (Refinement styles… > Vocabulary): names and terms you use, so cleanup spells them right and fixes mis-hearings.
 - On Linux, terminals get Ctrl+Shift+V instead of Ctrl+V.
 
-The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it. Right-click it for Refine text, History, Refinement styles… and Quit.
+The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it. Right-click it (or click the system tray icon) for Refine text, Default style, History, Refinement styles…, Run at startup and Quit.
 
 ![Floating icon: idle, recording, transcribing](docs/icon-states.png)
 
@@ -30,12 +30,12 @@ Delete the folder to remove the app completely.
 ### Linux (SteamOS / KDE Plasma): the main platform
 `./setup.sh`, then `python dictate.py` (it switches to `.venv` automatically). It reuses the system's GTK and evdev bindings read-only.
 If a SteamOS update breaks the app, run `./setup.sh` again; it rebuilds `.venv` for the new system Python.
-To start it at login (optional, writes outside this folder): `cp dictate.desktop ~/.config/autostart/`
+To start it at login, tick **Run at startup** in the menu (adds `~/.config/autostart/dictate.desktop`; unticking removes it).
 
 ### Windows 10/11 (untested)
 1. Install Python 3.14: `winget install -e --id Python.Python.3.14` (GTK's Python bindings are built for 3.14).
 2. `powershell -ExecutionPolicy Bypass -File setup-windows.ps1`. This also downloads a GTK 3 runtime into `gtk\` (~300 MB, from [gvsbuild](https://github.com/wingtk/gvsbuild)).
-3. Double-click `Dictate.lnk`. To start at login, copy it into `shell:startup`.
+3. Double-click `Dictate.lnk`. **Run at startup** in the menu adds or removes it from the login items (the per-user Run registry key).
 
 Hold **Ctrl+Win**. The GPU model is used on NVIDIA cards with enough free memory (checked with `nvidia-smi`); otherwise refinement runs on the CPU.
 
@@ -44,13 +44,14 @@ Hold **Ctrl+Win**. The GPU model is used on NVIDIA cards with enough free memory
 2. `./setup-mac.sh` (installs Python 3.14 and GTK 3 with Homebrew).
 3. `.venv/bin/python dictate.py`
 
-Hold **Ctrl+Cmd** (Option is Alt). macOS will ask for Microphone, Input Monitoring (hotkey) and Accessibility (paste) permissions for the app you launch it from; restart Dictate after granting them. Screen Recording is optional and lets per-app styles see window titles. Macs with 16 GB of RAM or more use the 9B model on the GPU (Metal).
+Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can't make one), so use the floating icon's menu. **Run at startup** adds a LaunchAgent (`~/Library/LaunchAgents/local.dictate.plist`). macOS will ask for Microphone, Input Monitoring (hotkey) and Accessibility (paste) permissions for the app you launch it from; restart Dictate after granting them. Screen Recording is optional and lets per-app styles see window titles. Macs with 16 GB of RAM or more use the 9B model on the GPU (Metal).
 
 ## Code
 - `dictate.py`: floating icon and the dictation pipeline
-- `osio.py`: everything OS-specific: global hotkey, recording and paste (evdev/pw-record/uinput on Linux, pynput/sounddevice on Windows and macOS)
+- `osio.py`: everything OS-specific: global hotkey, recording, paste and run-at-startup (evdev/pw-record/uinput on Linux, pynput/sounddevice on Windows and macOS)
 - `stt.py`: transcription. The VAD strips non-speech, then Parakeet runs on the CPU.
 - `windows.py`: History, the refinement style manager, and the style picker.
+- `tray.py`: the system tray icon with the same menu (a StatusNotifierItem plus dbusmenu on KDE, GTK's status icon on Windows).
 - `activewin.py` + `kwin_active.js`: tracks the focused window. On KDE, KWin loads the script at runtime and unloads it on exit; it's never installed. Windows and macOS ask the OS directly.
 - `fetch.py`: downloads the models and the right llama.cpp build; used by every setup script.
 - `bench.py`: compares every `models/*.gguf` on your recent dictations: `python bench.py`.
