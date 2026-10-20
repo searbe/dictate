@@ -14,7 +14,7 @@ Hold **Ctrl+Win** (Ctrl+Cmd on a Mac) to record, release to transcribe and paste
 - **Per-app styles**: a style whose "Use automatically in apps" keywords match the focused app or window title (e.g. "slack") is used instead of the default. The app's name and title are also given to the model as context.
 - **Vocabulary** (Refinement styles… > Vocabulary): names and terms you use, so cleanup spells them right and fixes mis-hearings.
 - On Linux, terminals get Ctrl+Shift+V instead of Ctrl+V.
-- **Synergy and similar**: while your keyboard is controlling another computer, Dictate records here and *types* the text, so it arrives there as keystrokes (no microphone needed over there). To have the hotkey ignored instead, choose that under **When another computer has the keyboard** in the menu.
+- **Synergy and similar**: while your keyboard is controlling another computer, Dictate records here and *types* the text, so it arrives there as keystrokes (no microphone needed over there). Per-app styles can't apply there, so it has its own **Default style there** (under **When another computer has the keyboard** in the menu, which can also make it ignore the hotkey instead).
 
 The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it. Right-click it (or click the system tray icon) for Refine text, Default style, History, Refinement styles…, Run at startup and Quit.
 

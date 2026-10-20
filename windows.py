@@ -219,6 +219,8 @@ class StyleManager:
                    "Describe the style." if not text else "")
             if err:
                 return self.error.set_text(err)
+            if self.data.get("remote_default") == self.data["styles"][j]["name"]:  # follow a rename
+                self.data["remote_default"] = name
             self.data["styles"][j].update(name=name, key=key, apps=self.apps.get_text().strip(), prompt=text)
         refine.save_styles({**self.data, "styles": [s for s in self.data["styles"] if s["key"]]})  # skip unsaved new
         self.rebuild(self.i)

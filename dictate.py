@@ -32,6 +32,7 @@ HISTORY = DATA / "history.jsonl"
 STATE = DATA / "state.json"
 SIZE, R = 52, 17  # window size, icon radius (margin leaves room for the pulse ring)
 REMOTE_MODES = (("type", "Type the text there"), ("ignore", "Ignore the hotkey"))
+SAME = "same"  # remote default style: same as here
 OTHER_COMPUTER = {"cls": "", "title": "", "remote": True}  # where text goes when Synergy has the keyboard
 TERMINALS = ("konsole", "terminal", "kitty", "alacritty", "wezterm", "foot", "ghostty", "yakuake")  # Linux paste
 ACCENT = (0.49, 0.55, 1.0)
@@ -97,6 +98,11 @@ class App:
             away_menu.append(item)
         for item, (mode, _) in zip(away_menu.get_children(), REMOTE_MODES):  # connected after ticking,
             item.connect("toggled", lambda i, m=mode: i.get_active() and self.save_state(remote_mode=m))  # so setup isn't saved
+        away_menu.append(Gtk.SeparatorMenuItem())
+        remote_style = Gtk.MenuItem(label="Default style there")  # per-app styles can't apply: we can't see its apps
+        self.remote_style_menu = Gtk.Menu()
+        remote_style.set_submenu(self.remote_style_menu)
+        away_menu.append(remote_style)
         away.set_submenu(away_menu)
         self.menu.append(away)
         startup = Gtk.CheckMenuItem(label="Run at startup", active=osio.autostart_enabled())
@@ -210,24 +216,35 @@ class App:
         return True
 
     def build_default_menu(self):
-        """Radio list: which style a plain Ctrl+Win applies after cleanup. Called whenever the menu opens:
-        rebuilt only if the styles changed, otherwise just re-ticked, so the tray's item ids stay valid.
+        """Refresh the two "default style" radio lists (here, and on the other computer).
+        Called whenever the menu opens, as styles may have changed."""
+        data = refine.load_styles()
+        names = [s["name"] for s in data["styles"]]
+        here = refine.default_style()
+        self.fill_style_menu(self.default_menu, [(None, "None (cleanup only)")] + [(n, n) for n in names],
+                             here and here["name"], refine.set_default)
+        remote = data.get("remote_default", SAME)
+        self.fill_style_menu(self.remote_style_menu,
+                             [(SAME, "Same as here"), (None, "None (cleanup only)")] + [(n, n) for n in names],
+                             remote if remote in [SAME, None, *names] else None,
+                             lambda v: refine.set_remote_default(v, same=v is SAME))
+
+    def fill_style_menu(self, menu, choices, current, pick):
+        """A radio list of (value, label) choices with current ticked; pick(value) saves a choice.
+        Rebuilt only if the choices changed, otherwise just re-ticked, so the tray's item ids stay valid.
         While building, GTK ticks items itself (e.g. when the ticked one is removed); those aren't choices."""
-        names = [None] + [s["name"] for s in refine.load_styles()["styles"]]
-        current = refine.default_style()
-        current = current and current["name"]
         self.ticking = True
-        if names != getattr(self, "default_names", None):
-            for item in self.default_menu.get_children():
-                self.default_menu.remove(item)
-            self.default_names, self.default_items, group = names, {}, None
-            for name in names:
-                item = self.default_items[name] = Gtk.RadioMenuItem(label=name or "None (cleanup only)", group=group)
+        if choices != getattr(menu, "choices", None):
+            for item in menu.get_children():
+                menu.remove(item)
+            menu.choices, menu.items, group = choices, {}, None
+            for value, label in choices:
+                item = menu.items[value] = Gtk.RadioMenuItem(label=label, group=group)
                 group = group or item
-                item.connect("toggled", lambda i, n=name: i.get_active() and not self.ticking and refine.set_default(n))
-                self.default_menu.append(item)
-            self.default_menu.show_all()
-        self.default_items[current].set_active(True)
+                item.connect("toggled", lambda i, v=value: i.get_active() and not self.ticking and pick(v))
+                menu.append(item)
+            menu.show_all()
+        menu.items[current].set_active(True)
         self.ticking = False
 
     def on_moved(self, *_):
@@ -277,6 +294,8 @@ class App:
                 style = letter and refine.style_for_key(letter)
                 if not style:
                     return GLib.idle_add(self.pick_style, text, raw, app)
+            elif refining and raw and app.get("remote"):  # we can't see its apps: its own default style
+                style = refine.default_style(remote=True)
             elif refining and raw:
                 style = refine.style_for_app(f"{app['cls']} {app['title']}") or refine.default_style()
             if style:

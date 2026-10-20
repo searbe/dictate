@@ -132,9 +132,23 @@ def save_styles(data):
     STYLES.write_text(json.dumps(data, indent=2))
 
 
-def default_style():
-    """The style applied to a plain Ctrl+Win dictation (after cleanup), or None."""
-    return next((s for s in load_styles()["styles"] if s.get("default")), None)
+def default_style(remote=False):
+    """The style applied to a plain Ctrl+Win dictation (after cleanup), or None.
+    remote: for text typed on another computer, which has its own default ("remote_default"):
+    a style name, None for cleanup only, or absent for the same as here."""
+    data = load_styles()
+    if remote and "remote_default" in data:
+        return next((s for s in data["styles"] if s["name"] == data["remote_default"]), None)
+    return next((s for s in data["styles"] if s.get("default")), None)
+
+
+def set_remote_default(name, same=False):
+    data = load_styles()
+    if same:
+        data.pop("remote_default", None)
+    else:
+        data["remote_default"] = name
+    save_styles(data)
 
 
 def set_default(name):
