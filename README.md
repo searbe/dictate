@@ -1,6 +1,6 @@
 # Dictate
 
-Push-to-talk dictation that runs entirely on your own computer. Hold a hotkey and speak; when you let go, the transcribed and cleaned-up text is pasted into the app you're typing in. Built for Linux (SteamOS / KDE Plasma); Windows and macOS support is included but untested.
+Push-to-talk dictation that runs entirely on your own computer. Hold a hotkey and speak; when you let go, the transcribed and cleaned-up text is pasted into the app you're typing in. Built for Linux (SteamOS / KDE Plasma), and also sets up on Ubuntu 24.04+; Windows and macOS support is included but untested.
 
 ## Features
 - **Hotkey dictation:** hold **Ctrl+Win** (Ctrl+Cmd on a Mac), speak, release to paste.
@@ -62,7 +62,14 @@ Delete the folder to remove the app completely.
 `./setup.sh`, then `python dictate.py` (it switches to `.venv` automatically). It reuses the system's GTK and evdev bindings read-only.
 If a SteamOS update breaks the app, run `./setup.sh` again; it rebuilds `.venv` for the new system Python.
 To start it at login, tick **Run at startup** in the menu (adds `~/.config/autostart/dictate.desktop`; unticking removes it).
-Other distributions need the same pieces SteamOS ships: read access to `/dev/input/event*` and `/dev/uinput` (SteamOS gets this from Steam's udev rules), PyGObject with GTK 3, python-evdev, the dbusmenu GObject bindings (for the tray), and PipeWire's `pw-record`/`pw-play`. Focused-app detection uses KWin, so per-app styles need KDE.
+### Ubuntu 24.04+ / Debian
+`./setup.sh` as above. On Ubuntu and Debian (and derivatives such as Mint and Pop!_OS) it first asks for your sudo password to:
+- install the system packages SteamOS already ships, if missing: the GTK, evdev and dbusmenu Python bindings, `python3-venv`, PipeWire's `pw-record`/`pw-play`, and the Vulkan loader;
+- add `/etc/udev/rules.d/70-dictate.rules`, if your session can't already read the keyboards and `/dev/uinput`. It gives the logged-in user access (as Steam's rules do on SteamOS); log out and back in if the hotkey doesn't work at once. This lets any program you run read your keyboard, which is how the global hotkey works.
+
+Focused-app detection uses KWin, so per-app styles need KDE (Kubuntu); on GNOME everything else works, and the tray icon needs Ubuntu's AppIndicator extension (on by default). Tested in an Ubuntu 24.04 container (setup and transcription), not on a desktop.
+
+Other distributions need the same pieces by hand: read access to `/dev/input/event*` and `/dev/uinput`, PyGObject with GTK 3, python-evdev, the dbusmenu GObject bindings, and PipeWire's `pw-record`/`pw-play`.
 
 ### Windows 10/11 (untested)
 1. Install Python 3.14: `winget install -e --id Python.Python.3.14` (GTK's Python bindings are built for 3.14).

@@ -4,6 +4,7 @@ KDE/Linux: a StatusNotifierItem over D-Bus, with the GTK menu mirrored by dbusme
 Windows: GTK's built-in status icon. macOS: none (GTK 3 has no menu-bar icon); the floating icon remains."""
 import os, sys
 import gi
+import osio
 from gi.repository import Gdk, Gio, GLib, Gtk
 
 SIZES = (32, 64)  # pixel sizes offered to the tray
@@ -68,8 +69,8 @@ class Tray:
 
     def _sni_bus(self, conn, _name):
         self.conn = conn
-        conn.register_object_with_closures2("/StatusNotifierItem", Gio.DBusNodeInfo.new_for_xml(self.XML).interfaces[0],
-                                            lambda *a: a[-1].return_value(None), self._sni_property, None)
+        osio.dbus_register(conn, "/StatusNotifierItem", Gio.DBusNodeInfo.new_for_xml(self.XML).interfaces[0],
+                           lambda *a: a[-1].return_value(None), self._sni_property)
         # register with the tray host now, and again whenever Plasma restarts
         Gio.bus_watch_name(Gio.BusType.SESSION, "org.kde.StatusNotifierWatcher", 0, self._sni_register, None)
 

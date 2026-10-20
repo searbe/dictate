@@ -25,6 +25,13 @@ def plain(text):
     return "".join(c for c in text if not unicodedata.combining(c))
 
 
+def dbus_register(conn, path, interface, method_call, get_property=None):
+    """Export a D-Bus object. register_object_with_closures2 needs GLib 2.84+; older GLib (e.g. Ubuntu 24.04)
+    has register_object, which PyGObject gives the same arguments."""
+    register = getattr(conn, "register_object_with_closures2", None) or conn.register_object
+    return register(path, interface, method_call, get_property, None)
+
+
 class Chord:
     """Ctrl+Win (Ctrl+Cmd on a Mac) state machine. Calls callback(down, alt, letter) on the GTK thread:
     on press, on release (alt = Alt was touched during the hold, letter = any A–Z pressed with Alt),

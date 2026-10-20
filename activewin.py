@@ -5,6 +5,7 @@ Windows: asks the OS for the foreground window. macOS: asks for the frontmost ap
 Dictate's own windows are ignored, so this stays the app you were typing in."""
 import atexit, os, sys
 from pathlib import Path
+import osio
 
 current = {"cls": "", "title": ""}
 
@@ -31,7 +32,7 @@ if sys.platform.startswith("linux"):
         invocation.return_value(None)
 
     def _on_bus(conn, _name):
-        conn.register_object_with_closures2("/", Gio.DBusNodeInfo.new_for_xml(XML).interfaces[0], _on_call, None, None)
+        osio.dbus_register(conn, "/", Gio.DBusNodeInfo.new_for_xml(XML).interfaces[0], _on_call)
         try:
             kwin = Gio.DBusProxy.new_sync(conn, 0, None, "org.kde.KWin", "/Scripting", "org.kde.kwin.Scripting", None)
             if kwin.isScriptLoaded("(s)", PLUGIN):  # left over from a crash
