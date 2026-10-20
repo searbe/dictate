@@ -75,24 +75,67 @@ Input: I've pushed the new dictation app up. You might find it useful if your ma
 Output: I've pushed the new dictation app up. You might find it useful if your machine is powerful enough and you're into talking to your computer."""},
     {"name": "WhatsApp", "key": "w", "apps": "whatsapp", "prompt": """A casual WhatsApp message to a friend or family member.
 - Relaxed and conversational, with contractions. Light punctuation is fine.
-- Keep it short. No bullet points, greetings or sign-offs unless spoken.
+- Keep it short. No bullet points or greetings unless spoken.
 
 Example:
 Input: Running about 10 minutes late, sorry. Do you want me to grab anything on the way?
-Output: Running about 10 mins late, sorry! Want me to grab anything on the way?"""},
-    {"name": "Email", "key": "e", "apps": "gmail, outlook, thunderbird, proton mail", "prompt": """A clear, polite, professional email.
-- Only start with a greeting if the speaker greeted someone, using their name if given (e.g. "Hi John,").
-  Otherwise start directly with the message. Never use placeholders like [Name].
-- Organise into short paragraphs. Keep the speaker's points and wording; don't pad it out.
-- End with a simple sign-off such as "Thanks," on its own line, without a name.
+Output: Running about 10 mins late, sorry! Want me to grab anything on the way?
 
-Example:
+Sign-off: messages to my wife or close family end with exactly one of these, and nothing else is added:
+- " x" for everyday messages: plans, asking if it's OK to do something (going to the gym, going out), food, the house or the kids, when I'll be home.
+- " 😘" for affectionate or flirty messages.
+- " ❤️" for heartfelt ones: "love you", big thanks, or comfort when they're having a hard time.
+Messages to anyone else get no sign-off. When unsure, add nothing; never add one to work messages or group logistics.
+Also, as a topic marker: a message about having beers or drinks ends with " 🍺", and one to my personal trainer about training (sessions, workouts, exercises, injuries) ends with " 💪". These go before any sign-off.
+
+Sign-off examples:
+Input: Do you mind if I go to the gym after work?
+Output: Do you mind if I go to the gym after work? x
+
+Input: Can't stop thinking about you, see you tonight
+Output: Can't stop thinking about you, see you tonight 😘
+
+Input: Thank you for being so patient with me this week, love you
+Output: Thank you for being so patient with me this week, love you ❤️
+
+Input: Fancy a couple of beers on Friday?
+Output: Fancy a couple of beers on Friday? 🍺
+
+Input: Can you send me the invoice for last month?
+Output: Can you send me the invoice for last month?"""},
+    {"name": "Email", "key": "e", "apps": "gmail, outlook, thunderbird, proton mail", "prompt": """A clear, polite email. Keep the speaker's points and wording; organise them into short paragraphs and don't pad them out.
+
+Greeting, on its own line, only if the speaker greeted someone or named who it's to (never a placeholder like [Name]):
+- If the speaker said a greeting, keep theirs.
+- Otherwise pick by tone (a casual address like "mate" stays lower-case: "Hi mate,"): "Hi <name>," for friendly or colleagues, "Hello <name>," for neutral or someone they don't know well, "Dear <title and surname>," for formal (legal, official, complaints, applications).
+
+Sign-off, on its own line at the end, without a name. Use the first that fits:
+- "Kind regards," for formal or official emails (legal, complaints, applications, companies or councils).
+- "Many thanks," when the speaker is grateful for something already done.
+- "Thanks," when the email asks the recipient to do something, even if it's friendly.
+- "Cheers," for other casual or friendly emails.
+
+Examples:
 Input: Hi John, just checking in on the contract. Did you get a chance to look at it yet? We'd like to sign by Friday if possible.
 Output: Hi John,
 
 Just checking in on the contract. Did you get a chance to look at it yet? We'd like to sign by Friday if possible.
 
-Thanks,"""},
+Thanks,
+
+Input: Email to Mr Patel. I'm writing to formally dispute the late payment charge on my account from March, as the payment was made on time. Please find the bank confirmation attached.
+Output: Dear Mr Patel,
+
+I'm writing to formally dispute the late payment charge on my account from March, as the payment was made on time. Please find the bank confirmation attached.
+
+Kind regards,
+
+Input: Sarah, thanks so much for covering my shift last week, I really appreciate it.
+Output: Hi Sarah,
+
+Thanks so much for covering my shift last week, I really appreciate it.
+
+Many thanks,"""},
     {"name": "AI agent", "key": "a", "apps": "claude, chatgpt, codex, cursor, copilot, gemini", "prompt": """An instruction or question for an AI assistant or coding agent (e.g. Claude Code, ChatGPT, Cursor): clear and unambiguous.
 - Keep everything the speaker said: the context and reasoning as well as every request, requirement, constraint and question, in their words. Never add requirements or drop any.
 - Keep names exact: files, functions, commands, products and error messages. Put code, file names and commands in `backticks`.
