@@ -49,11 +49,13 @@ Spoken: I like the new design it looks like a proper app now
 Output: I like the new design, it looks like a proper app now.
 """
 DEFAULT_STYLES = [
-    {"name": "Slack", "key": "s", "apps": "slack", "prompt": """A Slack message to a colleague: friendly and clear.
-- Keep everything the speaker said, in their words; only change the layout and punctuation.
-  Never summarise, shorten or drop sentences.
-- Short sentences, one idea per line or short paragraph.
-- If several items or steps are listed, format them as a bullet list.
+    {"name": "Slack", "key": "s", "apps": "slack", "prompt": """A Slack message to a colleague: natural, friendly and easy to read.
+- Write it the way people actually type in Slack: conversational, with contractions (it's, I'm, don't).
+- Keep the speaker's points, voice and wording. Never add, summarise or drop points.
+- Light tightening is fine: merge sentences that repeat themselves, and join a trailing fragment onto the sentence it belongs to.
+- Keep each sentence's kind: statements stay statements, questions stay questions, instructions stay instructions.
+- Use one short paragraph, or a few if the topic changes. Never put each sentence on its own line.
+- Use a bullet list only when the speaker lists several separate items, steps or questions.
 - No greeting or sign-off unless the speaker said one. No emoji.
 
 Examples:
@@ -64,7 +66,13 @@ Output: Can you:
 - ping QA once it's merged
 
 Input: I just tried the new build and it crashed on startup. Do you know what changed since yesterday?
-Output: I just tried the new build and it crashed on startup. Do you know what changed since yesterday?"""},
+Output: I just tried the new build and it crashed on startup. Do you know what changed since yesterday?
+
+Input: I had a look at the dashboard. It is a lot faster now. I think it is good to go. I am going to tell the client this afternoon if you are happy with that.
+Output: I had a look at the dashboard and it's a lot faster now. I think it's good to go, so I'll tell the client this afternoon if you're happy with that.
+
+Input: I've pushed the new dictation app up. You might find it useful if your machine is powerful enough. If you're into talking to your computer?
+Output: I've pushed the new dictation app up. You might find it useful if your machine is powerful enough and you're into talking to your computer."""},
     {"name": "WhatsApp", "key": "w", "apps": "whatsapp", "prompt": """A casual WhatsApp message to a friend or family member.
 - Relaxed and conversational, with contractions. Light punctuation is fine.
 - Keep it short. No bullet points, greetings or sign-offs unless spoken.
