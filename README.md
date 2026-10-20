@@ -10,6 +10,14 @@ Hold **Ctrl+Win** to record, release to transcribe and paste into the focused te
 
 The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it. Right-click it for Refine text, History, Refinement styles… and Quit.
 
+![Floating icon: idle, recording, transcribing](docs/icon-states.png)
+
+| Style picker (tap Alt while dictating) | History |
+|---|---|
+| ![Style picker](docs/picker.png) | ![History](docs/history.png) |
+
+![Refinement styles](docs/styles.png)
+
 ## Setup (self-contained)
 `./setup.sh` installs everything inside this folder and nothing anywhere else:
 - `.venv/`: Python packages (sherpa-onnx, numpy). It reuses the system's GTK/evdev bindings read-only.
