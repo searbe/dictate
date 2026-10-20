@@ -1,5 +1,12 @@
 # Dictate
 
+**Talk instead of type: hold a hotkey, speak, and your words appear as clean, punctuated text in whatever app you're using.**
+
+- **Faster than typing.** Most people speak about three times faster than they type.
+- **Reads like you wrote it.** Ums, stutters and "Tuesday, no, Wednesday" are cleaned up, and it can format for Slack, email or WhatsApp.
+- **Private and free.** Everything runs on your own computer, with no account, subscription or audio sent anywhere.
+
+## Using it
 Hold **Ctrl+Win** (Ctrl+Cmd on a Mac) to record, release to transcribe and paste into the focused text box.
 - **Tap Alt** while holding: when you let go, a window shows the cleaned-up text and asks which refinement style to apply (press its letter, Enter to paste as is, or Esc to only copy it).
 - **Alt+letter** while holding (e.g. Alt+S): applies that style directly, with no window.
