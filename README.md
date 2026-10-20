@@ -16,6 +16,8 @@ Hold **Ctrl+Win** (Ctrl+Cmd on a Mac) to record, release to transcribe and paste
 - On Linux, terminals get Ctrl+Shift+V instead of Ctrl+V.
 - **Synergy and similar**: while your keyboard is controlling another computer, Dictate records here and *types* the text, so it arrives there as keystrokes (no microphone needed over there). Per-app styles can't apply there, so it has its own **Default style there** (under **When another computer has the keyboard** in the menu, which can also make it ignore the hotkey instead).
 
+**History** lists every dictation with what was applied to it (raw transcript, cleanup, and any style). You can play back the recording, copy the text or the original transcript, delete an entry, or clear it all.
+
 The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it. Right-click it (or click the system tray icon) for Refine text, Default style, History, Refinement styles…, Run at startup and Quit.
 
 ![Floating icon: idle, recording, transcribing](docs/icon-states.png)
@@ -44,7 +46,7 @@ Each setup script installs into this folder and nothing anywhere else, and is sa
 - `models/`: Parakeet TDT 0.6B v3 int8 (~640 MB), the Silero VAD speech filter, and Qwen3.5 4B (~2.7 GB, CPU) and 9B (~5.7 GB, GPU) for refinement.
 - `bin/llama/`: a llama.cpp release (Vulkan on Linux/Windows, Metal on macOS), used for refinement.
 - `.venv/`: Python packages.
-- `data/`: history, settings, and refinement styles (`data/styles.json`, managed via right-click > Refinement styles…).
+- `data/`: history, settings, refinement styles (`data/styles.json`, managed via right-click > Refinement styles…), and each dictation's recording (`data/audio/`, about 2 MB a minute, kept for 24 hours by default: change it with **Keep recordings** at the top of the History window, from not at all to forever).
 
 Delete the folder to remove the app completely.
 

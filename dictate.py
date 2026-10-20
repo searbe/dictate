@@ -19,7 +19,7 @@ elif sys.platform == "win32":  # GTK runtime unpacked into ./gtk by setup-window
     os.environ["GI_TYPELIB_PATH"] = os.path.join(GTK, "lib", "girepository-1.0")
     os.environ["XDG_DATA_DIRS"] = os.path.join(GTK, "share")
 
-import json, math, signal, socket, tempfile, threading, time
+import json, math, signal, socket, threading, time
 from datetime import datetime
 from pathlib import Path
 import cairo, gi
@@ -29,6 +29,9 @@ import activewin, osio, refine, remote, stt, tray, windows
 
 DATA = Path(__file__).parent / "data"  # everything stays inside this folder
 HISTORY = DATA / "history.jsonl"
+AUDIO = DATA / "audio"  # each dictation's recording, kept for playback for "keep_audio_hours"
+KEEP_AUDIO = ((0, "Don't keep"), (1, "1 hour"), (2, "2 hours"), (3, "3 hours"), (12, "12 hours"), (24, "24 hours"),
+              (None, "Forever (∞)"))  # hours; None = never delete
 STATE = DATA / "state.json"
 SIZE, R = 52, 17  # window size, icon radius (margin leaves room for the pulse ring)
 REMOTE_MODES = (("type", "Type the text there"), ("ignore", "Ignore the hotkey"))
@@ -54,6 +57,8 @@ def load_json(path, default):
 
 
 class App:
+    KEEP_AUDIO = KEEP_AUDIO
+
     def __init__(self):
         DATA.mkdir(parents=True, exist_ok=True)
         windows.install_css()
@@ -63,7 +68,8 @@ class App:
         w.set_visual(w.get_screen().get_rgba_visual())  # per-pixel transparency → round icon
         w.set_keep_above(True)
         w.set_default_size(SIZE, SIZE)
-        self.cfg = {"pos": [100, 100], "refine": True, "remote_mode": "type", **load_json(STATE, {})}
+        self.cfg = {"pos": [100, 100], "refine": True, "remote_mode": "type", "keep_audio_hours": 24,
+                    **load_json(STATE, {})}
         self.cfg.pop("remote_guard", None)  # setting from an older version
         w.move(*self.cfg["pos"])
         w.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
@@ -126,6 +132,9 @@ class App:
         self.loader = threading.Thread(target=stt.load, daemon=True)  # warm up so first dictation is fast
         self.loader.start()
         self.paster = osio.Paster()  # created after Hotkey so we don't listen to ourselves
+        self.player = osio.Player()  # plays recordings back in the History window
+        self.prune_audio()
+        GLib.timeout_add_seconds(600, self.prune_audio)  # and every 10 minutes
         w.show_all()
 
     # --- icon ---
@@ -267,7 +276,8 @@ class App:
             # where the text will go: the other computer (typed through Synergy), or the focused app here,
             # captured now, before any of our windows take focus
             self.app = OTHER_COMPUTER if away else activewin.snapshot()
-            self.wav = tempfile.mktemp(suffix=".wav", prefix="dictate-")
+            AUDIO.mkdir(parents=True, exist_ok=True)
+            self.wav = str(AUDIO / f"{datetime.now():%Y%m%d-%H%M%S-%f}.wav")
             self.rec = osio.Recorder()
             self.rec.start(self.wav)
             self.set_state("rec")
@@ -293,7 +303,7 @@ class App:
             if alt and raw:
                 style = letter and refine.style_for_key(letter)
                 if not style:
-                    return GLib.idle_add(self.pick_style, text, raw, app)
+                    return GLib.idle_add(self.pick_style, text, raw, app, wav)
             elif refining and raw and app.get("remote"):  # we can't see its apps: its own default style
                 style = refine.default_style(remote=True)
             elif refining and raw:
@@ -303,21 +313,27 @@ class App:
         except Exception as err:  # never leave the icon stuck on "busy"
             print("transcription failed:", err)
         finally:
-            Path(wav).unlink(missing_ok=True)
             if refining:
                 refine.release()
-        GLib.idle_add(self.paste, text, raw, app, style and style["name"])
+        GLib.idle_add(lambda: self.paste(text, raw, app, style and style["name"], audio=wav, cleanup=refining))
 
-    def paste(self, text, raw, app, style=None, paste=True, delay=150):
+    def paste(self, text, raw, app, style=None, paste=True, delay=150, audio=None, cleanup=False):
+        """Save to history (with the recording and what was applied), then paste or type the text."""
         self.set_state("idle")
-        if not text:
+        if not text:  # nothing heard: no history entry, so don't keep the recording either
+            if audio:
+                Path(audio).unlink(missing_ok=True)
             return
         entry = {"t": datetime.now().isoformat(timespec="seconds"), "text": text,
-                 "app": "other computer" if app.get("remote") else app["cls"]}
+                 "app": "other computer" if app.get("remote") else app["cls"], "cleanup": cleanup}
         if raw != text:
             entry["raw"] = raw
         if style:
             entry["style"] = style
+        if audio and self.cfg["keep_audio_hours"] == 0:  # recordings aren't being kept
+            Path(audio).unlink(missing_ok=True)
+        elif audio:
+            entry["audio"] = Path(audio).name
         with HISTORY.open("a") as f:
             f.write(json.dumps(entry) + "\n")
         self.copy(text)
@@ -328,22 +344,37 @@ class App:
             terminal = osio.LINUX and any(t in app["cls"].lower() for t in TERMINALS)
             GLib.timeout_add(delay, self.paster.paste, terminal)
 
+    def prune_audio(self):
+        """Delete recordings older than the "keep recordings" setting (history entries stay)."""
+        hours = self.cfg["keep_audio_hours"]
+        if hours is not None:
+            cutoff = time.time() - hours * 3600
+            for wav in AUDIO.glob("*.wav"):
+                if wav.stat().st_mtime < cutoff and wav != Path(self.wav or ""):  # never the one being recorded
+                    wav.unlink(missing_ok=True)
+        return True  # keep the 10-minute timer going
+
+    def set_keep_audio(self, hours):
+        self.save_state(keep_audio_hours=hours)
+        self.prune_audio()
+
     def copy(self, text):
         self.clip.set_text(text, -1)
         self.clip.store()
 
     # --- windows ---
     def show_history(self):
-        windows.history(self, HISTORY)
+        windows.history(self, HISTORY, AUDIO)
 
-    def pick_style(self, text, raw, app):
+    def pick_style(self, text, raw, app, audio):
         def chosen(style, paste):
             if not style:
-                return self.paste(text, raw, app, paste=paste, delay=400)
+                return self.paste(text, raw, app, paste=paste, delay=400, audio=audio, cleanup=True)
             self.set_state("busy")
-            threading.Thread(target=lambda: GLib.idle_add(
-                self.paste, refine.apply(text, style, activewin.describe(app)), raw, app, style["name"], True, 400),
-                daemon=True).start()
+            def restyle():
+                styled = refine.apply(text, style, activewin.describe(app))
+                GLib.idle_add(lambda: self.paste(styled, raw, app, style["name"], True, 400, audio=audio, cleanup=True))
+            threading.Thread(target=restyle, daemon=True).start()
         windows.StylePicker(text, chosen)
 
     def run(self):

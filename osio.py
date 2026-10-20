@@ -206,6 +206,33 @@ else:
                 self.kbd.type(line)
 
 
+class Player:
+    """Plays one WAV recording at a time (pw-play on Linux, sounddevice elsewhere).
+    on_done() runs on the GTK thread when playback ends, whether it finished or was stopped."""
+
+    def __init__(self):
+        self.proc = None
+
+    def play(self, path, on_done):
+        self.stop()
+        if LINUX:
+            proc = self.proc = subprocess.Popen(["pw-play", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            wait = proc.wait
+        else:
+            import numpy as np
+            with wave.open(path) as w:
+                samples, rate = np.frombuffer(w.readframes(w.getnframes()), np.int16), w.getframerate()
+            sounddevice.play(samples, rate)
+            wait = sounddevice.wait
+        threading.Thread(target=lambda: (wait(), GLib.idle_add(on_done)), daemon=True).start()
+
+    def stop(self):
+        if LINUX and self.proc and self.proc.poll() is None:
+            self.proc.terminate()
+        elif not LINUX:
+            sounddevice.stop()
+
+
 # --- run at startup: KDE/XDG autostart entry, the Windows Run registry key, or a macOS LaunchAgent ---
 if LINUX:
     AUTOSTART = Path.home() / ".config/autostart/dictate.desktop"

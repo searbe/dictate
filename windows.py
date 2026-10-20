@@ -38,6 +38,7 @@ menu separator { background: rgba(255,255,255,.07); margin: 4px 6px; min-height:
 .choice { background: #1f2125; border: 1px solid rgba(255,255,255,.05); border-radius: 8px; padding: 9px 12px; color: #e6e7ea; box-shadow: none; }
 .choice:hover { background: #2a2c33; border-color: rgba(124,140,255,.4); }
 .heading { color: #e6e7ea; font-size: 11pt; font-weight: 600; }
+.chip { background: rgba(124,140,255,.12); color: #aab4ff; border-radius: 5px; padding: 1px 7px; font-size: 8.5pt; }
 """
 
 
@@ -77,43 +78,130 @@ def key_badge(key):
 
 
 # --- history ---
-def history(app, path):
-    items = [json.loads(l) for l in path.read_text().splitlines()] if path.exists() else []
-    win, bar = window("History", 560, 480)
+def history(app, path, audio_dir):
+    """Newest first. Each entry: what was applied, Play/Stop (if its recording exists), Copy, Original, Delete."""
+    lines = path.read_text().splitlines() if path.exists() else []
+    win, bar = window("History", 740, 560)
     search = Gtk.SearchEntry(placeholder_text="Search")
     bar.pack_end(search)
-
     lb = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
-    for it in reversed(items):
-        lb.add(history_card(app, it))
-    if not items:
-        lb.add(css(Gtk.Label(label="Nothing yet — hold Ctrl+Win to dictate", margin=40), "empty"))
+    empty = css(Gtk.Label(label="Nothing yet — hold Ctrl+Win to dictate", margin=40), "empty")
+
+    def show_empty():
+        if not lb.get_children():
+            lb.add(empty)
+            empty.show()
+
+    def delete(row):
+        """Remove one entry from the history file, and its recording."""
+        app.player.stop()
+        keep = path.read_text().splitlines()
+        if row.line in keep:
+            keep.remove(row.line)
+            path.write_text("".join(l + "\n" for l in keep))
+        if row.audio:
+            row.audio.unlink(missing_ok=True)
+        lb.remove(row)
+        show_empty()
+
+    def clear():
+        n = len([r for r in lb.get_children() if hasattr(r, "line")])
+        if not n or not confirm(win, f"Delete all {n} history entries and their recordings?", "This can't be undone."):
+            return
+        app.player.stop()
+        path.write_text("")
+        for wav in audio_dir.glob("*.wav"):
+            wav.unlink(missing_ok=True)
+        for row in lb.get_children():
+            lb.remove(row)
+        show_empty()
+
+    bar.pack_start(button("Clear history", clear, "danger"))
+    bar.pack_start(keep_recordings(app, lambda: [r.refresh_audio() for r in lb.get_children() if hasattr(r, "line")]))
+    for line in reversed(lines):
+        try:
+            lb.add(history_card(app, json.loads(line), line, audio_dir, delete))
+        except ValueError:
+            continue
+    show_empty()
     lb.set_filter_func(lambda row: search.get_text().lower() in getattr(row, "text", "").lower())
     search.connect("search-changed", lambda *_: lb.invalidate_filter())
+    win.connect("destroy", lambda *_: app.player.stop())
 
-    scroll = Gtk.ScrolledWindow(margin_top=6, margin_bottom=6)
+    scroll = Gtk.ScrolledWindow(margin_top=6, margin_bottom=6, hscrollbar_policy=Gtk.PolicyType.NEVER)  # never cut off buttons
     scroll.add(lb)
     win.add(scroll)
     win.show_all()
 
 
-def history_card(app, it):
+def keep_recordings(app, refresh):
+    """'Keep recordings: [24 hours ▾]' for the header: how long each dictation's audio is kept for playback."""
+    box = Gtk.Box(spacing=6, margin_start=8)
+    box.pack_start(css(Gtk.Label(label="Keep recordings:"), "hint"), False, False, 0)
+    combo = Gtk.ComboBoxText()
+    for hours, label in app.KEEP_AUDIO:
+        combo.append_text(label)
+    combo.set_active([h for h, _ in app.KEEP_AUDIO].index(app.cfg["keep_audio_hours"]))
+
+    def changed(c):
+        app.set_keep_audio(app.KEEP_AUDIO[c.get_active()][0])
+        refresh()  # recordings may just have been deleted: hide their Play buttons
+    combo.connect("changed", changed)
+    box.pack_start(combo, False, False, 0)
+    return box
+
+
+def applied(it):
+    """What was done to an entry's text, e.g. ["Cleanup", "Slack"]; older entries didn't record cleanup."""
+    cleanup = it.get("cleanup", "raw" in it or "style" in it or None)
+    return (["Cleanup"] if cleanup else ["Raw transcript"] if cleanup is False else []) + ([it["style"]] if "style" in it else [])
+
+
+def history_card(app, it, line, audio_dir, delete):
     when = datetime.fromisoformat(it["t"]).strftime("%a %d %b · %H:%M")
     head = Gtk.Box(spacing=8)
-    head.pack_start(css(Gtk.Label(label=" · ".join(filter(None, (when, it.get("app"), it.get("style")))), xalign=0, hexpand=True), "time"),
-                    True, True, 0)
+    head.pack_start(css(Gtk.Label(label=" · ".join(filter(None, (when, it.get("app")))), xalign=0), "time"), False, False, 0)
+    for i, label in enumerate(applied(it)):
+        head.pack_start(css(Gtk.Label(label=("+ " if i else "") + label), "chip"), False, False, 0)
+    head.pack_start(Gtk.Box(hexpand=True), True, True, 0)
+
+    row = Gtk.ListBoxRow(activatable=False)
+    row.text, row.line = it["text"], line
+    row.audio = audio_dir / it["audio"] if it.get("audio") else None
+    play = css(Gtk.Button(label="▶ Play", no_show_all=True), "btn")
+
+    def toggle(b):
+        if b.get_label() == "■ Stop":
+            return app.player.stop()
+        if not row.refresh_audio():  # deleted since the window opened (e.g. it got too old)
+            return
+        b.set_label("■ Stop")
+        app.player.play(str(row.audio), lambda: b.set_label("▶ Play"))
+    play.connect("clicked", toggle)
+    head.pack_start(play, False, False, 0)
+    row.refresh_audio = lambda: (play.set_visible(bool(row.audio and row.audio.exists())), play.get_visible())[1]
+    row.refresh_audio()
     for label, text in (("Copy", it["text"]), ("Original", it.get("raw"))):
         if text:
             btn = css(Gtk.Button(label=label, tooltip_text=text if label == "Original" else None), "btn")
             btn.connect("clicked", lambda b, t=text, l=label: (app.copy(t), flash(b, "Copied ✓", l)))
-            head.pack_end(btn, False, False, 0)
+            head.pack_start(btn, False, False, 0)
+    head.pack_start(button("Delete", lambda: delete(row), "danger"), False, False, 0)
+
     card = css(Gtk.Box(orientation=Gtk.Orientation.VERTICAL), "card")
     card.add(head)
     card.add(css(Gtk.Label(label=it["text"], xalign=0, wrap=True, selectable=True, margin_top=6), "text"))
-    row = Gtk.ListBoxRow(activatable=False)
-    row.text = it["text"]
     row.add(card)
     return row
+
+
+def confirm(parent, question, detail):
+    dialog = Gtk.MessageDialog(transient_for=parent, modal=True, message_type=Gtk.MessageType.WARNING,
+                               buttons=Gtk.ButtonsType.NONE, text=question, secondary_text=detail)
+    dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Delete all", Gtk.ResponseType.OK)
+    answer = dialog.run()
+    dialog.destroy()
+    return answer == Gtk.ResponseType.OK
 
 
 # --- style manager ---
