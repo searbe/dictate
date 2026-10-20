@@ -8,6 +8,7 @@ from pathlib import Path
 import osio
 
 current = {"cls": "", "title": ""}
+on_switch = []  # callbacks run when another app gets focus (KDE only)
 
 
 def describe(app):
@@ -29,6 +30,8 @@ if sys.platform.startswith("linux"):
         cls, title, pid = params.unpack()
         if pid != os.getpid():
             current.update(cls=cls, title=title)
+            for callback in on_switch:
+                callback()
         invocation.return_value(None)
 
     def _on_bus(conn, _name):

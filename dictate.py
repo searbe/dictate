@@ -125,6 +125,9 @@ class App:
         self.tray = tray.Tray(self.menu, self.render_icon, self.build_default_menu)  # same menu in the system tray
         self.clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         self.app = activewin.snapshot()
+        # the menu is an XWayland popup: a click on a Wayland app never reaches it, so it can't tell it
+        # should close. KWin tells us when another app gets focus instead.
+        activewin.on_switch.append(lambda: self.menu.get_visible() and self.menu.popdown())
         activewin.start()
         remote.start()
         self.hotkey = osio.Hotkey(self.on_hotkey)
