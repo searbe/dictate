@@ -109,3 +109,6 @@ Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can'
 - **Single instance:** Dictate binds localhost port 47613 at startup; a second copy exits.
 - **Remote screens:** KWin's input-capture broadcasts and Synergy's log are combined, as neither caught every switch alone. A capture must last 0.2 s to count, as a disconnected Synergy flickers every few milliseconds.
 - **Logs:** written to stdout; when started from the desktop, see `journalctl --user`. Each dictation logs `recording: N ms after the key was pressed` (from the kernel's key timestamp), which is useful for spotting latency.
+
+## License
+MIT: see [LICENSE](LICENSE). The models and tools the setup scripts download come under their own licenses: Parakeet TDT (CC BY 4.0), Qwen3.5 (Apache 2.0), Silero VAD (MIT), llama.cpp (MIT), sherpa-onnx (Apache 2.0), and, on Windows, the gvsbuild GTK runtime (LGPL).
