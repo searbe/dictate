@@ -26,6 +26,19 @@ The floating dot is dark when idle, red with pulsing rings while recording, and 
 
 ![Refinement styles](docs/styles.png)
 
+## Recommended hardware
+| | Minimum | Recommended |
+|---|---|---|
+| **CPU** | Any 64-bit x86 or Apple Silicon from the last ~6 years | 8 cores or more, if refining text on the CPU |
+| **RAM** | 8 GB | 16 GB or more |
+| **GPU** | None: everything can run on the CPU | 8 GB+ of free video memory (12 GB+ card), any Vulkan GPU on Linux, NVIDIA on Windows, or an Apple Silicon Mac with 16 GB+ |
+| **Disk** | ~10 GB for the models | SSD, so the models load quickly |
+| **Microphone** | Built-in | A headset or close-up mic: the biggest single help in noisy rooms |
+
+Transcription always runs on the CPU and is quick: about 0.1 s for a sentence. Refining text is the heavy part. With a free GPU it uses the larger 9B model; otherwise it uses the 4B model on the CPU, which is slower (about 1–2 s per dictation on a recent 8-core desktop, longer on laptops). Turn off **Refine text** for the fastest, transcription-only dictation.
+
+Tested on an AMD Ryzen 7 9800X3D with 64 GB of RAM and a Radeon RX 9070 XT (16 GB), where a cleaned-up dictation takes about 0.5–1.5 s in total.
+
 ## Setup (self-contained)
 Each setup script installs into this folder and nothing anywhere else, and is safe to re-run:
 - `models/`: Parakeet TDT 0.6B v3 int8 (~640 MB), the Silero VAD speech filter, and Qwen3.5 4B (~2.7 GB, CPU) and 9B (~5.7 GB, GPU) for refinement.
