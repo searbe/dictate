@@ -1,24 +1,32 @@
 # Dictate
 
-**Talk instead of type: hold a hotkey, speak, and your words appear as clean, punctuated text in whatever app you're using.**
+Push-to-talk dictation that runs entirely on your own computer. Hold a hotkey and speak; when you let go, the transcribed and cleaned-up text is pasted into the app you're typing in. Built for Linux (SteamOS / KDE Plasma); Windows and macOS support is included but untested.
 
-- **Faster than typing.** Most people speak about three times faster than they type.
-- **Reads like you wrote it.** Ums, stutters and "Tuesday, no, Wednesday" are cleaned up, and it can format for Slack, email, WhatsApp or AI agents.
-- **Private and free.** Everything runs on your own computer, with no account, subscription or audio sent anywhere.
+## Features
+- **Hotkey dictation:** hold **Ctrl+Win** (Ctrl+Cmd on a Mac), speak, release to paste.
+- **Local speech recognition:** Parakeet TDT 0.6B on the CPU, transcribing as you speak.
+- **Clean-up:** a local language model (Qwen3.5) removes filler words, applies self-corrections and fixes punctuation and mis-heard words. It uses the GPU when one is free, otherwise the CPU.
+- **Refinement styles:** reformat for Slack, WhatsApp, email or AI agents, or your own styles. Pick one per dictation, set a default, or match styles to apps automatically.
+- **Vocabulary:** names and terms you use, spelled the way you spell them.
+- **History:** every dictation with what was applied, playback of the recording, copy, delete and clear. Recordings are kept for a time you choose.
+- **Synergy:** while your keyboard is controlling another computer, the text is typed there.
+- **Floating icon and system tray icon** with the same menu, and an optional **Run at startup**.
+- **Self-contained:** everything installs into this folder. Dictate sends nothing over the network; models are downloaded once, during setup.
 
 ## Using it
-Hold **Ctrl+Win** (Ctrl+Cmd on a Mac) to record, release to transcribe and paste into the focused text box.
+Hold **Ctrl+Win** to record, release to transcribe and paste into the focused text box.
 - **Tap Alt** while holding: when you let go, a window shows the cleaned-up text and asks which refinement style to apply (press its letter, Enter to paste as is, or Esc to only copy it).
 - **Alt+letter** while holding (e.g. Alt+S): applies that style directly, with no window.
-- **Default style** (right-click > Default style): a style applied to every plain Ctrl+Win dictation after cleanup. Choose "None" for cleanup only.
-- **Per-app styles**: a style whose "Use automatically in apps" keywords match the focused app or window title (e.g. "slack") is used instead of the default. The app's name and title are also given to the model as context.
-- **Vocabulary** (Refinement styles… > Vocabulary): names and terms you use, so cleanup spells them right and fixes mis-hearings.
+- **Default style** (menu > Default style): applied to every plain Ctrl+Win dictation after cleanup. "None" means cleanup only.
+- **Per-app styles:** a style whose "Use automatically in apps" keywords match the focused app or window title (e.g. "slack") is used instead of the default. The app's name and title are also given to the model as context.
+- **Vocabulary** (Refinement styles… > Vocabulary): one name or term per line; cleanup prefers these spellings and fixes mis-hearings of them.
+- **Refine text** (menu): off gives the raw transcript, fastest.
+- **Synergy and similar:** while your keyboard is controlling another computer, Dictate records here and *types* the text, so it arrives there as keystrokes (no microphone needed over there). Per-app styles can't apply there, so it has its own **Default style there**, under **When another computer has the keyboard** in the menu, which can also make it ignore the hotkey instead.
 - On Linux, terminals get Ctrl+Shift+V instead of Ctrl+V.
-- **Synergy and similar**: while your keyboard is controlling another computer, Dictate records here and *types* the text, so it arrives there as keystrokes (no microphone needed over there). Per-app styles can't apply there, so it has its own **Default style there** (under **When another computer has the keyboard** in the menu, which can also make it ignore the hotkey instead).
 
-**History** lists every dictation with what was applied to it (raw transcript, cleanup, and any style). You can play back the recording, copy the text or the original transcript, delete an entry, or clear it all.
+The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it. Right-click it (or click the system tray icon) for the menu: Refine text, Default style, History, Refinement styles…, When another computer has the keyboard, Run at startup and Quit.
 
-The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it. Right-click it (or click the system tray icon) for Refine text, Default style, History, Refinement styles…, Run at startup and Quit.
+**History** lists every dictation with what was applied (raw transcript, cleanup, and any style). Each entry can play its recording, copy the text or the original transcript, or be deleted; **Clear history** removes everything. **Keep recordings** at the top sets how long audio is kept: not at all, 1–24 hours (default 24), or forever.
 
 ![Floating icon: idle, recording, transcribing](docs/icon-states.png)
 
@@ -27,6 +35,8 @@ The floating dot is dark when idle, red with pulsing rings while recording, and 
 | ![Style picker](docs/picker.png) | ![History](docs/history.png) |
 
 ![Refinement styles](docs/styles.png)
+
+Screenshots are generated from sample data with `python docs/make_screenshots.py` (rendered off-screen).
 
 ## Recommended hardware
 | | Minimum | Recommended |
@@ -37,16 +47,14 @@ The floating dot is dark when idle, red with pulsing rings while recording, and 
 | **Disk** | ~10 GB for the models | SSD, so the models load quickly |
 | **Microphone** | Built-in | A headset or close-up mic: the biggest single help in noisy rooms |
 
-Transcription always runs on the CPU and is quick: about 0.1 s for a sentence. Refining text is the heavy part. With a free GPU it uses the larger 9B model; otherwise it uses the 4B model on the CPU, which is slower (about 1–2 s per dictation on a recent 8-core desktop, longer on laptops). Turn off **Refine text** for the fastest, transcription-only dictation.
-
-Tested on an AMD Ryzen 7 9800X3D with 64 GB of RAM and a Radeon RX 9070 XT (16 GB), where a cleaned-up dictation takes about 0.5–1.5 s in total.
+Transcription runs on the CPU while you speak, so little is usually left when you let go (0.1 s or less, unless you've spoken for a long time without a pause). Refining text is the heavy part: with a free GPU it uses the 9B model, otherwise the 4B model on the CPU, which is slower (about 1–2 s per dictation on a recent 8-core desktop, longer on laptops). Tested on an AMD Ryzen 7 9800X3D with 64 GB of RAM and a Radeon RX 9070 XT (16 GB), where a cleaned-up dictation is ready about 0.5–1.5 s after letting go.
 
 ## Setup (self-contained)
 Each setup script installs into this folder and nothing anywhere else, and is safe to re-run:
 - `models/`: Parakeet TDT 0.6B v3 int8 (~640 MB), the Silero VAD speech filter, and Qwen3.5 4B (~2.7 GB, CPU) and 9B (~5.7 GB, GPU) for refinement.
 - `bin/llama/`: a llama.cpp release (Vulkan on Linux/Windows, Metal on macOS), used for refinement.
 - `.venv/`: Python packages.
-- `data/`: history, settings, refinement styles (`data/styles.json`, managed via right-click > Refinement styles…), and each dictation's recording (`data/audio/`, about 2 MB a minute, kept for 24 hours by default: change it with **Keep recordings** at the top of the History window, from not at all to forever).
+- `data/`: your history, recordings, settings, styles and vocabulary (see Technical notes).
 
 Delete the folder to remove the app completely.
 
@@ -54,6 +62,7 @@ Delete the folder to remove the app completely.
 `./setup.sh`, then `python dictate.py` (it switches to `.venv` automatically). It reuses the system's GTK and evdev bindings read-only.
 If a SteamOS update breaks the app, run `./setup.sh` again; it rebuilds `.venv` for the new system Python.
 To start it at login, tick **Run at startup** in the menu (adds `~/.config/autostart/dictate.desktop`; unticking removes it).
+Other distributions need the same pieces SteamOS ships: read access to `/dev/input/event*` and `/dev/uinput` (SteamOS gets this from Steam's udev rules), PyGObject with GTK 3, python-evdev, the dbusmenu GObject bindings (for the tray), and PipeWire's `pw-record`/`pw-play`. Focused-app detection uses KWin, so per-app styles need KDE.
 
 ### Windows 10/11 (untested)
 1. Install Python 3.14: `winget install -e --id Python.Python.3.14` (GTK's Python bindings are built for 3.14).
@@ -70,13 +79,26 @@ Hold **Ctrl+Win**. The GPU model is used on NVIDIA cards with enough free memory
 Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can't make one), so use the floating icon's menu. **Run at startup** adds a LaunchAgent (`~/Library/LaunchAgents/local.dictate.plist`). macOS will ask for Microphone, Input Monitoring (hotkey) and Accessibility (paste) permissions for the app you launch it from; restart Dictate after granting them. Screen Recording is optional and lets per-app styles see window titles. Macs with 16 GB of RAM or more use the 9B model on the GPU (Metal).
 
 ## Code
-- `dictate.py`: floating icon and the dictation pipeline
-- `osio.py`: everything OS-specific: global hotkey, recording, paste and run-at-startup (evdev/pw-record/uinput on Linux, pynput/sounddevice on Windows and macOS)
-- `stt.py`: transcription. The VAD strips non-speech, then Parakeet runs on the CPU. It transcribes while you speak: each stretch is transcribed as soon as you pause, so little is left when you let go.
+- `dictate.py`: floating icon, menu and the dictation pipeline (record → transcribe → cleanup → style → paste or type).
+- `osio.py`: everything OS-specific: global hotkey, recording, playback, paste, typing and run-at-startup (evdev/pw-record/pw-play/uinput on Linux, pynput/sounddevice on Windows and macOS).
+- `stt.py`: transcription. The VAD strips non-speech, then Parakeet runs on the CPU. `Live` follows the recording while it grows and transcribes each stretch of speech as soon as you pause; `transcribe()` does a whole file (the fallback).
+- `refine.py`: the default cleanup, then any style on top; style storage. Pressing the hotkey (or Alt) starts loading the model: the larger GPU model if the GPU has enough free memory and is under 30% busy, otherwise the smaller CPU model (`MODELS`). It's unloaded after 30 s of no use.
 - `windows.py`: History, the refinement style manager, and the style picker.
 - `remote.py`: tells when the keyboard is on another computer (so the text is typed there), from KWin's input-capture signals and Synergy's log.
 - `tray.py`: the system tray icon with the same menu (a StatusNotifierItem plus dbusmenu on KDE, GTK's status icon on Windows).
 - `activewin.py` + `kwin_active.js`: tracks the focused window. On KDE, KWin loads the script at runtime and unloads it on exit; it's never installed. Windows and macOS ask the OS directly.
 - `fetch.py`: downloads the models and the right llama.cpp build; used by every setup script.
 - `bench.py`: compares every `models/*.gguf` on your recent dictations: `python bench.py`.
-- `refine.py`: the default cleanup (toggle with right-click > Refine text), then any additional style on top. Pressing the hotkey (or Alt) starts loading the model: the larger GPU model if the GPU has enough free memory and is under 30% busy, otherwise the smaller CPU model (`MODELS` in refine.py). It's unloaded after 30 s of no use. History keeps the raw transcript as "Original".
+- `docs/make_screenshots.py`: regenerates the README screenshots from sample data.
+
+## Technical notes
+- **Data** (`data/`, not in git):
+  - `history.jsonl`: one JSON object per dictation: `t`, `text`, `app`, `cleanup` (bool), and, when present, `raw` (the transcript, if refinement changed it), `style`, `audio`.
+  - `audio/*.wav`: the recordings (16 kHz mono, about 2 MB a minute). They're pruned to the **Keep recordings** setting at startup, every 10 minutes and when it changes.
+  - `styles.json`: the cleanup prompt; the styles (`name`, `key`, `apps`, `prompt`, `default`); and `remote_default` (absent means "same as here").
+  - `vocab.txt`: one term per line. `state.json`: icon position and menu settings.
+- **Refinement safety checks** (`refine.suspicious`): a model output is rejected, and the input kept, if it's empty, loses all the question marks, is less than half the length, adds a `[placeholder]`, or (for cleanup) changes too much, or (for styles) keeps less than 60% of the words. The fixed instructions in `refine.GUARD` sit above every style.
+- **Model server:** llama-server on a random localhost port, started from one long-lived thread with a parent-death SIGKILL (Linux), so it can't outlive the app. It's stopped with SIGTERM, then SIGKILL after 3 s.
+- **Single instance:** Dictate binds localhost port 47613 at startup; a second copy exits.
+- **Remote screens:** KWin's input-capture broadcasts and Synergy's log are combined, as neither caught every switch alone. A capture must last 0.2 s to count, as a disconnected Synergy flickers every few milliseconds.
+- **Logs:** written to stdout; when started from the desktop, see `journalctl --user`. Each dictation logs `recording: N ms after the key was pressed` (from the kernel's key timestamp), which is useful for spotting latency.
