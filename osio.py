@@ -3,7 +3,7 @@
 Linux reads keyboards with evdev, records with pw-record and pastes through uinput (works on Wayland).
 Windows and macOS use pynput for keys and sounddevice for the microphone.
 """
-import subprocess, sys, threading, time, wave
+import subprocess, sys, threading, time, unicodedata, wave
 from pathlib import Path
 from gi.repository import GLib
 
@@ -13,6 +13,16 @@ SCRIPT = Path(__file__).with_name("dictate.py")
 # macOS virtual key codes (ANSI layout) for A–Z; Option changes the typed character, so match the key itself
 MAC_LETTERS = dict(zip((0, 11, 8, 2, 14, 3, 5, 4, 34, 38, 40, 37, 46, 45, 31, 35, 12, 15, 1, 17, 32, 9, 13, 7, 16, 6),
                        "abcdefghijklmnopqrstuvwxyz"))
+
+
+PLAIN = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2013": "-", "\u2014": "-",
+                      "\u2026": "...", "\u00a0": " ", "\u2022": "-"})
+
+
+def plain(text):
+    """Text that a plain keyboard can type: typographic quotes/dashes become ASCII, accents are dropped."""
+    text = unicodedata.normalize("NFKD", text.translate(PLAIN))
+    return "".join(c for c in text if not unicodedata.combining(c))
 
 
 class Chord:
@@ -82,11 +92,53 @@ if LINUX:
             self.proc.terminate()
             self.proc.wait()
 
+    def _layout():
+        """The first keyboard layout KDE is set to (e.g. "gb"), else "us"."""
+        try:
+            for line in (Path.home() / ".config/kxkbrc").read_text().splitlines():
+                if line.startswith("LayoutList="):
+                    return line.split("=", 1)[1].split(",")[0].strip() or "us"
+        except OSError:
+            pass
+        return "us"
+
+    def _keymap(layout):
+        """char -> (key code, needs Shift) for typing on this machine's layout (US, with UK differences)."""
+        keys = {}
+        for c in "abcdefghijklmnopqrstuvwxyz":
+            code = getattr(e, f"KEY_{c.upper()}")
+            keys[c], keys[c.upper()] = (code, False), (code, True)
+        for row, shifted in (("1234567890", "!@#$%^&*()"), ("-=[];',./`\\", '_+{}:"<>?~|')):
+            names = {"-": "MINUS", "=": "EQUAL", "[": "LEFTBRACE", "]": "RIGHTBRACE", ";": "SEMICOLON",
+                     "'": "APOSTROPHE", ",": "COMMA", ".": "DOT", "/": "SLASH", "`": "GRAVE", "\\": "BACKSLASH"}
+            for plain_c, shift_c in zip(row, shifted):
+                code = getattr(e, f"KEY_{names.get(plain_c, plain_c)}")
+                keys[plain_c], keys[shift_c] = (code, False), (code, True)
+        if layout == "gb":  # where UK keyboards differ from US ones
+            keys.update({'"': (e.KEY_2, True), "@": (e.KEY_APOSTROPHE, True), "#": (e.KEY_BACKSLASH, False),
+                         "~": (e.KEY_BACKSLASH, True), "\\": (e.KEY_102ND, False), "|": (e.KEY_102ND, True),
+                         "\u00a3": (e.KEY_3, True), "\u00ac": (e.KEY_GRAVE, True)})
+        keys[" "], keys["\t"], keys["\n"] = (e.KEY_SPACE, False), (e.KEY_TAB, False), (e.KEY_ENTER, True)
+        return keys  # Enter is Shift+Enter: a new line without sending a chat message
+
     class Paster:
-        """Types the paste shortcut through a virtual keyboard. Create it after Hotkey, so Hotkey doesn't see it."""
+        """Types the paste shortcut (or whole text) through a virtual keyboard.
+        Create it after Hotkey, so Hotkey doesn't see it."""
 
         def __init__(self):
             self.kbd = evdev.UInput()
+            self.keys = _keymap(_layout())
+
+        def type_text(self, text):
+            """Type text key by key (e.g. into another computer through Synergy). Skips untypeable characters."""
+            for c in plain(text):
+                if c not in self.keys:
+                    continue
+                code, shift = self.keys[c]
+                for k, v in ([(e.KEY_LEFTSHIFT, 1)] if shift else []) + [(code, 1), (code, 0)] + ([(e.KEY_LEFTSHIFT, 0)] if shift else []):
+                    self.kbd.write(e.EV_KEY, k, v)
+                    self.kbd.syn()
+                    time.sleep(0.003)  # let the forwarding (e.g. Synergy over the network) keep up
 
         def paste(self, terminal):
             mods = (e.KEY_LEFTCTRL, e.KEY_LEFTSHIFT) if terminal else (e.KEY_LEFTCTRL,)  # terminals: Ctrl+Shift+V
@@ -144,6 +196,14 @@ else:
         def paste(self, terminal):
             with self.kbd.pressed(K.cmd if MAC else K.ctrl):
                 self.kbd.tap("v")
+
+        def type_text(self, text):
+            """Type text key by key (e.g. into another computer through Synergy). New lines are Shift+Enter."""
+            for i, line in enumerate(plain(text).split("\n")):
+                if i:
+                    with self.kbd.pressed(K.shift):
+                        self.kbd.tap(K.enter)
+                self.kbd.type(line)
 
 
 # --- run at startup: KDE/XDG autostart entry, the Windows Run registry key, or a macOS LaunchAgent ---

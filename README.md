@@ -14,7 +14,7 @@ Hold **Ctrl+Win** (Ctrl+Cmd on a Mac) to record, release to transcribe and paste
 - **Per-app styles**: a style whose "Use automatically in apps" keywords match the focused app or window title (e.g. "slack") is used instead of the default. The app's name and title are also given to the model as context.
 - **Vocabulary** (Refinement styles… > Vocabulary): names and terms you use, so cleanup spells them right and fixes mis-hearings.
 - On Linux, terminals get Ctrl+Shift+V instead of Ctrl+V.
-- **Synergy and similar**: while your keyboard is controlling another computer, the hotkey is ignored here (toggle in the menu).
+- **Synergy and similar**: while your keyboard is controlling another computer, Dictate records here and *types* the text, so it arrives there as keystrokes (no microphone needed over there). To have the hotkey ignored instead, choose that under **When another computer has the keyboard** in the menu.
 
 The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it. Right-click it (or click the system tray icon) for Refine text, Default style, History, Refinement styles…, Run at startup and Quit.
 
@@ -59,7 +59,7 @@ Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can'
 - `osio.py`: everything OS-specific: global hotkey, recording, paste and run-at-startup (evdev/pw-record/uinput on Linux, pynput/sounddevice on Windows and macOS)
 - `stt.py`: transcription. The VAD strips non-speech, then Parakeet runs on the CPU.
 - `windows.py`: History, the refinement style manager, and the style picker.
-- `remote.py`: tells when the keyboard is on another computer, from KWin's input-capture signals and Synergy's log.
+- `remote.py`: tells when the keyboard is on another computer (so the text is typed there), from KWin's input-capture signals and Synergy's log.
 - `tray.py`: the system tray icon with the same menu (a StatusNotifierItem plus dbusmenu on KDE, GTK's status icon on Windows).
 - `activewin.py` + `kwin_active.js`: tracks the focused window. On KDE, KWin loads the script at runtime and unloads it on exit; it's never installed. Windows and macOS ask the OS directly.
 - `fetch.py`: downloads the models and the right llama.cpp build; used by every setup script.

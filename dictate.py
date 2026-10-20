@@ -31,6 +31,8 @@ DATA = Path(__file__).parent / "data"  # everything stays inside this folder
 HISTORY = DATA / "history.jsonl"
 STATE = DATA / "state.json"
 SIZE, R = 52, 17  # window size, icon radius (margin leaves room for the pulse ring)
+REMOTE_MODES = (("type", "Type the text there"), ("ignore", "Ignore the hotkey"))
+OTHER_COMPUTER = {"cls": "", "title": "", "remote": True}  # where text goes when Synergy has the keyboard
 TERMINALS = ("konsole", "terminal", "kitty", "alacritty", "wezterm", "foot", "ghostty", "yakuake")  # Linux paste
 ACCENT = (0.49, 0.55, 1.0)
 BODY = {  # (top, bottom) gradient colours per state
@@ -60,7 +62,8 @@ class App:
         w.set_visual(w.get_screen().get_rgba_visual())  # per-pixel transparency → round icon
         w.set_keep_above(True)
         w.set_default_size(SIZE, SIZE)
-        self.cfg = {"pos": [100, 100], "refine": True, "remote_guard": True, **load_json(STATE, {})}
+        self.cfg = {"pos": [100, 100], "refine": True, "remote_mode": "type", **load_json(STATE, {})}
+        self.cfg.pop("remote_guard", None)  # setting from an older version
         w.move(*self.cfg["pos"])
         w.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
         w.connect("draw", self.draw)
@@ -86,10 +89,16 @@ class App:
             if cb:
                 item.connect("activate", lambda _, cb=cb: cb())
             self.menu.append(item)
-        guard = Gtk.CheckMenuItem(label="Ignore hotkey while another computer has the keyboard",
-                                  active=self.cfg["remote_guard"])
-        guard.connect("toggled", lambda t: self.save_state(remote_guard=t.get_active()))
-        self.menu.append(guard)
+        away = Gtk.MenuItem(label="When another computer has the keyboard")  # e.g. through Synergy
+        away_menu, group = Gtk.Menu(), None
+        for mode, label in REMOTE_MODES:
+            item = Gtk.RadioMenuItem(label=label, group=group, active=mode == self.cfg["remote_mode"])
+            group = group or item
+            away_menu.append(item)
+        for item, (mode, _) in zip(away_menu.get_children(), REMOTE_MODES):  # connected after ticking,
+            item.connect("toggled", lambda i, m=mode: i.get_active() and self.save_state(remote_mode=m))  # so setup isn't saved
+        away.set_submenu(away_menu)
+        self.menu.append(away)
         startup = Gtk.CheckMenuItem(label="Run at startup", active=osio.autostart_enabled())
         startup.connect("toggled", lambda t: osio.set_autostart(t.get_active()))
         self.menu.append(startup)
@@ -108,7 +117,8 @@ class App:
         remote.start()
         self.hotkey = osio.Hotkey(self.on_hotkey)
         self.hotkey.start()
-        threading.Thread(target=stt.load, daemon=True).start()  # warm up so first dictation is fast
+        self.loader = threading.Thread(target=stt.load, daemon=True)  # warm up so first dictation is fast
+        self.loader.start()
         self.paster = osio.Paster()  # created after Hotkey so we don't listen to ourselves
         w.show_all()
 
@@ -232,11 +242,14 @@ class App:
 
     # --- recording pipeline ---
     def on_hotkey(self, down, alt, letter):
-        if down and not self.rec and self.cfg["remote_guard"] and remote.on_remote_screen():
-            return  # the keyboard is driving another computer through Synergy
         if down and not self.rec:
+            away = remote.on_remote_screen()
+            if away and self.cfg["remote_mode"] == "ignore":
+                return  # e.g. the other computer runs its own Dictate
             pressed = self.hotkey.chord.pressed_at
-            self.app = activewin.snapshot()  # where the text will go (before any of our windows take focus)
+            # where the text will go: the other computer (typed through Synergy), or the focused app here,
+            # captured now, before any of our windows take focus
+            self.app = OTHER_COMPUTER if away else activewin.snapshot()
             self.wav = tempfile.mktemp(suffix=".wav", prefix="dictate-")
             self.rec = osio.Recorder()
             self.rec.start(self.wav)
@@ -280,7 +293,8 @@ class App:
         self.set_state("idle")
         if not text:
             return
-        entry = {"t": datetime.now().isoformat(timespec="seconds"), "text": text, "app": app["cls"]}
+        entry = {"t": datetime.now().isoformat(timespec="seconds"), "text": text,
+                 "app": "other computer" if app.get("remote") else app["cls"]}
         if raw != text:
             entry["raw"] = raw
         if style:
@@ -288,7 +302,10 @@ class App:
         with HISTORY.open("a") as f:
             f.write(json.dumps(entry) + "\n")
         self.copy(text)
-        if paste:  # wait for the clipboard to reach Wayland (and, after the picker, for focus to return)
+        if paste and app.get("remote") and remote.on_remote_screen():
+            # the other computer has no access to our clipboard paste, so type it; Synergy forwards the keys
+            threading.Thread(target=self.paster.type_text, args=(text,), daemon=True).start()
+        elif paste:  # wait for the clipboard to reach Wayland (and, after the picker, for focus to return)
             terminal = osio.LINUX and any(t in app["cls"].lower() for t in TERMINALS)
             GLib.timeout_add(delay, self.paster.paste, terminal)
 
@@ -312,6 +329,7 @@ class App:
 
     def run(self):
         Gtk.main()
+        self.loader.join()  # exiting while the speech model is still loading crashes inside onnxruntime
 
 
 def only_instance():
