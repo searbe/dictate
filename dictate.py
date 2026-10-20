@@ -19,7 +19,7 @@ elif sys.platform == "win32":  # GTK runtime unpacked into ./gtk by setup-window
     os.environ["GI_TYPELIB_PATH"] = os.path.join(GTK, "lib", "girepository-1.0")
     os.environ["XDG_DATA_DIRS"] = os.path.join(GTK, "share")
 
-import json, math, signal, tempfile, threading, time
+import json, math, signal, socket, tempfile, threading, time
 from datetime import datetime
 from pathlib import Path
 import cairo, gi
@@ -194,17 +194,25 @@ class App:
         return True
 
     def build_default_menu(self):
-        """Radio list: which style a plain Ctrl+Win applies after cleanup (rebuilt each time, as styles change)."""
-        for item in self.default_menu.get_children():
-            self.default_menu.remove(item)
-        current, group = refine.default_style(), None
-        for name in [None] + [s["name"] for s in refine.load_styles()["styles"]]:
-            item = Gtk.RadioMenuItem(label=name or "None (cleanup only)", group=group,
-                                     active=name == (current and current["name"]))
-            group = group or item
-            item.connect("toggled", lambda i, n=name: i.get_active() and refine.set_default(n))
-            self.default_menu.append(item)
-        self.default_menu.show_all()
+        """Radio list: which style a plain Ctrl+Win applies after cleanup. Called whenever the menu opens:
+        rebuilt only if the styles changed, otherwise just re-ticked, so the tray's item ids stay valid.
+        While building, GTK ticks items itself (e.g. when the ticked one is removed); those aren't choices."""
+        names = [None] + [s["name"] for s in refine.load_styles()["styles"]]
+        current = refine.default_style()
+        current = current and current["name"]
+        self.ticking = True
+        if names != getattr(self, "default_names", None):
+            for item in self.default_menu.get_children():
+                self.default_menu.remove(item)
+            self.default_names, self.default_items, group = names, {}, None
+            for name in names:
+                item = self.default_items[name] = Gtk.RadioMenuItem(label=name or "None (cleanup only)", group=group)
+                group = group or item
+                item.connect("toggled", lambda i, n=name: i.get_active() and not self.ticking and refine.set_default(n))
+                self.default_menu.append(item)
+            self.default_menu.show_all()
+        self.default_items[current].set_active(True)
+        self.ticking = False
 
     def on_moved(self, *_):
         if self.save_id:
@@ -298,5 +306,17 @@ class App:
         Gtk.main()
 
 
+def only_instance():
+    """Claim a fixed local port: only one process can hold it, and the OS frees it even after a crash.
+    Two copies would both hear the hotkey and paste everything twice."""
+    lock = socket.socket()
+    try:
+        lock.bind(("127.0.0.1", 47613))
+    except OSError:
+        sys.exit("Dictate is already running.")
+    return lock
+
+
 if __name__ == "__main__":
+    _lock = only_instance()
     App().run()
