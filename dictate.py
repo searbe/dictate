@@ -25,7 +25,7 @@ from pathlib import Path
 import cairo, gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
-import activewin, osio, refine, stt, tray, windows
+import activewin, osio, refine, remote, stt, tray, windows
 
 DATA = Path(__file__).parent / "data"  # everything stays inside this folder
 HISTORY = DATA / "history.jsonl"
@@ -55,7 +55,7 @@ class App:
         w.set_visual(w.get_screen().get_rgba_visual())  # per-pixel transparency → round icon
         w.set_keep_above(True)
         w.set_default_size(SIZE, SIZE)
-        self.cfg = {"pos": [100, 100], "refine": True, **load_json(STATE, {})}
+        self.cfg = {"pos": [100, 100], "refine": True, "remote_guard": True, **load_json(STATE, {})}
         w.move(*self.cfg["pos"])
         w.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
         w.connect("draw", self.draw)
@@ -81,6 +81,10 @@ class App:
             if cb:
                 item.connect("activate", lambda _, cb=cb: cb())
             self.menu.append(item)
+        guard = Gtk.CheckMenuItem(label="Ignore hotkey while another computer has the keyboard",
+                                  active=self.cfg["remote_guard"])
+        guard.connect("toggled", lambda t: self.save_state(remote_guard=t.get_active()))
+        self.menu.append(guard)
         startup = Gtk.CheckMenuItem(label="Run at startup", active=osio.autostart_enabled())
         startup.connect("toggled", lambda t: osio.set_autostart(t.get_active()))
         self.menu.append(startup)
@@ -96,6 +100,7 @@ class App:
         self.clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         self.app = activewin.snapshot()
         activewin.start()
+        remote.start()
         osio.Hotkey(self.on_hotkey).start()
         threading.Thread(target=stt.load, daemon=True).start()  # warm up so first dictation is fast
         self.paster = osio.Paster()  # created after Hotkey so we don't listen to ourselves
@@ -213,6 +218,8 @@ class App:
 
     # --- recording pipeline ---
     def on_hotkey(self, down, alt, letter):
+        if down and not self.rec and self.cfg["remote_guard"] and remote.on_remote_screen():
+            return  # the keyboard is driving another computer through Synergy
         if down and not self.rec:
             self.app = activewin.snapshot()  # where the text will go (before any of our windows take focus)
             self.wav = tempfile.mktemp(suffix=".wav", prefix="dictate-")
