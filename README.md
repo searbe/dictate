@@ -72,7 +72,7 @@ Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can'
 ## Code
 - `dictate.py`: floating icon and the dictation pipeline
 - `osio.py`: everything OS-specific: global hotkey, recording, paste and run-at-startup (evdev/pw-record/uinput on Linux, pynput/sounddevice on Windows and macOS)
-- `stt.py`: transcription. The VAD strips non-speech, then Parakeet runs on the CPU.
+- `stt.py`: transcription. The VAD strips non-speech, then Parakeet runs on the CPU. It transcribes while you speak: each stretch is transcribed as soon as you pause, so little is left when you let go.
 - `windows.py`: History, the refinement style manager, and the style picker.
 - `remote.py`: tells when the keyboard is on another computer (so the text is typed there), from KWin's input-capture signals and Synergy's log.
 - `tray.py`: the system tray icon with the same menu (a StatusNotifierItem plus dbusmenu on KDE, GTK's status icon on Windows).

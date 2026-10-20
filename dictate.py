@@ -280,6 +280,7 @@ class App:
             self.wav = str(AUDIO / f"{datetime.now():%Y%m%d-%H%M%S-%f}.wav")
             self.rec = osio.Recorder()
             self.rec.start(self.wav)
+            self.live = stt.Live(self.wav)  # transcribes each stretch of speech as soon as you pause
             self.set_state("rec")
             log(f"recording: {(time.time() - pressed) * 1000:.0f} ms after the key was pressed" if pressed else "recording")
         if down and (self.cfg["refine"] or alt):
@@ -288,16 +289,21 @@ class App:
             rec, self.rec = self.rec, None
             self.set_state("busy")
             refining = self.cfg["refine"] or alt  # Alt asks for a style, which always includes cleanup
-            threading.Thread(target=self.process, args=(rec, self.wav, refining, alt, letter, self.app), daemon=True).start()
+            threading.Thread(target=self.process, args=(rec, self.live, self.wav, refining, alt, letter, self.app),
+                             daemon=True).start()
 
-    def process(self, rec, wav, refining, alt, letter, app):
+    def process(self, rec, live, wav, refining, alt, letter, app):
         """Stop recording → transcribe → cleanup → a style: Alt+letter's, or (Alt alone / unknown letter)
         ask which, or (no Alt) the style matching the focused app, else the default style."""
         raw = text = style = ""
         ctx = activewin.describe(app)
         try:
             rec.stop()  # here, not on the GTK thread: pw-record takes ~0.35 s to finish the file
-            raw = text = stt.transcribe(wav)
+            try:
+                raw = text = live.finish()  # most of it was transcribed while you were speaking
+            except Exception as err:
+                log(f"live transcription failed ({err}), transcribing the whole recording")
+                raw = text = stt.transcribe(wav)
             if refining and raw:
                 text = refine.cleanup(raw, ctx)
             if alt and raw:
