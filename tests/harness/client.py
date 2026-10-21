@@ -88,8 +88,13 @@ class Dictate:
         self.send("hear", text=text, source=source, length=length)
 
     def transcript(self):
-        """What the Transcript window shows."""
-        return self.send("field", name="text", window_title="Transcript")["text"]
+        """What the Transcripts window shows of the selected transcript."""
+        return self.send("field", name="text", window_title="Transcripts")["text"]
+
+    def stopped(self):
+        """Whether transcribe mode is off: the Transcripts window no longer shows a recording."""
+        texts = self.read("Transcripts")
+        return "Recording now" not in texts and "Paused" not in texts
 
     def transcript_file(self):
         """The saved transcript (the newest, if there are several)."""

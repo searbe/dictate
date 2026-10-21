@@ -1,6 +1,6 @@
 """Transcribe mode: Ctrl+Win, lift Win, Win again, and everything said through the speakers ("Them") and into
-the microphone ("Me") is written into a transcript as it's heard, until it's stopped the same way, or with
-the Stop button."""
+the microphone ("Me") is written into a transcript as it's heard, shown at the top of the Transcripts window,
+until it's stopped the same way, or with the Stop button."""
 import re, time
 import pytest
 from conftest import needs_models, needs_session, sample_speech
@@ -13,7 +13,7 @@ SAID = "ask not what your country can do for you"
 def started(start, **kw):
     app = start(styles=[], **kw)
     app.ctrl_win_win()
-    app.wait_window("Transcript")
+    app.wait_window("Transcripts")
     return app
 
 
@@ -55,7 +55,7 @@ def test_starting_it_neither_pastes_nor_keeps_a_dictation(start):
     app.send("say", text="hello there")
 
     app.ctrl_win_win()
-    app.wait_window("Transcript")
+    app.wait_window("Transcripts")
     time.sleep(1.5)  # long enough for a dictation to have been pasted
 
     assert not app.happened("pasted", after=mark) and not app.happened("typed", after=mark)
@@ -68,7 +68,7 @@ def test_doing_it_again_stops_and_saves_it(start):
     shows(app, "Before the end.")
 
     app.ctrl_win_win()
-    eventually(lambda: any("Stopped" in t for t in app.read("Transcript")))
+    eventually(lambda: app.stopped())
     app.hear("After the end.")
 
     time.sleep(0.5)
@@ -81,23 +81,24 @@ def test_the_stop_button_stops_it(start):
     app = started(start)
     app.hear("Hello.")
 
-    app.click("Stop", "Transcript")
+    app.click("Stop", "Transcripts")
 
-    eventually(lambda: any("Stopped" in t for t in app.read("Transcript")))
-    assert "Copy all" in app.read("Transcript") and "Open file" in app.read("Transcript")
+    eventually(lambda: app.stopped())
+    assert "Copy all" in app.read("Transcripts") and "Open file" in app.read("Transcripts")
     assert "Hello." in app.transcript_file()
 
 
-def test_closing_the_window_stops_it_and_keeps_the_transcript(start):
+def test_closing_the_window_keeps_it_going(start):
     app = started(start)
-    app.hear("Keep this.")
-    shows(app, "Keep this.")
 
-    app.send("close", window_title="Transcript")
+    app.send("close", window_title="Transcripts")
+    app.hear("Still listening.")
+    app.send("menu", path=["Transcripts"])
+    app.wait_window("Transcripts")
 
-    eventually(lambda: "Transcript" not in app.send("windows")["titles"])
-    assert {"label": "Transcribe this computer"} in app.send("menu_items")["items"]
-    assert "Keep this." in app.transcript_file()
+    assert "Recording now" in app.read("Transcripts")
+    shows(app, "Still listening.")
+    assert {"label": "Stop transcribing"} in app.send("menu_items")["items"]
 
 
 def test_dictating_while_transcribing_pastes_as_usual_and_stays_out_of_the_transcript(start, model):
@@ -117,12 +118,12 @@ def test_dictating_while_transcribing_pastes_as_usual_and_stays_out_of_the_trans
 
 def test_pause_leaves_out_what_is_said_until_resume(start):
     app = started(start)
-    app.click("Pause", "Transcript")
+    app.click("Pause", "Transcripts")
     app.hear("Off the record.")
     app.hear("Me neither.", source="mic")
     time.sleep(0.3)
 
-    app.click("Resume", "Transcript")
+    app.click("Resume", "Transcripts")
     time.sleep(0.3)
     app.hear("Back on the record.")
 
@@ -147,7 +148,7 @@ def test_playing_a_recording_from_history_is_not_transcribed(start, model):
     app = start(styles=[], settings={"keep_audio_hours": 24})
     app.dictate("played back")
     app.ctrl_win_win()
-    app.wait_window("Transcript")
+    app.wait_window("Transcripts")
     app.send("menu", path=["History"])
     app.wait_window("History")
 
@@ -165,11 +166,11 @@ def test_it_can_be_started_and_stopped_from_the_menu(start):
     app = start(styles=[])
 
     app.send("menu", path=["Transcribe this computer"])
-    app.wait_window("Transcript")
+    app.wait_window("Transcripts")
     assert {"label": "Stop transcribing"} in app.send("menu_items")["items"]
     app.send("menu", path=["Stop transcribing"])
 
-    eventually(lambda: any("Stopped" in t for t in app.read("Transcript")))
+    eventually(lambda: app.stopped())
     assert {"label": "Transcribe this computer"} in app.send("menu_items")["items"]
 
 
@@ -187,14 +188,14 @@ def test_an_ordinary_dictation_is_not_mistaken_for_it(start):
     app.send("keys", up=["meta", "ctrl"])
 
     eventually(lambda: [e["text"] for e in app.history()] == ["first", "second"])
-    assert "Transcript" not in app.send("windows")["titles"]
+    assert "Transcripts" not in app.send("windows")["titles"]
 
 
 def test_the_transcript_recordings_follow_the_keep_recordings_setting(start):
     app = started(start, settings={"keep_audio_hours": 0})
     app.hear("Hello.")
-    app.click("Stop", "Transcript")
-    eventually(lambda: any("Stopped" in t for t in app.read("Transcript")))
+    app.click("Stop", "Transcripts")
+    eventually(lambda: app.stopped())
 
     eventually(lambda: [f.suffix for f in (app.data / "transcripts").iterdir()] == [".md"])
     assert "Hello." in app.transcript_file()
@@ -205,8 +206,6 @@ def test_the_transcript_recordings_follow_the_keep_recordings_setting(start):
 def test_speech_through_the_speakers_is_transcribed_by_the_real_model(start, tmp_path):
     app = started(start, env={"DICTATE_TEST_SPEAKERS": str(sample_speech(tmp_path / "speech.wav"))})
 
-    app.click("Stop", "Transcript")  # the sample ends mid-word: its last stretch is transcribed on stopping
-    eventually(lambda: any("Stopped" in t for t in app.read("Transcript")), timeout=60)
-
-    assert SAID in app.transcript_file().lower()
+    app.click("Stop", "Transcripts")  # the sample ends mid-word: its last stretch is transcribed on stopping
+    eventually(lambda: SAID in app.transcript_file().lower(), timeout=60)
     assert "Me:**" not in app.transcript_file()  # the microphone heard silence

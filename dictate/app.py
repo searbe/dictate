@@ -55,9 +55,13 @@ class App:
                     **load_json(STATE, {})}
         self.cfg.pop("remote_guard", None)  # setting from an older version
         w.move(*self.cfg["pos"])
-        w.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        w.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.POINTER_MOTION_MASK
+                     | Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
         w.connect("draw", self.draw)
         w.connect("button-press-event", self.on_click)
+        w.connect("motion-notify-event", self.on_motion)
+        w.connect("button-release-event", self.on_release)
+        self.pressed = None  # where the left button went down, until it's a drag or a click
         w.connect("configure-event", self.on_moved)
         w.connect("enter-notify-event", lambda *_: self.hover(True))
         w.connect("leave-notify-event", lambda *_: self.hover(False))
@@ -111,7 +115,7 @@ class App:
         self.build_default_menu()
 
         self.state, self.hovered, self.rec, self.wav, self.anim, self.save_id = "idle", False, None, None, None, None
-        self.session = self.transcript_win = self.cancelled = None  # transcribe mode; a dictation to drop
+        self.session = self.cancelled = None  # transcribe mode; a dictation to drop
         self.transcripts_win = None  # the Transcripts window, while open
         self.t0 = time.monotonic()
         self.tray = tray.Tray(self.menu, self.render_icon, self.build_default_menu)  # same menu in the system tray
@@ -219,11 +223,26 @@ class App:
 
     # --- move / menu ---
     def on_click(self, w, ev):
+        """Left: drag to move, or (while transcribing) click to see the recording. Right: the menu."""
         if ev.button == 1:
-            w.begin_move_drag(1, int(ev.x_root), int(ev.y_root), ev.time)
+            self.pressed = (ev.x_root, ev.y_root)
         elif ev.button == 3:
             self.build_default_menu()
             self.menu.popup_at_pointer(ev)
+        return True
+
+    def on_motion(self, w, ev):
+        if self.pressed and max(abs(ev.x_root - self.pressed[0]), abs(ev.y_root - self.pressed[1])) > 3:
+            x, y = self.pressed
+            self.pressed = None
+            w.begin_move_drag(1, int(x), int(y), ev.time)
+        return True
+
+    def on_release(self, w, ev):
+        if ev.button == 1 and self.pressed:  # didn't move: a click
+            self.pressed = None
+            if self.session:
+                self.show_transcripts(recording=True)
         return True
 
     def build_default_menu(self):
@@ -403,20 +422,19 @@ class App:
             session = transcript.Session()
         except OSError as err:  # e.g. pw-record missing
             return log(f"transcribe mode: can't record ({err})")
-        self.session, win = session, dialogs.TranscriptWindow(session, self.stop_transcribing)
-        self.transcript_win = win
-        session.on_change = lambda: (win.refresh(), self.transcripts_changed(), self.win.queue_draw(), self.tray.update())
+        self.session = session
+        session.on_change = lambda: (self.transcripts_changed(), self.win.queue_draw(), self.tray.update())
         self.transcribe_item.set_label("Stop transcribing")
+        self.show_transcripts(focus=False)  # started from the keyboard, mid-conversation: leave focus where it is
         session.on_change()
         log(f"transcribing: {session.path.name}")
 
     def stop_transcribing(self):
-        session, win, self.session = self.session, self.transcript_win, None
+        session, self.session = self.session, None
         if not session:
             return
 
         def saved():
-            win.stopped()
             if self.cfg["keep_audio_hours"] == 0:
                 for path in session.recordings:
                     Path(path).unlink(missing_ok=True)
@@ -424,13 +442,18 @@ class App:
             log(f"transcribing: stopped, {len(session.paragraphs())} paragraphs saved to {session.path.name}")
         session.stop(saved)
         self.transcribe_item.set_label(self.TRANSCRIBE)
+        self.transcripts_changed()
         self.win.queue_draw()
         self.tray.update()
 
-    def show_transcripts(self):
-        if self.transcripts_win and not self.transcripts_win.closed:
-            return self.transcripts_win.win.present()
-        self.transcripts_win = dialogs.TranscriptsWindow(lambda: self.session)
+    def show_transcripts(self, focus=True, recording=False):
+        """Open the Transcripts window (or bring it forward); with recording, showing the one being recorded."""
+        if not (self.transcripts_win and not self.transcripts_win.closed):
+            self.transcripts_win = dialogs.TranscriptsWindow(lambda: self.session, self.stop_transcribing, focus)
+        elif focus:
+            self.transcripts_win.win.present()
+        if recording:
+            self.transcripts_win.show_recording()
 
     def transcripts_changed(self):
         if self.transcripts_win:

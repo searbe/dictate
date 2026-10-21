@@ -25,18 +25,21 @@ Hold **Ctrl+Win** to record, release to transcribe and paste into the focused te
 - **Synergy and similar:** while your keyboard is controlling another computer, Dictate records here and *types* the text, so it arrives there as keystrokes (no microphone needed over there). Per-app styles can't apply there, so it has its own **Default style there**, under **When another computer has the keyboard** in the menu, which can also make it ignore the hotkey instead.
 - On Linux, terminals get Ctrl+Shift+V instead of Ctrl+V.
 
-**Transcribe mode** (Linux): hold **Ctrl+Win**, lift Win and press it again (keep holding Ctrl), then let go. A
-Transcript window opens and everything said through your speakers ("Them") and into your microphone ("Me") is
-written down, with the time, as soon as there's a pause. Stop it the same way, with **Stop**, by closing the window,
-or from the menu (**Transcribe this computer** / **Stop transcribing**); **Pause** leaves out what's said until
-**Resume**. You can dictate as usual meanwhile: your dictations stay out of the transcript, as does Dictate playing
-a recording back, and the speakers' sound picked up by your microphone isn't written down twice. Transcripts are
-saved as Markdown in `data/transcripts/`, with a recording of each side (Ogg Opus, about 12 MB an hour) kept as
-long as dictation recordings are. **Transcripts** in the menu lists them all, newest first, with when each was
-recorded, how long it lasted and how it starts; click one to read it, copy it, open the file, delete it, or open
-the folder. The icon has a blue ring while it's on, grey while paused.
+**Transcribe mode** (Linux): hold **Ctrl+Win**, lift Win and press it again (keep holding Ctrl), then let go. The
+Transcripts window opens with the new recording at the top, and everything said through your speakers ("Them") and
+into your microphone ("Me") is written down, with the time, as soon as there's a pause. Stop it the same way, with
+**Stop**, or from the menu (**Transcribe this computer** / **Stop transcribing**); **Pause** leaves out what's said
+until **Resume**. You can close the window and carry on: reopen it with **Transcripts** in the menu. You can dictate
+as usual meanwhile: your dictations stay out of the transcript, as does Dictate playing a recording back, and the
+speakers' sound picked up by your microphone isn't written down twice. The icon has a blue ring while it's on (grey
+while paused): click it to see the recording.
 
-The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it. Right-click it (or click the system tray icon) for the menu: Refine text, Default style, History, Refinement styles…, Transcribe this computer, Transcripts, When another computer has the keyboard, Run at startup and Quit.
+**Transcripts** lists every transcript, newest first, with when it was recorded, how long it lasted and how it
+starts; the one being recorded stays at the top. Click one to read it, copy it, open the file or delete it, and click
+the recording again to catch up with it. They're saved as Markdown in `data/transcripts/` (**Open folder**), with a
+recording of each side (Ogg Opus, about 12 MB an hour) kept as long as dictation recordings are.
+
+The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it; while transcribing, click it to see the recording. Right-click it (or click the system tray icon) for the menu: Refine text, Default style, History, Refinement styles…, Transcribe this computer, Transcripts, When another computer has the keyboard, Run at startup and Quit.
 
 **History** lists every dictation with what was applied (raw transcript, cleanup, and any style). Each entry can play its recording, copy the text or the original transcript, or be deleted; **Clear history** removes everything. **Keep recordings** at the top sets how long audio is kept: not at all, 1–24 hours (default 24), or forever.
 

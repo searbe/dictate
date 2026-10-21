@@ -1,5 +1,5 @@
-"""Dictate's windows: History, the refinement style manager, the style picker, the transcript being
-recorded, and the Transcripts browser."""
+"""Dictate's windows: History, the refinement style manager, the style picker, and Transcripts (including the
+one being recorded)."""
 import json
 from datetime import datetime
 from gi.repository import Gio, Gtk, Gdk, GLib
@@ -414,141 +414,153 @@ def copy_button(path):
     return copy
 
 
-class TranscriptWindow:
-    """The transcript as it grows, newest at the bottom (kept in view unless you've scrolled up).
-    While recording: Pause / Resume and Stop. Closing the window stops too. Once stopped: Copy all, Open file."""
+class TranscriptsWindow:
+    """Every transcript: a list on the left (when, how long, how it starts), the selected one on the right.
+    The one being recorded, if any (current() gives its Session), is always at the top of the list and grows
+    as it's heard (kept scrolled to the end unless you've scrolled up); while it's selected the header has
+    Pause / Resume and Stop (on_stop() stops it). A saved one has Copy all, Open file and Delete.
+    Closing the window doesn't stop the recording."""
+    EMPTY = "No transcripts yet. To start one, hold Ctrl+Win, lift Win and press it again."
     LISTENING = "Listening to this computer's speakers (Them) and microphone (Me)"
 
-    def __init__(self, session, on_stop):
-        self.session, self.on_stop = session, on_stop
-        self.win, self.bar = window("Transcript", 620, 520, self.LISTENING)
-        self.win.set_focus_on_map(False)  # started from the keyboard, mid-conversation: leave focus where it is
-        self.win.connect("delete-event", lambda *_: self.stop() or False)
+    def __init__(self, current, on_stop, focus=True):
+        self.current, self.on_stop, self.shown, self.paths, self.seen = current, on_stop, None, None, None
+        self.win, self.bar = window("Transcripts", 900, 600)
+        self.win.set_focus_on_map(focus)  # False when started from the keyboard mid-conversation
         self.win.connect("destroy", lambda *_: setattr(self, "closed", True))
         self.closed = False
-        self.pause_btn = button("Pause", self.toggle_pause)
-        self.stop_btn = button("Stop", self.stop, "danger")
-        self.bar.pack_start(self.stop_btn)
-        self.bar.pack_start(self.pause_btn)
-        self.text, self.who = transcript_view()
-        self.scroll = css(Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER), "transcript")
-        self.scroll.add(self.text)
-        self.win.add(self.scroll)
-        self.win.show_all()
-        self.refresh()
-
-    def refresh(self):
-        if self.closed:
-            return
-        adj = self.scroll.get_vadjustment()
-        following = adj.get_value() >= adj.get_upper() - adj.get_page_size() - 20
-        show_transcript(self.text, self.who, self.session.paragraphs(),
-                        "Nothing was heard." if self.session.stopped else "Nothing heard yet.")
-        if following:
-            GLib.idle_add(lambda: adj.set_value(adj.get_upper() - adj.get_page_size()) and False)
-
-    def toggle_pause(self):
-        self.session.pause(not self.session.paused)
-        self.pause_btn.set_label("Resume" if self.session.paused else "Pause")
-        self.bar.set_subtitle("Paused: nothing is being added" if self.session.paused else self.LISTENING)
-
-    def stop(self):
-        if not self.session.stopped:
-            self.on_stop()
-
-    def stopped(self):
-        """The session has stopped and the transcript is saved."""
-        if self.closed:
-            return
-        for b in (self.pause_btn, self.stop_btn):
-            b.destroy()
-        self.bar.set_subtitle(f"Stopped. Saved as {self.session.path.name}")
-        path = self.session.path
-        self.bar.pack_start(copy_button(lambda: path))
-        self.bar.pack_start(button("Open file", lambda: open_uri(path)))
-        self.bar.show_all()
-        self.refresh()
-
-
-class TranscriptsWindow:
-    """Every saved transcript: a list on the left (when, how long, how it starts), the selected one on the
-    right. The one being recorded, if any (current() gives its Session), is listed first and kept up to date."""
-    EMPTY = "No transcripts yet. To start one, hold Ctrl+Win, lift Win and press it again."
-
-    def __init__(self, current):
-        self.current, self.shown = current, None
-        self.win, bar = window("Transcripts", 900, 600)
-        self.win.connect("destroy", lambda *_: setattr(self, "closed", True))
-        self.closed = False
-        bar.pack_end(button("Open folder", lambda: (transcript.FOLDER.mkdir(parents=True, exist_ok=True),
-                                                     open_uri(transcript.FOLDER))))
-        self.actions = Gtk.Box(spacing=6)
-        self.delete_btn = button("Delete", self.delete, "danger")
+        self.bar.pack_end(button("Open folder", lambda: (transcript.FOLDER.mkdir(parents=True, exist_ok=True),
+                                                          open_uri(transcript.FOLDER))))
+        self.saved_actions, self.live_actions = Gtk.Box(spacing=6, no_show_all=True), Gtk.Box(spacing=6, no_show_all=True)
         for b in (copy_button(lambda: self.shown["path"]), button("Open file", lambda: open_uri(self.shown["path"])),
-                  self.delete_btn):
-            self.actions.pack_start(b, False, False, 0)
-        bar.pack_start(self.actions)
+                  button("Delete", self.delete, "danger")):
+            self.saved_actions.pack_start(b, False, False, 0)
+        self.pause_btn = button("Pause", self.toggle_pause)
+        for b in (button("Stop", self.on_stop, "danger"), self.pause_btn):
+            self.live_actions.pack_start(b, False, False, 0)
+        for box in (self.saved_actions, self.live_actions):
+            for b in box.get_children():
+                b.show()
+            self.bar.pack_start(box)
 
         self.list = Gtk.ListBox()
         self.list.connect("row-selected", lambda _, row: row and self.show(row.item))
         side = css(Gtk.ScrolledWindow(width_request=270, hscrollbar_policy=Gtk.PolicyType.NEVER), "sidebar")
         side.add(self.list)
         self.text, self.who = transcript_view()
-        scroll = css(Gtk.ScrolledWindow(hexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER), "transcript")
-        scroll.add(self.text)
+        self.scroll = css(Gtk.ScrolledWindow(hexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER), "transcript")
+        self.scroll.add(self.text)
         body = Gtk.Box()
         body.pack_start(side, False, False, 0)
-        body.pack_start(scroll, True, True, 0)
+        body.pack_start(self.scroll, True, True, 0)
         self.win.add(body)
         self.win.show_all()
-        self.rebuild()
+        self.changed()
 
     def items(self):
-        """The saved transcripts, newest first; the one being recorded marked "recording"."""
+        """The one being recorded first, then the saved transcripts, newest first."""
         session = self.current()
-        items = transcript.saved()
-        for it in items:
-            it["recording"] = bool(session and it["path"] == session.path)
+        items = [it for it in transcript.saved() if not (session and it["path"] == session.path)]
+        if session:
+            items.insert(0, {"path": session.path, "started": session.started, "recording": True})
         return items
 
-    def rebuild(self, select=None):
-        for row in self.list.get_children():
-            self.list.remove(row)
-        items = self.items()
-        for it in items:
-            row = Gtk.ListBoxRow()
-            row.item = it
-            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_top=2, margin_bottom=2)
-            box.add(Gtk.Label(label=f"{it['started']:%a %d %b · %H:%M}", xalign=0))
-            box.add(css(Gtk.Label(label="Recording now" if it["recording"] else it["length"], xalign=0), "time"))
-            start = " ".join(text for _, _, text in it["paragraphs"])[:200] or "Nothing was heard."
-            box.add(css(Gtk.Label(label=start, xalign=0, ellipsize=3, max_width_chars=30), "hint"))  # 3: END
-            row.add(box)
-            self.list.add(row)
-        self.list.show_all()
-        rows = self.list.get_children()
-        self.actions.set_visible(bool(rows))
-        if not rows:
-            self.shown = None
-            return show_transcript(self.text, self.who, [], self.EMPTY)
-        chosen = next((r for r in rows if r.item["path"] == select), rows[0])
-        self.list.select_row(chosen)
+    def row(self, it):
+        row = Gtk.ListBoxRow()
+        row.item = it
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_top=2, margin_bottom=2)
+        box.add(Gtk.Label(label=f"{it['started']:%a %d %b · %H:%M}", xalign=0))
+        row.length = css(Gtk.Label(xalign=0), "time")
+        row.start = css(Gtk.Label(xalign=0, ellipsize=3, max_width_chars=30), "hint")  # 3: ellipsize at the end
+        box.add(row.length)
+        box.add(row.start)
+        row.add(box)
+        self.describe(row)
+        return row
 
-    def show(self, item):
-        self.shown = item
-        session = self.current() if item["recording"] else None
-        paragraphs = session.paragraphs() if session else item["paragraphs"]
-        show_transcript(self.text, self.who, paragraphs, "Nothing heard yet." if session else "Nothing was heard.")
-        self.delete_btn.set_sensitive(not item["recording"])
+    def describe(self, row):
+        """Fill in a row's length and first words (the recording's change as it's heard)."""
+        it, session = row.item, self.current()
+        live = it.get("recording") and session
+        row.length.set_text(("Paused" if session.paused else "Recording now") if live else it["length"])
+        paragraphs = session.paragraphs() if live else it["paragraphs"]
+        start = " ".join(text for _, _, text in paragraphs)[:200]
+        row.start.set_text(start or ("Nothing heard yet." if live else "Nothing was heard."))
 
     def changed(self):
-        """The transcript being recorded has changed, or has stopped."""
-        if not self.closed:
-            self.rebuild(select=self.shown and self.shown["path"])
+        """Something changed: a recording started, grew, paused or stopped, or a transcript was deleted.
+        The list is only rebuilt if which transcripts there are has changed, so reading one isn't disturbed."""
+        if self.closed:
+            return
+        items = self.items()
+        paths = [(it["path"], bool(it.get("recording"))) for it in items]
+        if paths != self.paths:
+            self.paths = paths
+            session = self.current()
+            if session and session.path != self.seen:  # a new recording: select it, to watch it
+                self.seen, select = session.path, session.path
+            else:
+                select = self.shown and self.shown["path"]
+            self.rebuild(items, select)
+        else:
+            for row in self.list.get_children():
+                if row.item.get("recording"):
+                    self.describe(row)
+            if self.shown and self.shown.get("recording"):
+                self.show(self.shown)
+
+    def show_recording(self):
+        """Select the one being recorded (it's always first)."""
+        first = self.list.get_row_at_index(0)
+        if first and first.item.get("recording"):
+            self.list.select_row(first)
+
+    def rebuild(self, items, select=None):
+        for row in self.list.get_children():
+            self.list.remove(row)
+        for it in items:
+            self.list.add(self.row(it))
+        self.list.show_all()
+        rows = self.list.get_children()
+        if not rows:
+            self.shown = None
+            self.saved_actions.hide()
+            self.live_actions.hide()
+            return show_transcript(self.text, self.who, [], self.EMPTY)
+        self.list.select_row(next((r for r in rows if r.item["path"] == select), rows[0]))
+
+    def show(self, item):
+        session = self.current() if item.get("recording") else None
+        if item.get("recording") and not session:  # stopped since: show it as saved
+            item = transcript.read(item["path"]) or item
+        following = item is not self.shown or self.at_end()
+        self.shown = item
+        self.saved_actions.set_visible(not session)
+        self.live_actions.set_visible(bool(session))
+        if session:
+            self.pause_btn.set_label("Resume" if session.paused else "Pause")
+            self.bar.set_subtitle("Paused: nothing is being added" if session.paused else self.LISTENING)
+            show_transcript(self.text, self.who, session.paragraphs(), "Nothing heard yet.")
+        else:
+            self.bar.set_subtitle(None)
+            show_transcript(self.text, self.who, item.get("paragraphs", []), "Nothing was heard.")
+        if session and following:
+            adj = self.scroll.get_vadjustment()
+            GLib.idle_add(lambda: adj.set_value(adj.get_upper() - adj.get_page_size()) and False)
+
+    def at_end(self):
+        adj = self.scroll.get_vadjustment()
+        return adj.get_value() >= adj.get_upper() - adj.get_page_size() - 20
+
+    def toggle_pause(self):
+        session = self.current()
+        if session:
+            session.pause(not session.paused)
 
     def delete(self):
         it = self.shown
         if it and confirm(self.win, f"Delete the transcript from {it['started']:%a %d %b, %H:%M}?",
                           "Its recordings are deleted too. This can't be undone.", "Delete"):
             transcript.delete(it["path"])
-            self.rebuild()
+            self.shown = None
+            self.changed()

@@ -267,6 +267,14 @@ def cmd_read(window_title=None):
     return {"texts": texts(window(window_title))}
 
 
+def cmd_click_icon():
+    """Click the floating icon (press and release without moving)."""
+    for kind in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.BUTTON_RELEASE):
+        ev = Gdk.Event.new(kind)
+        ev.button, ev.window, ev.x_root, ev.y_root = 1, app.win.get_window(), 120.0, 120.0
+        app.win.emit("button-press-event" if kind == Gdk.EventType.BUTTON_PRESS else "button-release-event", ev)
+
+
 def cmd_click(label, window_title=None, nth=0):
     labelled(window(window_title), Gtk.Button, label)[nth].clicked()
 

@@ -75,10 +75,10 @@ def test_copy_all_copies_the_transcript(start):
 def test_a_transcript_just_recorded_is_listed_with_how_long_it_lasted(start):
     app = start(styles=[])
     app.ctrl_win_win()
-    app.wait_window("Transcript")
+    app.wait_window("Transcripts")
     app.hear("A short one.")
     app.ctrl_win_win()
-    eventually(lambda: any("Stopped" in t for t in app.read("Transcript")))
+    eventually(lambda: app.stopped())
 
     app.send("menu", path=["Transcripts"])
     app.wait_window("Transcripts")
@@ -90,7 +90,7 @@ def test_a_transcript_just_recorded_is_listed_with_how_long_it_lasted(start):
 def test_the_transcript_being_recorded_is_listed_and_kept_up_to_date(start):
     app = start(styles=[])
     app.ctrl_win_win()
-    app.wait_window("Transcript")
+    app.wait_window("Transcripts")
     app.send("menu", path=["Transcripts"])
     app.wait_window("Transcripts")
     assert "Recording now" in app.read("Transcripts")
@@ -98,7 +98,7 @@ def test_the_transcript_being_recorded_is_listed_and_kept_up_to_date(start):
     app.hear("Still going.")
 
     eventually(lambda: "Them  Still going." in shown(app))
-    app.click("Stop", "Transcript")
+    app.click("Stop", "Transcripts")
     eventually(lambda: "under a minute" in app.read("Transcripts"))
 
 
@@ -148,3 +148,116 @@ def test_with_no_transcripts_it_says_how_to_make_one(start):
     assert "No transcripts yet. To start one, hold Ctrl+Win, lift Win and press it again." in shown(app)
     assert "Open folder" in app.read("Transcripts")
     assert "Delete" not in app.read("Transcripts")
+
+
+def recording(start, *transcripts):
+    """Dictate with these saved transcripts, transcribing."""
+    app = start(styles=[])
+    for name, text in transcripts:
+        saved(app, name, text)
+    app.ctrl_win_win()
+    app.wait_window("Transcripts")
+    return app
+
+
+def rows(app):
+    """The dates listed, top to bottom."""
+    return [t for t in app.read("Transcripts") if t.count("·") == 1 and t[:3] in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")]
+
+
+def test_a_new_recording_appears_at_the_top_of_the_transcripts_and_is_shown(start):
+    app = recording(start, ("2026-10-19 10.00.00", MONDAY), ("2026-10-20 16.30.00", TUESDAY))
+
+    app.hear("Hello, can you hear me?")
+
+    assert rows(app)[1:] == ["Tue 20 Oct · 16:30", "Mon 19 Oct · 10:00"]
+    texts = app.read("Transcripts")
+    assert "Recording now" in texts and "Stop" in texts and "Pause" in texts
+    assert "Delete" not in texts  # not while it's being recorded
+    eventually(lambda: "Them  Hello, can you hear me?" in shown(app))
+
+
+def test_reading_another_transcript_meanwhile_the_recording_stays_at_the_top(start):
+    app = recording(start, ("2026-10-19 10.00.00", MONDAY), ("2026-10-20 16.30.00", TUESDAY))
+
+    app.send("select", row="Mon 19 Oct · 10:00", window_title="Transcripts")
+    app.hear("This goes on in the background.")
+    app.send("select", row="Tue 20 Oct · 16:30", window_title="Transcripts")
+    app.hear("And so does this.")
+
+    assert "Welcome to the talk." in shown(app)  # what's being read isn't disturbed
+    assert "background" not in shown(app)
+    assert rows(app)[1:] == ["Tue 20 Oct · 16:30", "Mon 19 Oct · 10:00"]
+    assert "Recording now" in app.read("Transcripts")
+    assert "Copy all" in app.read("Transcripts") and "Stop" not in app.read("Transcripts")
+
+
+def test_clicking_the_recording_again_shows_what_has_been_said_since(start):
+    app = recording(start, ("2026-10-19 10.00.00", MONDAY))
+    app.send("select", row="Mon 19 Oct · 10:00", window_title="Transcripts")
+    app.hear("Said while you were reading.")
+
+    app.send("select", row=rows(app)[0], window_title="Transcripts")
+
+    eventually(lambda: "Them  Said while you were reading." in shown(app))
+    assert "Stop" in app.read("Transcripts")
+
+
+def test_the_recording_shows_how_it_starts_in_the_list_as_it_is_heard(start):
+    app = recording(start, ("2026-10-19 10.00.00", MONDAY))
+    app.send("select", row="Mon 19 Oct · 10:00", window_title="Transcripts")
+
+    app.hear("Let's begin with the numbers.")
+
+    eventually(lambda: "Let's begin with the numbers." in app.read("Transcripts"))
+
+
+def test_pause_shows_in_the_list_until_resumed(start):
+    app = recording(start)
+
+    app.click("Pause", "Transcripts")
+    eventually(lambda: "Paused" in app.read("Transcripts") and "Resume" in app.read("Transcripts"))
+    app.click("Resume", "Transcripts")
+
+    eventually(lambda: "Recording now" in app.read("Transcripts"))
+
+
+def test_once_stopped_it_is_listed_like_the_others(start):
+    app = recording(start, ("2026-10-19 10.00.00", MONDAY))
+    app.hear("The end.")
+
+    app.click("Stop", "Transcripts")
+
+    eventually(lambda: "under a minute" in app.read("Transcripts"))
+    assert "Them  The end." in shown(app)  # still the one shown
+    assert "Copy all" in app.read("Transcripts") and "Delete" in app.read("Transcripts")
+
+
+def test_clicking_the_icon_while_recording_shows_the_recording(start):
+    app = recording(start, ("2026-10-19 10.00.00", MONDAY))
+    app.send("select", row="Mon 19 Oct · 10:00", window_title="Transcripts")
+    app.hear("Back to the call.")
+
+    app.send("click_icon")
+
+    eventually(lambda: "Them  Back to the call." in shown(app))
+    assert "Stop" in app.read("Transcripts")
+
+
+def test_clicking_the_icon_while_recording_reopens_the_window(start):
+    app = recording(start)
+    app.send("close", window_title="Transcripts")
+    eventually(lambda: "Transcripts" not in app.send("windows")["titles"])
+
+    app.send("click_icon")
+
+    app.wait_window("Transcripts")
+    assert "Recording now" in app.read("Transcripts")
+
+
+def test_clicking_the_icon_otherwise_opens_nothing(start):
+    app = start(styles=[])
+
+    app.send("click_icon")
+
+    assert app.send("windows")["titles"] == []

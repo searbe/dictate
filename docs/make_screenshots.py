@@ -104,7 +104,13 @@ def main():
     for name, (took, paragraphs) in TRANSCRIPTS.items():
         (transcript.FOLDER / f"{name}.md").write_text(f"# Transcript\n\nLasted {took}, until 00:00.\n" + "".join(
             f"\n**{clock} {who}:** {text}\n" for clock, who, text in paragraphs))
-    browser = dialogs.TranscriptsWindow(lambda: None)
+    now = transcript.FOLDER / "2026-10-21 14.02.00.md"  # being recorded
+    live = SimpleNamespace(path=now, started=transcript.datetime(2026, 10, 21, 14, 2), paused=False, paragraphs=lambda: [
+        ("14:02:03", "Them", "Can everyone see my screen? This is the dashboard from last week."),
+        ("14:02:10", "Me", "Yes, we can see it."),
+        ("14:02:12", "Them", "Great. So the sign-ups dropped on Thursday, and we think it's the new form.")])
+    now.write_text("")
+    browser = dialogs.TranscriptsWindow(lambda: live, lambda: None)
     offscreen(browser.win, DOCS / "transcripts.png", ["win"], (900, 440))
     shutil.rmtree(tmp)
 

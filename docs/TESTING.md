@@ -59,8 +59,8 @@ them. `tests/harness/client.py` has the vocabulary (`dictate()`, `click()`, `rea
 | Keys typed and pasted on US and UK layouts, Shift+Enter for new lines, plain punctuation | `test_typing_and_pasting.py` |
 | Speech-to-text with the real models: English, German, silence and noise, live = whole-file | `test_speech_to_text.py` |
 | Downloads: complete, interrupted, not repeated; unpacking | `test_downloads.py` |
-| Transcribe mode: the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / closing / menu, pause, dictating meanwhile, echoes, History playback, recordings kept or not, the real model on speakers audio | `test_transcribe_mode.py` |
-| Transcripts window: listed newest first with when and how long, reading one, copy, delete (with confirmation) with its recordings, the one being recorded kept up to date, older transcripts' length from their recording, none yet | `test_transcripts_window.py` |
+| Transcribe mode: the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / menu, closing the window carries on, pause, dictating meanwhile, echoes, History playback, recordings kept or not, the real model on speakers audio | `test_transcribe_mode.py` |
+| Transcripts window: listed newest first with when and how long, the recording at the top and kept up to date while reading others, reading one, copy, delete (with confirmation) with its recordings, older transcripts' length from their recording, none yet, clicking the icon while recording | `test_transcripts_window.py` |
 | The real thing end to end (real speech model, llama-server and refinement model), and `scripts/prove_local.py`: no network call leaves the computer | `test_local_only.py` |
 
 ## Manual checklist
@@ -129,7 +129,7 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
 ### 7. Transcribe mode (real speakers, microphone and calls)
 
 - Play a video with speech, start transcribe mode (Ctrl+Win, lift Win, Win again): its words appear under "Them"
-  a moment after each pause, accurately. Speak: under "Me". The Transcript window doesn't take focus.
+  a moment after each pause, accurately. Speak: under "Me". The Transcripts window doesn't take focus.
 - On a call on headphones, and again on the laptop's speakers: the other person isn't also written as "Me".
 - Dictate into another app meanwhile: pasted as usual, not in the transcript.
 - An hour-long session: the transcript keeps up, CPU use stays reasonable, the file in `data/transcripts/` is
@@ -139,7 +139,8 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
 ### 8. The desktop shell
 
 - The tray icon appears in Plasma's panel, turns red while recording, and its menu works.
-- Drag the floating icon, restart Dictate: it comes back in the same place.
+- Drag the floating icon, restart Dictate: it comes back in the same place. A click (no drag) while transcribing
+  opens Transcripts on the recording; a drag doesn't.
 - Tick "Run at startup", log out and in: Dictate starts. Untick: it doesn't.
 
 ### 9. Setup and other platforms (the automated desktop tests run on Linux only)
