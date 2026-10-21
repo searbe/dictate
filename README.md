@@ -86,21 +86,23 @@ Hold **Ctrl+Win**. The GPU model is used on NVIDIA cards with enough free memory
 Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can't make one), so use the floating icon's menu. **Run at startup** adds a LaunchAgent (`~/Library/LaunchAgents/local.dictate.plist`). macOS will ask for Microphone, Input Monitoring (hotkey) and Accessibility (paste) permissions for the app you launch it from; restart Dictate after granting them. Screen Recording is optional and lets per-app styles see window titles. Macs with 16 GB of RAM or more use the 9B model on the GPU (Metal).
 
 ## Code
-- `dictate.py`: floating icon, menu and the dictation pipeline (record → transcribe → cleanup → style → paste or type).
-- `osio.py`: everything OS-specific: global hotkey, recording, playback, paste, typing and run-at-startup (evdev/pw-record/pw-play/uinput on Linux, pynput/sounddevice on Windows and macOS).
-- `stt.py`: transcription. The VAD strips non-speech, then Parakeet runs on the CPU. `Live` follows the recording while it grows and transcribes each stretch of speech as soon as you pause; `transcribe()` does a whole file (the fallback).
-- `refine.py`: the default cleanup, then any style on top; style storage. Pressing the hotkey (or Alt) starts loading the model: the larger GPU model if the GPU has enough free memory and is under 30% busy, otherwise the smaller CPU model (`MODELS`). It's unloaded after 30 s of no use.
-- `windows.py`: History, the refinement style manager, and the style picker.
-- `remote.py`: tells when the keyboard is on another computer (so the text is typed there), from KWin's input-capture signals and Synergy's log.
-- `tray.py`: the system tray icon with the same menu (a StatusNotifierItem plus dbusmenu on KDE, GTK's status icon on Windows).
-- `activewin.py` + `kwin_active.js`: tracks the focused window. On KDE, KWin loads the script at runtime and unloads it on exit; it's never installed. Windows and macOS ask the OS directly.
-- `fetch.py`: downloads the models and the right llama.cpp build; used by every setup script.
-- `bench.py`: compares every `models/*.gguf` on your recent dictations: `python bench.py`.
+- `dictate.py`: starts the app (switching to `.venv` first). The app itself is the `dictate/` package:
+  - `app.py`: floating icon, menu and the dictation pipeline (record → transcribe → cleanup → style → paste or type).
+  - `osio.py`: everything OS-specific: global hotkey, recording, playback, paste, typing and run-at-startup (evdev/pw-record/pw-play/uinput on Linux, pynput/sounddevice on Windows and macOS).
+  - `stt.py`: transcription. The VAD strips non-speech, then Parakeet runs on the CPU. `Live` follows the recording while it grows and transcribes each stretch of speech as soon as you pause; `transcribe()` does a whole file (the fallback).
+  - `refine.py`: the default cleanup, then any style on top; style storage. Pressing the hotkey (or Alt) starts loading the model: the larger GPU model if the GPU has enough free memory and is under 30% busy, otherwise the smaller CPU model (`MODELS`). It's unloaded after 30 s of no use.
+  - `dialogs.py`: History, the refinement style manager, and the style picker.
+  - `remote.py`: tells when the keyboard is on another computer (so the text is typed there), from KWin's input-capture signals and Synergy's log.
+  - `tray.py`: the system tray icon with the same menu (a StatusNotifierItem plus dbusmenu on KDE, GTK's status icon on Windows).
+  - `activewin.py` + `kwin_active.js`: tracks the focused window and its title. On KDE, KWin loads the script at runtime and unloads it on exit; it's never installed. Windows and macOS ask the OS directly.
+- `pyproject.toml`: the Python dependencies, installed into `.venv` by every setup script.
+- `scripts/fetch.py`: downloads the models and the right llama.cpp build; used by every setup script.
+- `scripts/bench.py`: compares every `models/*.gguf` on your recent dictations: `python scripts/bench.py`.
 - `docs/make_screenshots.py`: regenerates the README screenshots from sample data.
 
 ## Technical notes
 - **Data** (`data/`, not in git):
-  - `history.jsonl`: one JSON object per dictation: `t`, `text`, `app`, `cleanup` (bool), and, when present, `raw` (the transcript, if refinement changed it), `style`, `audio`.
+  - `history.jsonl`: one JSON object per dictation: `t`, `text`, `app`, `cleanup` (bool), and, when present, `title` (the window title per-app styles matched against), `raw` (the transcript, if refinement changed it), `style`, `audio`.
   - `audio/*.wav`: the recordings (16 kHz mono, about 2 MB a minute). They're pruned to the **Keep recordings** setting at startup, every 10 minutes and when it changes.
   - `styles.json`: the cleanup prompt; the styles (`name`, `key`, `apps`, `prompt`, `default`); and `remote_default` (absent means "same as here").
   - `vocab.txt`: one term per line. `state.json`: icon position and menu settings.
@@ -108,7 +110,7 @@ Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can'
 - **Model server:** llama-server on a random localhost port, started from one long-lived thread with a parent-death SIGKILL (Linux), so it can't outlive the app. It's stopped with SIGTERM, then SIGKILL after 3 s.
 - **Single instance:** Dictate binds localhost port 47613 at startup; a second copy exits.
 - **Remote screens:** KWin's input-capture broadcasts and Synergy's log are combined, as neither caught every switch alone. A capture must last 0.2 s to count, as a disconnected Synergy flickers every few milliseconds.
-- **Logs:** written to stdout; when started from the desktop, see `journalctl --user`. Each dictation logs `recording: N ms after the key was pressed` (from the kernel's key timestamp), which is useful for spotting latency.
+- **Logs:** written to stdout; when started from the desktop, see `journalctl --user`. It logs `started`, then `quitting: <why>` (the menu's Quit, a signal, or the icon's window closing) and `exited`, so a stop is never a mystery. Each dictation logs `recording: N ms after the key was pressed` (from the kernel's key timestamp), which is useful for spotting latency.
 
 ## License
 MIT: see [LICENSE](LICENSE). The models and tools the setup scripts download come under their own licenses: Parakeet TDT (CC BY 4.0), Qwen3.5 (Apache 2.0), Silero VAD (MIT), llama.cpp (MIT), sherpa-onnx (Apache 2.0), and, on Windows, the gvsbuild GTK runtime (LGPL).

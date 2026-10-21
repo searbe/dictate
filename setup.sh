@@ -43,8 +43,8 @@ esac
 
 # --system-site-packages: reuse the system's GTK (gi) and evdev bindings, read-only
 .venv/bin/python -c "" 2>/dev/null || { rm -rf .venv; python3 -m venv --system-site-packages .venv; }
-.venv/bin/pip install -q --no-cache-dir --disable-pip-version-check --upgrade sherpa-onnx numpy
-.venv/bin/python fetch.py
+.venv/bin/pip install -q --no-cache-dir --disable-pip-version-check --upgrade --upgrade-strategy eager -e .
+.venv/bin/python scripts/fetch.py
 
 cat > dictate.desktop <<EOD
 [Desktop Entry]

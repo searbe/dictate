@@ -3,11 +3,11 @@
 Live transcribes while recording: at each pause, the speech so far is transcribed in the background,
 so when recording stops only the stretch since the last pause is left. transcribe() does a whole file."""
 import os, threading, time, wave
-from pathlib import Path
 import numpy as np
 import sherpa_onnx
 
-MODELS = Path(__file__).parent / "models"
+from . import ROOT
+MODELS = ROOT / "models"
 RATE = 16000
 THREADS = min(8, os.cpu_count() or 4)
 _rec = _vad_cfg = None

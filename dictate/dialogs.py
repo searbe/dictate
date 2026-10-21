@@ -2,7 +2,7 @@
 import json
 from datetime import datetime
 from gi.repository import Gtk, Gdk, GLib
-import refine
+from . import refine
 
 CSS = b"""
 * { font-family: "Inter", "Noto Sans", sans-serif; }

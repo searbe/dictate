@@ -5,7 +5,7 @@ Windows: asks the OS for the foreground window. macOS: asks for the frontmost ap
 Dictate's own windows are ignored, so this stays the app you were typing in."""
 import atexit, os, sys
 from pathlib import Path
-import osio
+from . import osio
 
 current = {"cls": "", "title": ""}
 on_switch = []  # callbacks run when another app gets focus (KDE only)

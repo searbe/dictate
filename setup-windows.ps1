@@ -17,15 +17,15 @@ if (-not $Python) { throw "Python 3.14 not found. Install it with: winget instal
 
 if (-not (Test-Path gtk\bin)) {
     $url = "https://github.com/wingtk/gvsbuild/releases/download/$Gvsbuild/GTK3_Gvsbuild_${Gvsbuild}_x64.zip"
-    & $Python -c "from fetch import download, unpack; from pathlib import Path; z = Path('gtk.zip'); download('$url', z); print('Unpacking GTK ...'); unpack(z, Path('gtk')); z.unlink()"
+    & $Python -c "import sys; sys.path.insert(0, 'scripts'); from fetch import download, unpack; from pathlib import Path; z = Path('gtk.zip'); download('$url', z); print('Unpacking GTK ...'); unpack(z, Path('gtk')); z.unlink()"
     if ($LASTEXITCODE) { throw "GTK download failed" }
 }
 
 if (-not (Test-Path .venv\Scripts\python.exe)) { & $Python -m venv .venv }
 $Wheels = (Get-ChildItem gtk\wheels\pycairo-*.whl, gtk\wheels\pygobject-*.whl).FullName
-& .venv\Scripts\pip install -q --no-cache-dir --disable-pip-version-check --upgrade @Wheels sherpa-onnx numpy pynput sounddevice
+& .venv\Scripts\pip install -q --no-cache-dir --disable-pip-version-check --upgrade --upgrade-strategy eager @Wheels -e .
 if ($LASTEXITCODE) { throw "pip install failed" }
-& .venv\Scripts\python fetch.py
+& .venv\Scripts\python scripts\fetch.py
 if ($LASTEXITCODE) { throw "model download failed" }
 
 # A shortcut in this folder to start Dictate (use "Run at startup" in its menu to start it at login)

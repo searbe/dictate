@@ -9,7 +9,10 @@ from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-import dictate, osio, refine, windows  # noqa: E402  (dictate first: it sets up the venv and GTK)
+import dictate  # noqa: E402
+dictate.bootstrap()
+from dictate import dialogs, osio, refine  # noqa: E402
+from dictate.app import KEEP_AUDIO  # noqa: E402
 from gi.repository import GLib, Gtk  # noqa: E402
 
 DOCS = ROOT / "docs"
@@ -34,7 +37,7 @@ def offscreen(win, path, classes, size):
     box.pack_start(bar, False, False, 0)
     box.pack_start(body, True, True, 0)
     off = Gtk.OffscreenWindow()
-    windows.css(off, *classes)
+    dialogs.css(off, *classes)
     off.add(box)
     off.set_size_request(*size)
     box.show()  # not show_all(): that would also show widgets the window hides on purpose
@@ -68,17 +71,17 @@ def main():
         lines.append(json.dumps(entry))
     history.write_text("\n".join(lines) + "\n")
 
-    windows.install_css()
-    app = SimpleNamespace(player=osio.Player(), cfg={"keep_audio_hours": 24}, KEEP_AUDIO=dictate.KEEP_AUDIO,
+    dialogs.install_css()
+    app = SimpleNamespace(player=osio.Player(), cfg={"keep_audio_hours": 24}, KEEP_AUDIO=KEEP_AUDIO,
                           set_keep_audio=lambda hours: None, copy=lambda text: None)
-    windows.history(app, history, audio)
+    dialogs.history(app, history, audio)
     offscreen(next(w for w in Gtk.Window.list_toplevels() if w.get_title() == "History"), DOCS / "history.png", ["win"], (760, 470))
 
-    picker = windows.StylePicker("So for the release, we need to fix the login bug, write the release notes, "
+    picker = dialogs.StylePicker("So for the release, we need to fix the login bug, write the release notes, "
                                  "and then tell marketing.", lambda *a: None)
     offscreen(picker.win, DOCS / "picker.png", ["win"], (520, -1))
 
-    manager = windows.StyleManager()
+    manager = dialogs.StyleManager()
     manager.list.select_row(manager.list.get_row_at_index(manager.FIXED))  # the first style (Slack)
     offscreen(manager.win, DOCS / "styles.png", ["win", "editor"], (760, 560))
     shutil.rmtree(tmp)

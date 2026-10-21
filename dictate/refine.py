@@ -6,7 +6,7 @@ else CPU (smaller model), so the model is loading while you speak. Stopped after
 import atexit, ctypes, difflib, json, os, queue, re, shutil, signal, socket, subprocess, sys, threading, time, urllib.request
 from pathlib import Path
 
-ROOT = Path(__file__).parent
+from . import ROOT
 SERVER = ROOT / "bin/llama" / ("llama-server.exe" if sys.platform == "win32" else "llama-server")
 MODELS = {"gpu": ROOT / "models/qwen3.5-9b-q4_k_m.gguf", "cpu": ROOT / "models/qwen3.5-4b-q4_k_m.gguf"}
 IDLE = 30            # seconds unused before unloading

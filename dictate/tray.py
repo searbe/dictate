@@ -4,7 +4,7 @@ KDE/Linux: a StatusNotifierItem over D-Bus, with the GTK menu mirrored by dbusme
 Windows: GTK's built-in status icon. macOS: none (GTK 3 has no menu-bar icon); the floating icon remains."""
 import os, sys
 import gi
-import osio
+from . import osio
 from gi.repository import Gdk, Gio, GLib, Gtk
 
 SIZES = (32, 64)  # pixel sizes offered to the tray

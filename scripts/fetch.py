@@ -5,7 +5,7 @@ Safe to re-run: anything already present is skipped."""
 import platform, shutil, stat, sys, tarfile, urllib.request, zipfile
 from pathlib import Path
 
-ROOT = Path(__file__).parent
+ROOT = Path(__file__).resolve().parent.parent  # the project folder
 MODELS, BIN = ROOT / "models", ROOT / "bin"
 SHERPA = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"
 HF = "https://huggingface.co/unsloth"

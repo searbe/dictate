@@ -9,8 +9,8 @@ PY="$(brew --prefix python@3.14)/bin/python3.14"
 
 # --system-site-packages: reuse Homebrew's GTK bindings (gi, cairo)
 .venv/bin/python -c "import gi" 2>/dev/null || { rm -rf .venv; "$PY" -m venv --system-site-packages .venv; }
-.venv/bin/pip install -q --no-cache-dir --disable-pip-version-check --upgrade sherpa-onnx numpy pynput sounddevice
-.venv/bin/python fetch.py
+.venv/bin/pip install -q --no-cache-dir --disable-pip-version-check --upgrade --upgrade-strategy eager -e .
+.venv/bin/python scripts/fetch.py
 
 cat <<'EOD'
 

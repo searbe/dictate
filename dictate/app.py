@@ -1,33 +1,15 @@
-#!/usr/bin/env python3
-"""Dictate: hold Ctrl+Win (Ctrl+Cmd on a Mac) to record, release to transcribe and paste.
-
-Floating icon (drag to move, right-click for menu), drawn with GTK3. The hotkey, recording and paste
-are in osio.py, transcription in stt.py, clean-up / restyling in refine.py, windows in windows.py.
-On KDE Wayland, GTK is forced onto XWayland so the icon can stay on top and be positioned.
+"""The floating icon (drag to move, right-click for menu), drawn with GTK3, and the dictation pipeline:
+record → transcribe → cleanup → style → paste or type. Started by dictate.py, after dictate.bootstrap().
 """
-import os, sys
-HERE = os.path.dirname(os.path.abspath(__file__))
-VENV_PY = os.path.join(HERE, ".venv", "Scripts", "pythonw.exe") if sys.platform == "win32" else os.path.join(HERE, ".venv/bin/python")
-if sys.prefix == sys.base_prefix and os.path.exists(VENV_PY):  # launched with system python → use ours
-    os.execv(VENV_PY, [VENV_PY, *sys.argv])
-if sys.platform.startswith("linux"):
-    os.environ["GDK_BACKEND"] = "x11"
-elif sys.platform == "win32":  # GTK runtime unpacked into ./gtk by setup-windows.ps1
-    GTK = os.path.join(HERE, "gtk")
-    os.add_dll_directory(os.path.join(GTK, "bin"))
-    os.environ["PATH"] = os.path.join(GTK, "bin") + os.pathsep + os.environ["PATH"]
-    os.environ["GI_TYPELIB_PATH"] = os.path.join(GTK, "lib", "girepository-1.0")
-    os.environ["XDG_DATA_DIRS"] = os.path.join(GTK, "share")
-
-import json, math, signal, socket, threading, time
+import json, math, os, signal, socket, sys, threading, time
 from datetime import datetime
 from pathlib import Path
 import cairo, gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
-import activewin, osio, refine, remote, stt, tray, windows
+from . import ROOT, activewin, dialogs, osio, refine, remote, stt, tray
 
-DATA = Path(__file__).parent / "data"  # everything stays inside this folder
+DATA = ROOT / "data"  # everything stays inside this folder
 HISTORY = DATA / "history.jsonl"
 AUDIO = DATA / "audio"  # each dictation's recording, kept for playback for "keep_audio_hours"
 KEEP_AUDIO = ((0, "Don't keep"), (1, "1 hour"), (2, "2 hours"), (3, "3 hours"), (12, "12 hours"), (24, "24 hours"),
@@ -61,7 +43,7 @@ class App:
 
     def __init__(self):
         DATA.mkdir(parents=True, exist_ok=True)
-        windows.install_css()
+        dialogs.install_css()
 
         w = self.win = Gtk.Window(type_hint=Gdk.WindowTypeHint.UTILITY, decorated=False,
                                   skip_taskbar_hint=True, skip_pager_hint=True, app_paintable=True)
@@ -78,10 +60,10 @@ class App:
         w.connect("configure-event", self.on_moved)
         w.connect("enter-notify-event", lambda *_: self.hover(True))
         w.connect("leave-notify-event", lambda *_: self.hover(False))
-        w.connect("destroy", Gtk.main_quit)
+        w.connect("destroy", lambda _: self.quit("the icon's window was destroyed"))
         if not osio.WINDOWS:  # quit cleanly so exit hooks (e.g. unloading the KWin script) run
             for sig in (signal.SIGTERM, signal.SIGINT):
-                GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, Gtk.main_quit)
+                GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, lambda sig=sig: self.quit(f"got {sig.name}"))
 
         self.menu = Gtk.Menu()
         toggle = Gtk.CheckMenuItem(label="Refine text", active=self.cfg["refine"])
@@ -91,7 +73,7 @@ class App:
         self.default_menu = Gtk.Menu()
         default.set_submenu(self.default_menu)
         self.menu.append(default)
-        for label, cb in (("History", self.show_history), ("Refinement styles…", windows.StyleManager), (None, None)):
+        for label, cb in (("History", self.show_history), ("Refinement styles…", dialogs.StyleManager), (None, None)):
             item = Gtk.MenuItem(label=label) if label else Gtk.SeparatorMenuItem()
             if cb:
                 item.connect("activate", lambda _, cb=cb: cb())
@@ -115,7 +97,7 @@ class App:
         startup.connect("toggled", lambda t: osio.set_autostart(t.get_active()))
         self.menu.append(startup)
         quit_item = Gtk.MenuItem(label="Quit")
-        quit_item.connect("activate", lambda _: Gtk.main_quit())
+        quit_item.connect("activate", lambda _: self.quit("Quit chosen from the menu"))
         self.menu.append(quit_item)
         self.menu.show_all()
         self.build_default_menu()
@@ -375,7 +357,7 @@ class App:
 
     # --- windows ---
     def show_history(self):
-        windows.history(self, HISTORY, AUDIO)
+        dialogs.history(self, HISTORY, AUDIO)
 
     def pick_style(self, text, raw, app, audio):
         def chosen(style, paste):
@@ -386,11 +368,18 @@ class App:
                 styled = refine.apply(text, style, activewin.describe(app))
                 GLib.idle_add(lambda: self.paste(styled, raw, app, style["name"], True, 400, audio=audio, cleanup=True))
             threading.Thread(target=restyle, daemon=True).start()
-        windows.StylePicker(text, chosen)
+        dialogs.StylePicker(text, chosen)
+
+    def quit(self, reason):
+        """Every way out goes through here, so the log says why Dictate stopped."""
+        log(f"quitting: {reason}")
+        Gtk.main_quit()
 
     def run(self):
+        log(f"started (pid {os.getpid()})")
         Gtk.main()
         self.loader.join()  # exiting while the speech model is still loading crashes inside onnxruntime
+        log("exited")
 
 
 def only_instance():
@@ -403,7 +392,3 @@ def only_instance():
         sys.exit("Dictate is already running.")
     return lock
 
-
-if __name__ == "__main__":
-    _lock = only_instance()
-    App().run()

@@ -6,10 +6,11 @@ Windows and macOS use pynput for keys and sounddevice for the microphone.
 import subprocess, sys, threading, time, unicodedata, wave
 from pathlib import Path
 from gi.repository import GLib
+from . import ROOT
 
 LINUX, WINDOWS, MAC = sys.platform.startswith("linux"), sys.platform == "win32", sys.platform == "darwin"
 RATE = 16000
-SCRIPT = Path(__file__).with_name("dictate.py")
+SCRIPT = ROOT / "dictate.py"
 # macOS virtual key codes (ANSI layout) for A–Z; Option changes the typed character, so match the key itself
 MAC_LETTERS = dict(zip((0, 11, 8, 2, 14, 3, 5, 4, 34, 38, 40, 37, 46, 45, 31, 35, 12, 15, 1, 17, 32, 9, 13, 7, 16, 6),
                        "abcdefghijklmnopqrstuvwxyz"))

@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Compare refinement models on your own dictations: python bench.py [N recent transcripts, default 15]
+"""Compare refinement models on your own dictations: python scripts/bench.py [N recent transcripts, default 15]
 
 Runs the default cleanup (and the default style) with every models/*.gguf on the GPU, printing each output,
 its time, and any problem the safety checks would have caught. Doesn't touch history or settings."""
-import json, os, sys, time
+import json, sys, time
 from pathlib import Path
-VENV_PY = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv", *(("Scripts", "python.exe") if sys.platform == "win32" else ("bin", "python")))
-if sys.prefix == sys.base_prefix and os.path.exists(VENV_PY):
-    os.execv(VENV_PY, [VENV_PY, *sys.argv])
-import refine
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import dictate  # noqa: E402
+dictate.bootstrap(gui=False)
+from dictate import ROOT, refine  # noqa: E402
 
 TRICKY = [  # known-hard cases, always included
     "So how do I make this like how do I make this uh like run on booth on SteamOS?",
@@ -19,7 +20,7 @@ TRICKY = [  # known-hard cases, always included
 
 
 def recent(n):
-    path = refine.ROOT / "data/history.jsonl"
+    path = ROOT / "data/history.jsonl"
     raws = [json.loads(l).get("raw") or json.loads(l)["text"] for l in path.read_text().splitlines()] if path.exists() else []
     return list(dict.fromkeys(reversed(raws)))[:n]
 
@@ -27,7 +28,7 @@ def recent(n):
 def main():
     texts = TRICKY + [t for t in recent(int(sys.argv[1]) if len(sys.argv) > 1 else 15) if t not in TRICKY]
     style = refine.default_style()
-    models = sorted(refine.ROOT.glob("models/*.gguf"))
+    models = sorted(ROOT.glob("models/*.gguf"))
     results = {}
     for model in models:
         refine.MODELS["gpu"] = model
