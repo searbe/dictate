@@ -5,6 +5,9 @@ keyboard that pastes (osio.Paster) and the speaker (osio.Player). The test also 
 fake_llama.py (DICTATE_TEST_LLAMA). Everything in between is the real app, so the tests describe what a
 user sees, and keep passing however the inside is reorganised.
 
+With DICTATE_TEST_SPEECH (a 16 kHz WAV), the microphone "records" that file every time and the real speech
+model transcribes it; with DICTATE_TEST_LLAMA pointing at the real llama-server, refining is real too.
+
 Commands arrive as JSON lines on stdin (see COMMANDS); each gets a "done" reply with the same id.
 Events go to stdout as lines starting with "EVENT "; anything else on stdout is the app's own log.
 """
@@ -37,10 +40,18 @@ class Hotkey:
         pass
 
 
+REAL_SPEECH = os.environ.get("DICTATE_TEST_SPEECH")
+
+
 class Recorder:
     def start(self, path):
-        with wave.open(path, "wb") as w:  # a real (silent) recording, as the microphone would leave
-            w.setnchannels(1), w.setsampwidth(2), w.setframerate(16000), w.writeframes(bytes(3200))
+        with wave.open(path, "wb") as w:  # a real recording, as the microphone would leave: silent, or the speech
+            w.setnchannels(1), w.setsampwidth(2), w.setframerate(16000)
+            if REAL_SPEECH:
+                with wave.open(REAL_SPEECH) as sample:
+                    w.writeframes(sample.readframes(sample.getnframes()))
+            else:
+                w.writeframes(bytes(3200))
         heard[path], speech["next"] = speech["next"], None
         event("recording", path=path)
 
@@ -82,8 +93,9 @@ class Player:
 
 
 osio.Hotkey, osio.Recorder, osio.Paster, osio.Player = Hotkey, Recorder, Paster, Player
-stt.Live, stt.load = Live, lambda: None
-stt.transcribe = lambda path: heard.get(str(path)) or ""
+if not REAL_SPEECH:
+    stt.Live, stt.load = Live, lambda: None
+    stt.transcribe = lambda path: heard.get(str(path)) or ""
 refine.SERVER = Path(os.environ["DICTATE_TEST_LLAMA"])
 refine.IDLE = float(os.environ.get("DICTATE_TEST_IDLE", refine.IDLE))
 

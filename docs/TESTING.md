@@ -59,6 +59,7 @@ them. `tests/harness/client.py` has the vocabulary (`dictate()`, `click()`, `rea
 | Keys typed and pasted on US and UK layouts, Shift+Enter for new lines, plain punctuation | `test_typing_and_pasting.py` |
 | Speech-to-text with the real models: English, German, silence and noise, live = whole-file | `test_speech_to_text.py` |
 | Downloads: complete, interrupted, not repeated; unpacking | `test_downloads.py` |
+| The real thing end to end (real speech model, llama-server and refinement model), and `scripts/prove_local.py`: no network call leaves the computer | `test_local_only.py` |
 
 ## Manual checklist
 

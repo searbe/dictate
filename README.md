@@ -11,7 +11,7 @@ Push-to-talk dictation that runs entirely on your own computer. Hold a hotkey an
 - **History:** every dictation with what was applied, playback of the recording, copy, delete and clear. Recordings are kept for a time you choose.
 - **Synergy:** while your keyboard is controlling another computer, the text is typed there.
 - **Floating icon and system tray icon** with the same menu, and an optional **Run at startup**.
-- **Self-contained:** everything installs into this folder. Dictate sends nothing over the network; models are downloaded once, during setup.
+- **Self-contained:** everything installs into this folder. Dictate sends nothing over the network; models are downloaded once, during setup. [Check it yourself](#checking-that-its-local-only).
 
 ## Using it
 Hold **Ctrl+Win** to record, release to transcribe and paste into the focused text box.
@@ -37,6 +37,25 @@ The floating dot is dark when idle, red with pulsing rings while recording, and 
 ![Refinement styles](docs/styles.png)
 
 Screenshots are generated from sample data with `python docs/make_screenshots.py` (rendered off-screen).
+
+## Checking that it's local only
+Don't take our word for it. On Linux, after setup, run:
+
+```sh
+python scripts/prove_local.py
+```
+
+It seals off a sandbox with no network (only loopback, and none of the system's services, so not even a DNS
+lookup can get out), shows that the internet can't be reached from inside, and checks that its recorder catches a
+program that tries. Then it runs Dictate in there, with the real speech and language models transcribing and
+refining a sample recording, while recording every network call of every process. It lists each call and ends with
+`RESULT: LOCAL ONLY` only if all of them stayed on this computer. (Calls to 127.0.0.1 are Dictate talking to the
+llama-server it started.)
+
+`python scripts/prove_local.py --live` does the same with your actual Dictate, keyboard and microphone: quit
+Dictate first, then dictate as usual in the sandboxed copy and choose Quit from its menu to see the report.
+
+It needs `bubblewrap` and `strace` (SteamOS has both; on Ubuntu: `sudo apt install bubblewrap strace`).
 
 ## Recommended hardware
 | | Minimum | Recommended |
@@ -99,6 +118,7 @@ Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can'
 - `scripts/fetch.py`: downloads the models and the right llama.cpp build; used by every setup script.
 - `scripts/bench.py`: compares every `models/*.gguf` on your recent dictations: `python scripts/bench.py`.
 - `docs/make_screenshots.py`: regenerates the README screenshots from sample data.
+- `scripts/prove_local.py`: shows that Dictate makes no network connections (see above).
 - `tests/` and `scripts/test.py`: the automated tests, run in their own invisible desktop: `python scripts/test.py`. [docs/TESTING.md](docs/TESTING.md) explains them and lists what to check by hand.
 
 ## Technical notes

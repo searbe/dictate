@@ -61,20 +61,20 @@ class Dictate:
         return reply
 
     # --- what a user does ---
-    def dictate(self, speech, alt=False, letter=None, wait=True):
+    def dictate(self, speech, alt=False, letter=None, wait=True, timeout=15):
         """Hold Ctrl+Win, say speech (None: say nothing), optionally tap Alt (+ a letter), release.
         With wait, returns once the icon is idle again: what was pasted or typed, or None."""
         mark = self.mark()
         self.send("say", text=speech)
         self.send("keys", down=["ctrl", "meta"])
-        self.wait_for("recording", after=mark)
+        self.wait_for("recording", after=mark, timeout=timeout)
         if alt:
             self.send("keys", down=["alt"] + ([letter] if letter else []))
             self.send("keys", up=([letter] if letter else []) + ["alt"])
         self.send("keys", up=["meta", "ctrl"])
         if not wait:
             return mark
-        return self.result(mark)
+        return self.result(mark, timeout)
 
     def result(self, mark, timeout=15):
         """What came out of the dictation that started at mark, once the icon is idle again."""
