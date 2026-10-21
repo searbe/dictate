@@ -144,7 +144,9 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
   mostly keeping theirs, including in quick back-and-forth; note where it slips (talking over each other, one-word
   answers). Sentences aren't broken up at short pauses. The greyed-out preview keeps up within about a second
   of someone speaking. After changing `voices.py`, run `python scripts/bench_voices.py
-  LibriSpeech/dev-clean` (download it from openslr.org/12) and compare with the README's figures.
+  LibriSpeech/dev-clean` (download it from openslr.org/12) and compare with the last run: speaking time labelled
+  right 98.6% / 94.3% (with pauses, full quality / phone), 89.8% / 81.5% (quick replies); the right number of
+  people in 83% / 75% and 75% / 67% of conversations.
 - With Remember voices on: name someone, and in a later call with them they're named from their first stretch.
 
 ### 8. The desktop shell

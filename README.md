@@ -46,8 +46,6 @@ The floating dot is red while recording and spins while transcribing; a blue rin
 
 ![Transcripts](docs/transcripts.png)
 
-Screenshots are generated from sample data with `python docs/make_screenshots.py` (rendered off-screen).
-
 ## Checking that it's local only
 Don't take our word for it. On Linux, after setup, run:
 
@@ -55,17 +53,10 @@ Don't take our word for it. On Linux, after setup, run:
 python scripts/prove_local.py
 ```
 
-It seals off a sandbox with no network (only loopback, and none of the system's services, so not even a DNS
-lookup can get out), shows that the internet can't be reached from inside, and checks that its recorder catches a
-program that tries. Then it runs Dictate in there, with the real speech and language models transcribing and
-refining a sample recording, while recording every network call of every process. It lists each call and ends with
-`RESULT: LOCAL ONLY` only if all of them stayed on this computer. (Calls to 127.0.0.1 are Dictate talking to the
-llama-server it started.)
-
-`python scripts/prove_local.py --live` does the same with your actual Dictate, keyboard and microphone: quit
-Dictate first, then dictate as usual in the sandboxed copy and choose Quit from its menu to see the report.
-
-It needs `bubblewrap` and `strace` (SteamOS has both; on Ubuntu: `sudo apt install bubblewrap strace`).
+It runs Dictate, with the real models, in a sandbox with no network, records every network call of every process,
+and ends with `RESULT: LOCAL ONLY` only if they all stayed on this computer. `--live` does the same with your actual
+Dictate, keyboard and microphone (quit Dictate first). It needs `bubblewrap` and `strace` (SteamOS has both; on
+Ubuntu: `sudo apt install bubblewrap strace`).
 
 ## Recommended hardware
 | | Minimum | Recommended |
@@ -76,14 +67,15 @@ It needs `bubblewrap` and `strace` (SteamOS has both; on Ubuntu: `sudo apt insta
 | **Disk** | ~10 GB for the models | SSD, so the models load quickly |
 | **Microphone** | Built-in | A headset or close-up mic: the biggest single help in noisy rooms |
 
-Transcription runs on the CPU while you speak, so little is usually left when you let go (0.1 s or less, unless you've spoken for a long time without a pause). Refining text is the heavy part: with a free GPU it uses the 9B model, otherwise the 4B model on the CPU, which is slower (about 1–2 s per dictation on a recent 8-core desktop, longer on laptops). Tested on an AMD Ryzen 7 9800X3D with 64 GB of RAM and a Radeon RX 9070 XT (16 GB), where a cleaned-up dictation is ready about 0.5–1.5 s after letting go.
+Transcription takes 0.1 s or less after you let go. Refining is the slow part: about 0.5–1.5 s with a free GPU
+(tested on a Radeon RX 9070 XT), 1–2 s on a recent 8-core CPU, longer on laptops.
 
 ## Setup (self-contained)
 Each setup script installs into this folder and nothing anywhere else, and is safe to re-run:
-- `models/`: Parakeet TDT 0.6B v3 int8 (~640 MB), the Silero VAD speech filter, and Qwen3.5 4B (~2.7 GB, CPU) and 9B (~5.7 GB, GPU) for refinement.
+- `models/`: Parakeet TDT 0.6B v3 (~640 MB, speech), Silero VAD, TitaNet small (40 MB, voices), and Qwen3.5 4B (~2.7 GB, CPU) and 9B (~5.7 GB, GPU) for refinement.
 - `bin/llama/`: a llama.cpp release (Vulkan on Linux/Windows, Metal on macOS), used for refinement.
 - `.venv/`: Python packages.
-- `data/`: your history, recordings, settings, styles and vocabulary (see Technical notes).
+- `data/`: your history, recordings, settings, styles and vocabulary.
 
 Delete the folder to remove the app completely.
 
@@ -115,36 +107,17 @@ Hold **Ctrl+Win**. The GPU model is used on NVIDIA cards with enough free memory
 Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can't make one), so use the floating icon's menu. **Run at startup** adds a LaunchAgent (`~/Library/LaunchAgents/local.dictate.plist`). macOS will ask for Microphone, Input Monitoring (hotkey) and Accessibility (paste) permissions for the app you launch it from; restart Dictate after granting them. Screen Recording is optional and lets per-app styles see window titles. Macs with 16 GB of RAM or more use the 9B model on the GPU (Metal).
 
 ## Code
-- `dictate.py`: starts the app (switching to `.venv` first). The app itself is the `dictate/` package:
-  - `app.py`: floating icon, menu and the dictation pipeline (record → transcribe → cleanup → style → paste or type).
-  - `osio.py`: everything OS-specific: global hotkey, recording, playback, paste, typing and run-at-startup (evdev/pw-record/pw-play/uinput on Linux, pynput/sounddevice on Windows and macOS).
-  - `stt.py`: transcription. The VAD strips non-speech, then Parakeet runs on the CPU. `Live` follows the recording while it grows and transcribes each stretch of speech as soon as you pause; `transcribe()` does a whole file (the fallback).
-  - `refine.py`: the default cleanup, then any style on top; style storage. Pressing the hotkey (or Alt) starts loading the model: the larger GPU model if the GPU has enough free memory and is under 30% busy, otherwise the smaller CPU model (`MODELS`). It's unloaded after 30 s of no use.
-  - `dialogs.py`: History, the refinement style manager, the style picker, Transcripts and Voices.
-  - `transcript.py` + `voices.py`: transcribe mode, and telling (and remembering) voices apart.
-  - `remote.py`: tells when the keyboard is on another computer (so the text is typed there), from KWin's input-capture signals and Synergy's log.
-  - `tray.py`: the system tray icon with the same menu (a StatusNotifierItem plus dbusmenu on KDE, GTK's status icon on Windows).
-  - `activewin.py` + `kwin_active.js`: tracks the focused window and its title. On KDE, KWin loads the script at runtime and unloads it on exit; it's never installed. Windows and macOS ask the OS directly.
-- `pyproject.toml`: the Python dependencies, installed into `.venv` by every setup script.
-- `scripts/fetch.py`: downloads the models and the right llama.cpp build; used by every setup script.
-- `scripts/bench.py`: compares every `models/*.gguf` on your recent dictations: `python scripts/bench.py`.
-- `scripts/bench_voices.py`: how well transcripts tell voices apart, on mock conversations made from LibriSpeech.
-- `docs/make_screenshots.py`: regenerates the README screenshots from sample data.
-- `scripts/prove_local.py`: shows that Dictate makes no network connections (see above).
-- `tests/` and `scripts/test.py`: the automated tests, run in their own invisible desktop: `python scripts/test.py`. [docs/TESTING.md](docs/TESTING.md) explains them and lists what to check by hand.
+- `dictate.py` starts the app; the app is the `dictate/` package (each module explains itself at the top):
+  `app.py` (icon, menu, dictation pipeline), `osio.py` (hotkey, recording, pasting per OS), `stt.py` (speech to
+  text), `refine.py` (cleanup and styles), `dialogs.py` (windows), `transcript.py`, `voices.py` and `echo.py`
+  (transcribe mode), `remote.py` (another computer has the keyboard), `tray.py`, `activewin.py`.
+- `scripts/`: `fetch.py` (downloads, used by setup), `test.py` (the tests: see [docs/TESTING.md](docs/TESTING.md)),
+  `prove_local.py`, `bench.py` (compares refinement models), `bench_voices.py` (telling voices apart).
+- `docs/make_screenshots.py`: regenerates the screenshots.
 
-## Technical notes
-- **Data** (`data/`, not in git; the `DICTATE_DATA` environment variable moves it elsewhere):
-  - `history.jsonl`: one JSON object per dictation: `t`, `text`, `app`, `cleanup` (bool), and, when present, `title` (the window title per-app styles matched against), `raw` (the transcript, if refinement changed it), `style`, `audio`.
-  - `audio/*.wav`: the recordings (16 kHz mono, about 2 MB a minute). They're pruned to the **Keep recordings** setting at startup, every 10 minutes and when it changes.
-  - `styles.json`: the cleanup prompt; the styles (`name`, `key`, `apps`, `prompt`, `default`); and `remote_default` (absent means "same as here").
-  - `vocab.txt`: one term per line. `state.json`: icon position and menu settings.
-- **Refinement safety checks** (`refine.suspicious`): a model output is rejected, and the input kept, if it's empty, loses all the question marks, is less than half the length, adds a `[placeholder]`, or (for cleanup) changes too much, or (for styles) keeps less than 60% of the words. The fixed instructions in `refine.GUARD` sit above every style.
-- **Model server:** llama-server on a random localhost port, started from one long-lived thread with a parent-death SIGKILL (Linux), so it can't outlive the app. It's stopped with SIGTERM, then SIGKILL after 3 s.
-- **Single instance:** Dictate binds localhost port 47613 at startup; a second copy exits.
-- **Remote screens:** KWin's input-capture broadcasts and Synergy's log are combined, as neither caught every switch alone. A capture must last 0.2 s to count, as a disconnected Synergy flickers every few milliseconds.
-- **Transcribe mode:** the speakers are PipeWire's monitor of the default output; each side is kept as Ogg Opus (about 12 MB an hour) as long as dictation recordings are. A stretch is transcribed whole at a 1.2 s pause (with a greyed preview every second meanwhile), then split between voices (TitaNet small voiceprints) at its shorter pauses and where the voice changes. `scripts/bench_voices.py` measures it on mock LibriSpeech conversations: 94–99% of speaking time labelled right with pauses between turns, 82–90% with quick replies. Echoes of the speakers in the microphone are taken out by PipeWire's echo canceller and `echo.py`.
-- **Logs:** written to stdout; when started from the desktop, see `journalctl --user`. It logs `started`, then `quitting: <why>` (the menu's Quit, a signal, or the icon's window closing) and `exited`, so a stop is never a mystery. Each dictation logs `recording: N ms after the key was pressed` (from the kernel's key timestamp), which is useful for spotting latency.
+## Data
+`data/` (not in git; `DICTATE_DATA` moves it): `history.jsonl`, recordings in `audio/` and `transcripts/`,
+`styles.json`, `vocab.txt` and `state.json`. Logs go to `journalctl --user` when started from the desktop.
 
 ## License
-MIT: see [LICENSE](LICENSE). The models and tools the setup scripts download come under their own licenses: Parakeet TDT (CC BY 4.0), Qwen3.5 (Apache 2.0), Silero VAD (MIT), llama.cpp (MIT), sherpa-onnx (Apache 2.0), and, on Windows, the gvsbuild GTK runtime (LGPL).
+MIT: see [LICENSE](LICENSE). The models and tools the setup scripts download come under their own licenses: Parakeet TDT (CC BY 4.0), Qwen3.5 (Apache 2.0), Silero VAD (MIT), TitaNet (CC BY 4.0), llama.cpp (MIT), sherpa-onnx (Apache 2.0), and, on Windows, the gvsbuild GTK runtime (LGPL).
