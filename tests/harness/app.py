@@ -6,7 +6,8 @@ fake_llama.py (DICTATE_TEST_LLAMA). Everything in between is the real app, so th
 user sees, and keep passing however the inside is reorganised.
 
 With DICTATE_TEST_SPEECH (a 16 kHz WAV), the microphone "records" that file every time and the real speech
-model transcribes it; with DICTATE_TEST_LLAMA pointing at the real llama-server, refining is real too.
+model transcribes it; DICTATE_TEST_SPEAKERS does the same for what the speakers play (transcribe mode).
+With DICTATE_TEST_LLAMA pointing at the real llama-server, refining is real too.
 
 Commands arrive as JSON lines on stdin (see COMMANDS); each gets a "done" reply with the same id.
 Events go to stdout as lines starting with "EVENT "; anything else on stdout is the app's own log.
@@ -28,42 +29,56 @@ def event(kind, **fields):
 # --- the hardware, as test doubles ---
 speech = {"next": None}  # what the user will say during the next recording
 heard = {}  # recording path -> what was said during it
+ears = []  # the transcriptions following a recording as it's made (transcribe mode), newest last
 
 
 class Hotkey:
     """The real Ctrl+Win state machine (osio.Chord), fed by the test instead of a keyboard."""
 
-    def __init__(self, callback):
-        self.chord = osio.Chord(callback)
+    def __init__(self, callback, on_again=None):
+        self.chord = osio.Chord(callback, on_again)
 
     def start(self):
         pass
 
 
-REAL_SPEECH = os.environ.get("DICTATE_TEST_SPEECH")
+REAL_SPEECH, REAL_SPEAKERS = os.environ.get("DICTATE_TEST_SPEECH"), os.environ.get("DICTATE_TEST_SPEAKERS")
 
 
 class Recorder:
-    def start(self, path):
-        with wave.open(path, "wb") as w:  # a real recording, as the microphone would leave: silent, or the speech
-            w.setnchannels(1), w.setsampwidth(2), w.setframerate(16000)
-            if REAL_SPEECH:
-                with wave.open(REAL_SPEECH) as sample:
-                    w.writeframes(sample.readframes(sample.getnframes()))
-            else:
-                w.writeframes(bytes(3200))
-        heard[path], speech["next"] = speech["next"], None
-        event("recording", path=path)
+    def start(self, path, speakers=False, on_audio=None):
+        real = REAL_SPEAKERS if speakers else REAL_SPEECH
+        audio = bytes(3200)  # what the microphone or speakers give: silence, or the speech
+        if real:
+            with wave.open(real) as sample:
+                audio = sample.readframes(sample.getnframes())
+        if on_audio:  # streamed as it's recorded (transcribe mode)
+            on_audio.__self__.source = "speakers" if speakers else "mic"  # the stt.Live it streams to
+            on_audio(audio)
+            Path(path).write_bytes(b"recording")
+        else:
+            with wave.open(path, "wb") as w:  # a real recording, as the microphone would leave
+                w.setnchannels(1), w.setsampwidth(2), w.setframerate(16000)
+                w.writeframes(audio)
+            heard[path], speech["next"] = speech["next"], None
+        event("recording", path=path, speakers=speakers)
 
     def stop(self):
         event("recording_stopped")
 
 
 class Live:
-    def __init__(self, path):
-        self.path = path
+    def __init__(self, path=None, on_text=None):
+        self.path, self.on_text, self.t0 = path, on_text, time.monotonic()
+        if on_text:
+            ears.append(self)
+
+    def push(self, samples):
+        pass
 
     def finish(self):
+        if self in ears:
+            ears.remove(self)  # the recording has stopped: nothing more is heard
         return heard.get(self.path) or ""
 
 
@@ -77,23 +92,25 @@ class Paster:
 
 
 class Player:
-    def __init__(self):
-        self.done = None
+    def __init__(self, on_playing=lambda playing: None):
+        self.done, self.on_playing = None, on_playing
 
     def play(self, path, on_done):
         self.stop()
         self.done = on_done
+        self.on_playing(True)
         event("playing", path=path)
 
     def stop(self):
         if self.done:
             GLib.idle_add(self.done)
             self.done = None
+            self.on_playing(False)
             event("stopped")
 
 
 osio.Hotkey, osio.Recorder, osio.Paster, osio.Player = Hotkey, Recorder, Paster, Player
-if not REAL_SPEECH:
+if not REAL_SPEECH and not REAL_SPEAKERS:
     stt.Live, stt.load = Live, lambda: None
     stt.transcribe = lambda path: heard.get(str(path)) or ""
 refine.SERVER = Path(os.environ["DICTATE_TEST_LLAMA"])
@@ -206,6 +223,15 @@ def menu_item(menu, label):
 # --- commands ---
 def cmd_say(text):
     speech["next"] = text
+
+
+def cmd_hear(text, source, length=1.0):
+    """Someone says text through the speakers (source "speakers"), or into the microphone ("mic"), while
+    Dictate is transcribing: it's heard as a stretch of speech that has just ended."""
+    for live in reversed(ears):
+        if getattr(live, "source", None) == source:
+            end = time.monotonic() - live.t0
+            return live.on_text(max(0.0, end - length), end, text)
 
 
 def cmd_keys(down=(), up=()):

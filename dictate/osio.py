@@ -9,6 +9,7 @@ from gi.repository import GLib
 from . import ROOT
 
 LINUX, WINDOWS, MAC = sys.platform.startswith("linux"), sys.platform == "win32", sys.platform == "darwin"
+HEARS_SPEAKERS = LINUX  # Recorder can record what the computer plays (transcribe mode)
 RATE = 16000
 SCRIPT = ROOT / "dictate.py"
 # macOS virtual key codes (ANSI layout) for A–Z; Option changes the typed character, so match the key itself
@@ -36,11 +37,17 @@ def dbus_register(conn, path, interface, method_call, get_property=None):
 class Chord:
     """Ctrl+Win (Ctrl+Cmd on a Mac) state machine. Calls callback(down, alt, letter) on the GTK thread:
     on press, on release (alt = Alt was touched during the hold, letter = any A–Z pressed with Alt),
-    and once when Alt is first pressed mid-hold (so the app can start loading the model)."""
+    and once when Alt is first pressed mid-hold (so the app can start loading the model).
 
-    def __init__(self, callback):
-        self.callback, self.held, self.active, self.alt, self.letter = callback, {}, False, False, None
+    Lifting Win and pressing it again within AGAIN seconds, with Ctrl held throughout, calls on_again()
+    instead of starting another hold (transcribe mode). The first hold has already been reported by then."""
+    AGAIN = 1.0
+
+    def __init__(self, callback, on_again=None):
+        self.callback, self.on_again, self.held, self.active, self.alt, self.letter = callback, on_again, {}, False, False, None
         self.pressed_at = None  # when the chord's key was physically pressed (wall clock), for latency logs
+        self.lifted = None  # when Win was let go with Ctrl still down (monotonic), until Ctrl is let go too
+        self.again = False  # this hold is the "again" press: report nothing about it
 
     def key(self, ident, kind, down, at=None):
         """ident: a stable id for the physical key; kind: "ctrl", "meta", "alt", a letter, or None;
@@ -52,17 +59,33 @@ class Chord:
         else:
             self.held.pop(ident, None)
         kinds = set(self.held.values())
-        if self.active and down and kind == "alt":
+        if "ctrl" not in kinds:
+            self.lifted = None
+        if self.active and down and kind == "alt" and not self.again:
             self.alt = True
             GLib.idle_add(self.callback, True, True, None)
         elif self.active and down and kind and len(kind) == 1 and "alt" in kinds:
             self.letter = kind
         on = {"ctrl", "meta"} <= kinds
-        if on != self.active:
-            self.active = on
-            if on:
-                self.alt, self.letter, self.pressed_at = "alt" in kinds, None, at or time.time()
-            GLib.idle_add(self.callback, on, self.alt, self.letter)
+        if on == self.active:
+            return
+        self.active = on
+        if not on:
+            if self.again:
+                self.again = False  # the next Win press is an ordinary hold again
+            else:
+                self.lifted = time.monotonic() if "ctrl" in kinds else None
+                GLib.idle_add(self.callback, False, self.alt, self.letter)
+        elif self.on_again and self.may_go_again():
+            self.again, self.lifted = True, None
+            GLib.idle_add(self.on_again)
+        else:
+            self.alt, self.letter, self.pressed_at = "alt" in kinds, None, at or time.time()
+            GLib.idle_add(self.callback, True, self.alt, self.letter)
+
+    def may_go_again(self):
+        """Whether pressing Win now would still be "again": Win was lifted moments ago, Ctrl is still down."""
+        return bool(self.lifted) and time.monotonic() - self.lifted < self.AGAIN
 
 
 if LINUX:
@@ -77,9 +100,9 @@ if LINUX:
     class Hotkey(threading.Thread):
         """Watches every keyboard via evdev (global, works on Wayland). The kernel timestamps each key."""
 
-        def __init__(self, callback):
+        def __init__(self, callback, on_again=None):
             super().__init__(daemon=True)
-            self.chord, self.sel = Chord(callback), selectors.DefaultSelector()
+            self.chord, self.sel = Chord(callback, on_again), selectors.DefaultSelector()
             for path in evdev.list_devices():
                 dev = evdev.InputDevice(path)
                 if e.KEY_LEFTCTRL in dev.capabilities().get(e.EV_KEY, []):
@@ -93,12 +116,34 @@ if LINUX:
                             self.chord.key(ev.code, KINDS.get(ev.code), ev.value == 1, ev.timestamp())
 
     class Recorder:
-        def start(self, path):
-            self.proc = subprocess.Popen(["pw-record", "--rate", str(RATE), "--channels", "1", "--format", "s16", path])
+        def start(self, path, speakers=False, on_audio=None):
+            """Record the microphone, or (speakers) whatever this computer is playing: PipeWire's monitor of
+            the default output (still heard while the output is muted). Into a WAV file; or, with on_audio,
+            into an Ogg Opus file (about a tenth of the size) while passing each chunk of 16-bit samples to
+            on_audio as it's recorded (on the recorder's thread)."""
+            sink = ["-P", "{ stream.capture.sink=true }"] if speakers else []
+            cmd = ["pw-record", *sink, "--rate", str(RATE), "--channels", "1", "--format", "s16"]
+            if not on_audio:
+                self.proc, self.reader = subprocess.Popen([*cmd, path]), None
+                return
+            import numpy as np, soundfile
+            out = soundfile.SoundFile(path, "w", RATE, 1, format="OGG", subtype="OPUS")
+            self.proc = subprocess.Popen([*cmd, "--raw", "-"], stdout=subprocess.PIPE)
+
+            def pump():
+                with out:
+                    while chunk := self.proc.stdout.read(RATE // 5):  # 0.1 s of samples
+                        chunk = chunk[:len(chunk) // 2 * 2]
+                        out.write(np.frombuffer(chunk, np.int16))
+                        on_audio(chunk)
+            self.reader = threading.Thread(target=pump, daemon=True)
+            self.reader.start()
 
         def stop(self):
             self.proc.terminate()
             self.proc.wait()
+            if self.reader:
+                self.reader.join()  # everything recorded has been passed on and saved
 
     def _layout():
         """The first keyboard layout KDE is set to (e.g. "gb"), else "us"."""
@@ -172,8 +217,8 @@ else:
     class Hotkey:
         """Global key listener via pynput (on macOS this needs Input Monitoring permission)."""
 
-        def __init__(self, callback):
-            self.chord = chord = Chord(callback)
+        def __init__(self, callback, on_again=None):
+            self.chord = chord = Chord(callback, on_again)
             self.listener = keyboard.Listener(on_press=lambda k: chord.key(*_ident_kind(k), True),
                                               on_release=lambda k: chord.key(*_ident_kind(k), False))
 
@@ -181,7 +226,9 @@ else:
             self.listener.start()
 
     class Recorder:
-        def start(self, path):
+        def start(self, path, speakers=False, on_audio=None):
+            if speakers or on_audio:
+                raise NotImplementedError("recording the speakers is Linux-only for now")
             self.wav = wave.open(path, "wb")
             self.wav.setnchannels(1)
             self.wav.setsampwidth(2)
@@ -216,13 +263,21 @@ else:
 
 class Player:
     """Plays one WAV recording at a time (pw-play on Linux, sounddevice elsewhere).
-    on_done() runs on the GTK thread when playback ends, whether it finished or was stopped."""
+    on_done() runs on the GTK thread when playback ends, whether it finished or was stopped;
+    on_playing(True / False) when something starts playing and when nothing is any more."""
 
-    def __init__(self):
-        self.proc = None
+    def __init__(self, on_playing=lambda playing: None):
+        self.proc, self.on_playing, self.current = None, on_playing, None
 
     def play(self, path, on_done):
         self.stop()
+        self.current = turn = object()
+        self.on_playing(True)
+        def ended():
+            if self.current is turn:  # not replaced by another recording meanwhile
+                self.current = None
+                self.on_playing(False)
+            on_done()
         if LINUX:
             proc = self.proc = subprocess.Popen(["pw-play", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             wait = proc.wait
@@ -232,7 +287,7 @@ class Player:
                 samples, rate = np.frombuffer(w.readframes(w.getnframes()), np.int16), w.getframerate()
             sounddevice.play(samples, rate)
             wait = sounddevice.wait
-        threading.Thread(target=lambda: (wait(), GLib.idle_add(on_done)), daemon=True).start()
+        threading.Thread(target=lambda: (wait(), GLib.idle_add(ended)), daemon=True).start()
 
     def stop(self):
         if LINUX and self.proc and self.proc.poll() is None:

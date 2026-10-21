@@ -2,7 +2,7 @@
 
 Live transcribes while recording: at each pause, the speech so far is transcribed in the background,
 so when recording stops only the stretch since the last pause is left. transcribe() does a whole file."""
-import os, threading, time, wave
+import collections, os, threading, time, wave
 import numpy as np
 import sherpa_onnx
 
@@ -60,11 +60,14 @@ def transcribe(wav_path):
 
 
 class Live:
-    """Follows a WAV file while it's being recorded. Each stretch of speech the VAD closes off
-    (i.e. after a pause) is transcribed in the background; finish() does the rest and returns the text."""
+    """Follows a WAV file while it's being recorded, or (no wav_path) the 16-bit samples given to push().
+    Each stretch of speech the VAD closes off (i.e. after a pause) is transcribed in the background;
+    finish() does the rest and returns the text. on_text(start, end, text), if given, is called (on Live's
+    thread) for each stretch as it's transcribed, with its start and end in seconds from the start."""
 
-    def __init__(self, wav_path):
+    def __init__(self, wav_path=None, on_text=None):
         self.path, self.data, self.leftover, self.texts, self.done = wav_path, None, b"", [], False
+        self.on_text, self.pushed = on_text, collections.deque()
         self.thread = threading.Thread(target=self._follow, daemon=True)
         self.thread.start()
 
@@ -76,8 +79,17 @@ class Live:
             self._feed()
             time.sleep(0.1)
 
-    def _feed(self):
-        """Read the audio appended since last time and transcribe any stretch of speech that has ended."""
+    def push(self, samples):
+        """More audio (bytes of 16-bit mono samples), from any thread."""
+        self.pushed.append(samples)
+
+    def _new(self):
+        """The audio recorded since last time, or None if there's none yet."""
+        if self.path is None:
+            chunks = []
+            while self.pushed:
+                chunks.append(self.pushed.popleft())
+            return b"".join(chunks)
         try:
             with open(self.path, "rb") as f:
                 if self.data is None:  # find where the samples start, once the header has been written
@@ -90,6 +102,13 @@ class Live:
         except OSError:  # not created yet
             return
         self.data += len(new)
+        return new
+
+    def _feed(self):
+        """Read the audio recorded since last time and transcribe any stretch of speech that has ended."""
+        new = self._new()
+        if new is None:
+            return
         new = self.leftover + new
         usable = len(new) - len(new) % (2 * self.window)  # whole VAD windows of 16-bit samples
         self.leftover = new[usable:]
@@ -100,7 +119,11 @@ class Live:
 
     def _decode_ready(self):
         while not self.vad.empty():
-            self.texts.append(_decode(np.array(self.vad.front.samples, dtype=np.float32)))
+            seg = self.vad.front
+            samples = np.array(seg.samples, dtype=np.float32)
+            self.texts.append(text := _decode(samples))
+            if self.on_text and text:
+                self.on_text(seg.start / RATE, (seg.start + len(samples)) / RATE, text)
             self.vad.pop()
 
     def finish(self):

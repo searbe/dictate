@@ -59,6 +59,7 @@ them. `tests/harness/client.py` has the vocabulary (`dictate()`, `click()`, `rea
 | Keys typed and pasted on US and UK layouts, Shift+Enter for new lines, plain punctuation | `test_typing_and_pasting.py` |
 | Speech-to-text with the real models: English, German, silence and noise, live = whole-file | `test_speech_to_text.py` |
 | Downloads: complete, interrupted, not repeated; unpacking | `test_downloads.py` |
+| Transcribe mode: the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / closing / menu, pause, dictating meanwhile, echoes, History playback, recordings kept or not, the real model on speakers audio | `test_transcribe_mode.py` |
 | The real thing end to end (real speech model, llama-server and refinement model), and `scripts/prove_local.py`: no network call leaves the computer | `test_local_only.py` |
 
 ## Manual checklist
@@ -124,13 +125,23 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
   `on cpu`. Unused for 30 s: `refine: unloaded`, and VRAM is freed.
 - History → ▶ Play: the recording is audible; ■ Stop stops it.
 
-### 7. The desktop shell
+### 7. Transcribe mode (real speakers, microphone and calls)
+
+- Play a video with speech, start transcribe mode (Ctrl+Win, lift Win, Win again): its words appear under "Them"
+  a moment after each pause, accurately. Speak: under "Me". The Transcript window doesn't take focus.
+- On a call on headphones, and again on the laptop's speakers: the other person isn't also written as "Me".
+- Dictate into another app meanwhile: pasted as usual, not in the transcript.
+- An hour-long session: the transcript keeps up, CPU use stays reasonable, the file in `data/transcripts/` is
+  complete after Stop.
+- Switch the output device (e.g. headphones on) mid-session: still transcribed (the default output's monitor).
+
+### 8. The desktop shell
 
 - The tray icon appears in Plasma's panel, turns red while recording, and its menu works.
 - Drag the floating icon, restart Dictate: it comes back in the same place.
 - Tick "Run at startup", log out and in: Dictate starts. Untick: it doesn't.
 
-### 8. Setup and other platforms (the automated desktop tests run on Linux only)
+### 9. Setup and other platforms (the automated desktop tests run on Linux only)
 
 - Fresh clone on SteamOS and on Ubuntu 24.04: the setup script finishes and Dictate runs. Re-running it is
   quick and downloads nothing.

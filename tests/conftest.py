@@ -1,8 +1,9 @@
 """Shared fixtures. Run the suite with `python scripts/test.py`: it gives the tests their own invisible
 desktop (a headless KWin, or Xvfb) and their own D-Bus, so nothing touches your real session, your
 running Dictate, or your data. Tests that need that isolation skip under a bare `pytest`."""
-import json, os, sys
+import json, os, sys, wave
 from pathlib import Path
+import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -17,6 +18,18 @@ needs_session = pytest.mark.skipif(not ISOLATED, reason="needs the isolated desk
 needs_kwin = pytest.mark.skipif(not KWIN, reason="needs a headless KWin (KDE): run python scripts/test.py on KDE")
 needs_models = pytest.mark.skipif(not (MODELS / "parakeet").exists() or not (MODELS / "silero_vad.onnx").exists(),
                                   reason="needs the speech models: run the setup script")
+
+
+def sample_speech(path):
+    """The sample that comes with the speech model ("... ask not what your country can do for you ..."),
+    saved to path as Dictate records: 16 kHz, 16-bit mono."""
+    with wave.open(str(MODELS / "parakeet/test_wavs/en.wav")) as w:
+        audio, rate = np.frombuffer(w.readframes(w.getnframes()), np.int16), w.getframerate()
+    t = np.arange(0, len(audio) / rate, 1 / 16000)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1), w.setsampwidth(2), w.setframerate(16000)
+        w.writeframes(np.interp(t, np.arange(len(audio)) / rate, audio).astype(np.int16).tobytes())
+    return path
 
 
 class FakeModel:

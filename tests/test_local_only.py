@@ -3,10 +3,9 @@ refinement model clean it up. Only the keyboard, microphone and paste are stand-
 
 scripts/prove_local.py runs this inside a sealed sandbox with no network and records every network call that
 every process makes, to show that Dictate works entirely on this computer."""
-import shutil, subprocess, sys, wave
-import numpy as np
+import shutil, subprocess, sys
 import pytest
-from conftest import MODELS, ROOT, needs_models, needs_session
+from conftest import MODELS, ROOT, needs_models, needs_session, sample_speech
 
 LLAMA = ROOT / "bin/llama/llama-server"
 pytestmark = [needs_session, needs_models, pytest.mark.models,
@@ -15,23 +14,12 @@ pytestmark = [needs_session, needs_models, pytest.mark.models,
 SAID = "ask not what your country can do for you"
 
 
-def recording(path):
-    """The sample that comes with the speech model, as Dictate records: 16 kHz, 16-bit mono."""
-    with wave.open(str(MODELS / "parakeet/test_wavs/en.wav")) as w:
-        audio, rate = np.frombuffer(w.readframes(w.getnframes()), np.int16), w.getframerate()
-    t = np.arange(0, len(audio) / rate, 1 / 16000)
-    with wave.open(str(path), "wb") as w:
-        w.setnchannels(1), w.setsampwidth(2), w.setframerate(16000)
-        w.writeframes(np.interp(t, np.arange(len(audio)) / rate, audio).astype(np.int16).tobytes())
-    return path
-
-
 def test_a_real_dictation_is_transcribed_and_refined_on_this_computer(start, tmp_path):
     from dictate.refine import CLEANUP
     shout = {"name": "Shout", "key": "s", "apps": "",
              "prompt": "Rewrite the message in CAPITAL LETTERS. Change nothing else."}  # unmistakably the model's work
     app = start(styles=[shout], cleanup=CLEANUP, llama=LLAMA,
-                env={"DICTATE_TEST_SPEECH": str(recording(tmp_path / "speech.wav"))})
+                env={"DICTATE_TEST_SPEECH": str(sample_speech(tmp_path / "speech.wav"))})
     app.focus("org.kde.kate", "notes.txt — Kate")
 
     cleaned = app.dictate("(the recording)", timeout=300)

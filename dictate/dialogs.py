@@ -1,7 +1,7 @@
-"""Dictate's windows: History, the refinement style manager, and the style picker."""
+"""Dictate's windows: History, the refinement style manager, the style picker, and the transcript."""
 import json
 from datetime import datetime
-from gi.repository import Gtk, Gdk, GLib
+from gi.repository import Gio, Gtk, Gdk, GLib
 from . import refine
 
 CSS = b"""
@@ -37,6 +37,7 @@ menu separator { background: rgba(255,255,255,.07); margin: 4px 6px; min-height:
 .key { background: #2b2e35; color: #c9cdf9; border-radius: 5px; padding: 1px 7px; font-weight: 700; font-size: 9pt; }
 .choice { background: #1f2125; border: 1px solid rgba(255,255,255,.05); border-radius: 8px; padding: 9px 12px; color: #e6e7ea; box-shadow: none; }
 .choice:hover { background: #2a2c33; border-color: rgba(124,140,255,.4); }
+.transcript text { background: #16171a; color: #e6e7ea; }
 .heading { color: #e6e7ea; font-size: 11pt; font-weight: 600; }
 .chip { background: rgba(124,140,255,.12); color: #aab4ff; border-radius: 5px; padding: 1px 7px; font-size: 8.5pt; }
 """
@@ -382,3 +383,70 @@ class StylePicker:
     def choose(self, style, paste=True):
         self.win.destroy()
         self.on_choose(style, paste)
+
+
+# --- transcript ---
+class TranscriptWindow:
+    """The transcript as it grows, newest at the bottom (kept in view unless you've scrolled up).
+    While recording: Pause / Resume and Stop. Closing the window stops too. Once stopped: Copy all, Open file."""
+    LISTENING = "Listening to this computer's speakers (Them) and microphone (Me)"
+
+    def __init__(self, session, on_stop):
+        self.session, self.on_stop = session, on_stop
+        self.win, self.bar = window("Transcript", 620, 520, self.LISTENING)
+        self.win.set_focus_on_map(False)  # started from the keyboard, mid-conversation: leave focus where it is
+        self.win.connect("delete-event", lambda *_: self.stop() or False)
+        self.win.connect("destroy", lambda *_: setattr(self, "closed", True))
+        self.closed = False
+        self.pause_btn = button("Pause", self.toggle_pause)
+        self.stop_btn = button("Stop", self.stop, "danger")
+        self.bar.pack_start(self.stop_btn)
+        self.bar.pack_start(self.pause_btn)
+        self.text = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD,
+                                 left_margin=16, right_margin=16, top_margin=12, bottom_margin=12)
+        self.who = self.text.get_buffer().create_tag("who", weight=700, foreground="#aab4ff")
+        self.scroll = css(Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER), "transcript")
+        self.scroll.add(self.text)
+        self.win.add(self.scroll)
+        self.win.show_all()
+        self.refresh()
+
+    def refresh(self):
+        if self.closed:
+            return
+        adj = self.scroll.get_vadjustment()
+        following = adj.get_value() >= adj.get_upper() - adj.get_page_size() - 20
+        buf = self.text.get_buffer()
+        buf.set_text("")
+        paragraphs = self.session.paragraphs()
+        if not paragraphs:
+            buf.insert(buf.get_end_iter(), "Nothing heard yet." if not self.session.stopped else "Nothing was heard.")
+        for i, (clock, who, text) in enumerate(paragraphs):
+            buf.insert_with_tags(buf.get_end_iter(), ("\n\n" if i else "") + f"{clock} {who}  ", self.who)
+            buf.insert(buf.get_end_iter(), text)
+        if following:
+            GLib.idle_add(lambda: adj.set_value(adj.get_upper() - adj.get_page_size()) and False)
+
+    def toggle_pause(self):
+        self.session.pause(not self.session.paused)
+        self.pause_btn.set_label("Resume" if self.session.paused else "Pause")
+        self.bar.set_subtitle("Paused: nothing is being added" if self.session.paused else self.LISTENING)
+
+    def stop(self):
+        if not self.session.stopped:
+            self.on_stop()
+
+    def stopped(self):
+        """The session has stopped and the transcript is saved."""
+        if self.closed:
+            return
+        for b in (self.pause_btn, self.stop_btn):
+            b.destroy()
+        self.bar.set_subtitle(f"Stopped. Saved as {self.session.path.name}")
+        path = self.session.path
+        copy = button("Copy all", lambda: (Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(path.read_text(), -1),
+                                           flash(copy, "Copied ✓", "Copy all")))
+        self.bar.pack_start(copy)
+        self.bar.pack_start(button("Open file", lambda: Gio.AppInfo.launch_default_for_uri(path.as_uri(), None)))
+        self.bar.show_all()
+        self.refresh()

@@ -1,13 +1,14 @@
 """The floating icon (drag to move, right-click for menu), drawn with GTK3, and the dictation pipeline:
 record → transcribe → cleanup → style → paste or type. Started by dictate.py, after dictate.bootstrap().
+Ctrl+Win, lift Win, Win again starts or stops transcribe mode (transcript.py).
 """
 import json, math, os, signal, socket, sys, threading, time
 from datetime import datetime
 from pathlib import Path
 import cairo, gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk, Gdk, GLib
-from . import DATA, activewin, dialogs, osio, refine, remote, stt, tray
+from gi.repository import Gio, Gtk, Gdk, GLib
+from . import DATA, activewin, dialogs, osio, refine, remote, stt, transcript, tray
 
 HISTORY = DATA / "history.jsonl"
 AUDIO = DATA / "audio"  # each dictation's recording, kept for playback for "keep_audio_hours"
@@ -39,6 +40,7 @@ def load_json(path, default):
 
 class App:
     KEEP_AUDIO = KEEP_AUDIO
+    TRANSCRIBE = "Transcribe this computer"
 
     def __init__(self):
         DATA.mkdir(parents=True, exist_ok=True)
@@ -77,6 +79,13 @@ class App:
             if cb:
                 item.connect("activate", lambda _, cb=cb: cb())
             self.menu.append(item)
+        if osio.HEARS_SPEAKERS:
+            self.transcribe_item = Gtk.MenuItem(label=self.TRANSCRIBE)
+            self.transcribe_item.connect("activate", lambda _: self.toggle_transcribing())
+            folder = Gtk.MenuItem(label="Transcripts folder")
+            folder.connect("activate", lambda _: self.open_folder(transcript.FOLDER))
+            for item in (self.transcribe_item, folder, Gtk.SeparatorMenuItem()):
+                self.menu.append(item)
         away = Gtk.MenuItem(label="When another computer has the keyboard")  # e.g. through Synergy
         away_menu, group = Gtk.Menu(), None
         for mode, label in REMOTE_MODES:
@@ -102,6 +111,7 @@ class App:
         self.build_default_menu()
 
         self.state, self.hovered, self.rec, self.wav, self.anim, self.save_id = "idle", False, None, None, None, None
+        self.session = self.transcript_win = self.cancelled = None  # transcribe mode; a dictation to drop
         self.t0 = time.monotonic()
         self.tray = tray.Tray(self.menu, self.render_icon, self.build_default_menu)  # same menu in the system tray
         self.clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
@@ -111,12 +121,13 @@ class App:
         activewin.on_switch.append(lambda: self.menu.get_visible() and self.menu.popdown())
         activewin.start()
         remote.start()
-        self.hotkey = osio.Hotkey(self.on_hotkey)
+        self.hotkey = osio.Hotkey(self.on_hotkey, self.on_again)
         self.hotkey.start()
         self.loader = threading.Thread(target=stt.load, daemon=True)  # warm up so first dictation is fast
         self.loader.start()
         self.paster = osio.Paster()  # created after Hotkey so we don't listen to ourselves
-        self.player = osio.Player()  # plays recordings back in the History window
+        # plays recordings back in the History window; not to be transcribed off the speakers
+        self.player = osio.Player(lambda playing: self.session and self.session.mute("them", playing))
         self.prune_audio()
         GLib.timeout_add_seconds(600, self.prune_audio)  # and every 10 minutes
         w.show_all()
@@ -174,6 +185,12 @@ class App:
         cr.set_source_rgba(1, 1, 1, 0.14)
         cr.set_line_width(1)
         cr.stroke()
+
+        if self.session:  # transcribe mode: a ring around the icon, grey while paused
+            cr.arc(c, c, R + 2.5, 0, 2 * math.pi)
+            cr.set_source_rgba(*((0.55, 0.57, 0.62) if self.session.paused else ACCENT), 0.95)
+            cr.set_line_width(2.2)
+            cr.stroke()
 
         if self.state == "busy":  # spinner arc
             a = t * 5
@@ -265,11 +282,15 @@ class App:
             self.rec = osio.Recorder()
             self.rec.start(self.wav)
             self.live = stt.Live(self.wav)  # transcribes each stretch of speech as soon as you pause
+            if self.session:
+                self.session.mute("me", True)  # a dictation isn't part of the conversation
             self.set_state("rec")
             log(f"recording: {(time.time() - pressed) * 1000:.0f} ms after the key was pressed" if pressed else "recording")
         if down and (self.cfg["refine"] or alt):
             refine.warm()  # load the model while the user is still speaking
         elif not down and self.rec:
+            if self.session:
+                self.session.mute("me", False)
             rec, self.rec = self.rec, None
             self.set_state("busy")
             refining = self.cfg["refine"] or alt  # Alt asks for a style, which always includes cleanup
@@ -309,7 +330,13 @@ class App:
 
     def paste(self, text, raw, app, style=None, paste=True, delay=150, audio=None, cleanup=False):
         """Save to history (with the recording and what was applied), then paste or type the text."""
+        if audio and self.hotkey.chord.may_go_again():  # this hold may be the start of Ctrl+Win, Win again
+            GLib.timeout_add(50, lambda: self.paste(text, raw, app, style, paste, delay, audio, cleanup) and False)
+            return
         self.set_state("idle")
+        if audio and audio == self.cancelled:  # it was: not a dictation
+            Path(audio).unlink(missing_ok=True)
+            return
         if not text:  # nothing heard: no history entry, so don't keep the recording either
             if audio:
                 Path(audio).unlink(missing_ok=True)
@@ -341,8 +368,9 @@ class App:
         hours = self.cfg["keep_audio_hours"]
         if hours is not None:
             cutoff = time.time() - hours * 3600
-            for wav in AUDIO.glob("*.wav"):
-                if wav.stat().st_mtime < cutoff and wav != Path(self.wav or ""):  # never the one being recorded
+            recording = {Path(self.wav or ""), *map(Path, self.session.recordings if self.session else [])}
+            for wav in [*AUDIO.glob("*.wav"), *transcript.FOLDER.glob("*.ogg"), *transcript.FOLDER.glob("*.wav")]:
+                if wav.stat().st_mtime < cutoff and wav not in recording:  # never one being recorded
                     wav.unlink(missing_ok=True)
         return True  # keep the 10-minute timer going
 
@@ -353,6 +381,53 @@ class App:
     def copy(self, text):
         self.clip.set_text(text, -1)
         self.clip.store()
+
+    # --- transcribe mode ---
+    def on_again(self):
+        """Ctrl+Win, lift Win, Win again: start or stop transcribing. The first hold of the gesture was
+        reported as a (very short) dictation; drop it."""
+        self.cancelled = self.wav
+        if not osio.HEARS_SPEAKERS:
+            return log("transcribe mode: not available on this computer yet")
+        self.toggle_transcribing()
+
+    def toggle_transcribing(self):
+        if self.session:
+            self.stop_transcribing()
+        else:
+            self.start_transcribing()
+
+    def start_transcribing(self):
+        try:
+            session = transcript.Session()
+        except OSError as err:  # e.g. pw-record missing
+            return log(f"transcribe mode: can't record ({err})")
+        self.session, win = session, dialogs.TranscriptWindow(session, self.stop_transcribing)
+        self.transcript_win = win
+        session.on_change = lambda: (win.refresh(), self.win.queue_draw(), self.tray.update())
+        self.transcribe_item.set_label("Stop transcribing")
+        session.on_change()
+        log(f"transcribing: {session.path.name}")
+
+    def stop_transcribing(self):
+        session, win, self.session = self.session, self.transcript_win, None
+        if not session:
+            return
+
+        def saved():
+            win.stopped()
+            if self.cfg["keep_audio_hours"] == 0:
+                for path in session.recordings:
+                    Path(path).unlink(missing_ok=True)
+            log(f"transcribing: stopped, {len(session.paragraphs())} paragraphs saved to {session.path.name}")
+        session.stop(saved)
+        self.transcribe_item.set_label(self.TRANSCRIBE)
+        self.win.queue_draw()
+        self.tray.update()
+
+    def open_folder(self, folder):
+        folder.mkdir(parents=True, exist_ok=True)
+        Gio.AppInfo.launch_default_for_uri(folder.as_uri(), None)
 
     # --- windows ---
     def show_history(self):
@@ -372,6 +447,9 @@ class App:
     def quit(self, reason):
         """Every way out goes through here, so the log says why Dictate stopped."""
         log(f"quitting: {reason}")
+        if self.session:  # save what's still to be transcribed
+            session, self.session = self.session, None
+            return session.stop(Gtk.main_quit)
         Gtk.main_quit()
 
     def run(self):

@@ -76,6 +76,26 @@ class Dictate:
             return mark
         return self.result(mark, timeout)
 
+    def ctrl_win_win(self):
+        """Hold Ctrl+Win, lift Win, press it again, let go: starts or stops transcribe mode."""
+        self.send("keys", down=["ctrl", "meta"])
+        self.send("keys", up=["meta"])
+        self.send("keys", down=["meta"])
+        self.send("keys", up=["meta", "ctrl"])
+
+    def hear(self, text, source="speakers", length=0.2):
+        """Someone says text through the speakers (or "mic": into the microphone), ending now."""
+        self.send("hear", text=text, source=source, length=length)
+
+    def transcript(self):
+        """What the Transcript window shows."""
+        return self.send("field", name="text", window_title="Transcript")["text"]
+
+    def transcript_file(self):
+        """The saved transcript (the newest, if there are several)."""
+        files = sorted((self.data / "transcripts").glob("*.md"))
+        return files[-1].read_text() if files else None
+
     def result(self, mark, timeout=15):
         """What came out of the dictation that started at mark, once the icon is idle again."""
         self.wait_for("icon", after=mark + 1, state="idle", timeout=timeout)
