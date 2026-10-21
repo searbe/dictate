@@ -8,7 +8,7 @@ Push-to-talk dictation that runs entirely on your own computer. Hold a hotkey an
 - **Clean-up:** a local language model (Qwen3.5) removes filler words, applies self-corrections and fixes punctuation and mis-heard words. It uses the GPU when one is free, otherwise the CPU.
 - **Refinement styles:** reformat for Slack, WhatsApp, email or AI agents, or your own styles. Pick one per dictation, set a default, or match styles to apps automatically.
 - **Vocabulary:** names and terms you use, spelled the way you spell them.
-- **Transcribe mode** (Linux): a running transcript of what's said through your speakers and into your microphone, e.g. a call or a video, telling the voices apart. Naming them and (opt-in) remembering them for next time.
+- **Transcribe mode** (Linux): transcribes your computer's audio and your microphone, e.g. a call, telling the voices apart.
 - **History:** every dictation with what was applied, playback of the recording, copy, delete and clear. Recordings are kept for a time you choose.
 - **Synergy:** while your keyboard is controlling another computer, the text is typed there.
 - **Floating icon and system tray icon** with the same menu, and an optional **Run at startup**.
@@ -16,50 +16,25 @@ Push-to-talk dictation that runs entirely on your own computer. Hold a hotkey an
 
 ## Using it
 Hold **Ctrl+Win** to record, release to transcribe and paste into the focused text box.
-- **Tap Alt** while holding: when you let go, a window shows the cleaned-up text and asks which refinement style to apply (press its letter, Enter to paste as is, or Esc to only copy it).
-- **Alt+letter** while holding (e.g. Alt+S): applies that style directly, with no window.
-- **Default style** (menu > Default style): applied to every plain Ctrl+Win dictation after cleanup. "None" means cleanup only.
-- **Per-app styles:** a style whose "Use automatically in apps" keywords match the focused app or window title (e.g. "slack") is used instead of the default. The app's name and title are also given to the model as context.
-- **Vocabulary** (Refinement styles… > Vocabulary): one name or term per line; cleanup prefers these spellings and fixes mis-hearings of them.
+- **Tap Alt** while holding: pick a refinement style when you let go (its letter; Enter pastes as is, Esc only copies).
+- **Alt+letter** while holding (e.g. Alt+S): use that style directly.
+- **Default style** (menu): used for every other dictation. "None" means cleanup only.
+- **Per-app styles:** a style can be used automatically in apps whose name or window title matches (e.g. "slack").
+- **Vocabulary** (Refinement styles…): names and terms, spelled your way.
 - **Refine text** (menu): off gives the raw transcript, fastest.
-- **Synergy and similar:** while your keyboard is controlling another computer, Dictate records here and *types* the text, so it arrives there as keystrokes (no microphone needed over there). Per-app styles can't apply there, so it has its own **Default style there**, under **When another computer has the keyboard** in the menu, which can also make it ignore the hotkey instead.
+- **Synergy and similar:** while your keyboard controls another computer, the text is typed there. **When another computer has the keyboard** (menu) sets its style, or ignores the hotkey.
 - On Linux, terminals get Ctrl+Shift+V instead of Ctrl+V.
 
-**Transcribe mode** (Linux): hold **Ctrl+Win**, lift Win and press it again (keep holding Ctrl), then let go. The
-Transcripts window opens with the new recording at the top, and everything said through your speakers and into your
-microphone ("Me") is written down, with the time. While someone's talking, what they've said so far shows greyed out
-within a second, updated every second; at their next pause it's replaced by the transcription of the whole stretch,
-which is what's saved. Each voice through the speakers is "Speaker 1", "Speaker 2" and so on. Stop it the same way, with
-**Stop**, or from the menu (**Transcribe this computer** / **Stop transcribing**); **Pause** leaves out what's said
-until **Resume**. You can close the window and carry on: reopen it with **Transcripts** in the menu. You can dictate
-as usual meanwhile: your dictations stay out of the transcript, as does Dictate playing a recording back. Without
-headphones your microphone hears the speakers too: PipeWire's echo canceller takes some of that out, and what's left
-is told from you speaking by comparing it with what the speakers played, so it isn't written down as you. The icon has a blue ring while it's on (grey
-while paused): click it to see the recording.
+**Transcribe mode** (Linux) transcribes your computer's audio and your microphone, e.g. a call.
+- **Start / stop:** hold Ctrl+Win, lift Win and press it again. Or use **Stop**, or the menu.
+- People are labelled "Speaker 1", "Speaker 2"… Click a name to rename them; naming two the same merges them.
+- You can dictate as usual while it runs; your dictations stay out of the transcript.
+- **Transcripts** (menu) lists them all; the live one is at the top. Saved as Markdown in `data/transcripts/`.
+- **Voices…** can remember the people you name, for next time (off by default; ask people first).
 
-**Transcripts** lists every transcript, newest first, with when it was recorded, how long it lasted and how it
-starts; the one being recorded stays at the top. Click one to read it, copy it, open the file or delete it, and click
-the recording again to catch up with it. They're saved as Markdown in `data/transcripts/` (**Open folder**), with a
-recording of each side (Ogg Opus, about 12 MB an hour) kept as long as dictation recordings are.
+The floating dot is red while recording and spins while transcribing; a blue ring means transcribe mode is on (click it to see the transcript). Drag it to move it; right-click it, or the tray icon, for the menu.
 
-**Naming voices:** click a name above a transcript (e.g. **Speaker 2**) and type who it is, during the call or after;
-naming two voices the same makes them one person, for when one was taken for two. Telling voices apart takes a
-second voice model (TitaNet small, 40 MB, downloaded by setup). A stretch ends at a pause of 1.2 s, so each is
-transcribed with plenty of what's said around it; who said it is worked out between its shorter pauses, and where the
-voice changes without one, cut between words (nothing is cut before it's transcribed, so no words are lost). A short
-part (under 2 s) never counts as someone new (nor counts for much in how its voice sounds), and as more of each voice is heard, what was said earlier is given again
-to whoever it now sounds most like, so the names in the transcript can still change for a while. In mock conversations
-between 2 to 4 people (`scripts/bench_voices.py`) it labels about 99% of speaking time right when people pause between
-turns (94% on phone-quality audio), and 90% when they reply straight away (82% on phone audio), finding the right
-number of people in 67–83% of conversations. It's least sure when people talk over each other or only say a word or
-two. **Voices…** in Transcripts turns on **Remember voices I
-name** (off unless you turn it on): Dictate then keeps a voiceprint of each person you name, on this computer only,
-and names them in later transcripts. A voiceprint can identify someone, so ask people first. The Voices window lists
-the remembered voices to forget any of them, and turning it off forgets them all.
-
-The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it; while transcribing, click it to see the recording. Right-click it (or click the system tray icon) for the menu: Refine text, Default style, History, Refinement styles…, Transcribe this computer, Transcripts, When another computer has the keyboard, Run at startup and Quit.
-
-**History** lists every dictation with what was applied (raw transcript, cleanup, and any style). Each entry can play its recording, copy the text or the original transcript, or be deleted; **Clear history** removes everything. **Keep recordings** at the top sets how long audio is kept: not at all, 1–24 hours (default 24), or forever.
+**History** (menu) lists every dictation: play it back, copy it or delete it. **Keep recordings** sets how long audio is kept (default 24 hours).
 
 ![Floating icon: idle, recording, transcribing](docs/icon-states.png)
 
@@ -168,6 +143,7 @@ Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can'
 - **Model server:** llama-server on a random localhost port, started from one long-lived thread with a parent-death SIGKILL (Linux), so it can't outlive the app. It's stopped with SIGTERM, then SIGKILL after 3 s.
 - **Single instance:** Dictate binds localhost port 47613 at startup; a second copy exits.
 - **Remote screens:** KWin's input-capture broadcasts and Synergy's log are combined, as neither caught every switch alone. A capture must last 0.2 s to count, as a disconnected Synergy flickers every few milliseconds.
+- **Transcribe mode:** the speakers are PipeWire's monitor of the default output; each side is kept as Ogg Opus (about 12 MB an hour) as long as dictation recordings are. A stretch is transcribed whole at a 1.2 s pause (with a greyed preview every second meanwhile), then split between voices (TitaNet small voiceprints) at its shorter pauses and where the voice changes. `scripts/bench_voices.py` measures it on mock LibriSpeech conversations: 94–99% of speaking time labelled right with pauses between turns, 82–90% with quick replies. Echoes of the speakers in the microphone are taken out by PipeWire's echo canceller and `echo.py`.
 - **Logs:** written to stdout; when started from the desktop, see `journalctl --user`. It logs `started`, then `quitting: <why>` (the menu's Quit, a signal, or the icon's window closing) and `exited`, so a stop is never a mystery. Each dictation logs `recording: N ms after the key was pressed` (from the kernel's key timestamp), which is useful for spotting latency.
 
 ## License
