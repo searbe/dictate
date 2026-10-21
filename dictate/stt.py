@@ -9,7 +9,9 @@ import sherpa_onnx
 from . import ROOT
 MODELS = ROOT / "models"
 RATE = 16000
-THREADS = min(8, os.cpu_count() or 4)
+PREVIEW = 1.0  # seconds between previews of the stretch still being spoken (transcribe mode)
+PREVIEW_TAIL = 6  # seconds: a preview shows (and costs) only the latest of a long stretch
+THREADS = min(4, os.cpu_count() or 4)  # more only spin: 8 cost twice the CPU of 4 for the same speed
 _rec = _vad_cfg = None
 
 
@@ -23,10 +25,30 @@ def load():
         encoder=str(p / "encoder.int8.onnx"), decoder=str(p / "decoder.int8.onnx"),
         joiner=str(p / "joiner.int8.onnx"), tokens=str(p / "tokens.txt"),
         model_type="nemo_transducer", num_threads=THREADS)
-    _vad_cfg = sherpa_onnx.VadModelConfig()
-    _vad_cfg.silero_vad.model = str(MODELS / "silero_vad.onnx")
-    _vad_cfg.silero_vad.min_silence_duration = 0.4
-    _vad_cfg.sample_rate = RATE
+    _vad_cfg = vad_config(0.4)
+
+
+def vad_config(pause):
+    """Silero VAD's settings, ending a stretch of speech at a pause of this many seconds."""
+    cfg = sherpa_onnx.VadModelConfig()
+    cfg.silero_vad.model = str(MODELS / "silero_vad.onnx")
+    cfg.silero_vad.min_silence_duration = pause
+    cfg.sample_rate = RATE
+    return cfg
+
+
+def stretches(samples, pause=0.4):
+    """[(start sample, samples)]: the stretches of speech in samples, as Live would find them."""
+    vad = sherpa_onnx.VoiceActivityDetector(vad_config(pause), buffer_size_in_seconds=max(60, len(samples) // RATE + 10))
+    win = _vad_cfg.silero_vad.window_size
+    for i in range(0, len(samples), win):
+        vad.accept_waveform(samples[i:i + win])
+    vad.flush()
+    out = []
+    while not vad.empty():
+        out.append((vad.front.start, np.array(vad.front.samples, dtype=np.float32)))
+        vad.pop()
+    return out
 
 
 def speech_only(samples):
@@ -45,10 +67,25 @@ def speech_only(samples):
 
 
 def _decode(samples):
+    return _recognise(samples).text.strip()
+
+
+def _recognise(samples):
     s = _rec.create_stream()
     s.accept_waveform(RATE, samples)
     _rec.decode_stream(s)
-    return s.result.text.strip()
+    return s.result
+
+
+def words(result):
+    """[(seconds into the stretch, word)] from a result's pieces; the words joined are exactly its text."""
+    out = []
+    for piece, t in zip(result.tokens, result.timestamps):
+        if not out or piece.startswith(" "):
+            out.append([t, piece])
+        else:
+            out[-1][1] += piece
+    return [tuple(w) for w in out]
 
 
 def transcribe(wav_path):
@@ -62,21 +99,27 @@ def transcribe(wav_path):
 class Live:
     """Follows a WAV file while it's being recorded, or (no wav_path) the 16-bit samples given to push().
     Each stretch of speech the VAD closes off (i.e. after a pause) is transcribed in the background;
-    finish() does the rest and returns the text. on_text(start, end, text), if given, is called (on Live's
-    thread) for each stretch as it's transcribed, with its start and end in seconds from the start."""
+    finish() does the rest and returns the text. on_text(start, end, text, samples, words), if given, is called
+    (on Live's thread) for each stretch as it's transcribed, with its start and end in seconds from the start
+    and words() for when each word was said. on_preview(start, text), if given, is called about every PREVIEW
+    seconds while a stretch is still being spoken, with what it says so far (for showing only: the stretch is
+    transcribed whole once it ends)."""
 
-    def __init__(self, wav_path=None, on_text=None):
+    def __init__(self, wav_path=None, on_text=None, on_preview=None, pause=None):
+        self.pause = pause  # seconds of silence that end a stretch (default: 0.4, for dictation)
         self.path, self.data, self.leftover, self.texts, self.done = wav_path, None, b"", [], False
-        self.on_text, self.pushed = on_text, collections.deque()
+        self.on_text, self.on_preview, self.previewed, self.pushed = on_text, on_preview, 0.0, collections.deque()
         self.thread = threading.Thread(target=self._follow, daemon=True)
         self.thread.start()
 
     def _follow(self):
         load()  # a no-op unless dictating straight after launch
-        self.vad = sherpa_onnx.VoiceActivityDetector(_vad_cfg, buffer_size_in_seconds=600)
+        self.vad = sherpa_onnx.VoiceActivityDetector(vad_config(self.pause) if self.pause else _vad_cfg,
+                                                     buffer_size_in_seconds=600)
         self.window = _vad_cfg.silero_vad.window_size
         while not self.done:
             self._feed()
+            self._preview()
             time.sleep(0.1)
 
     def push(self, samples):
@@ -121,10 +164,25 @@ class Live:
         while not self.vad.empty():
             seg = self.vad.front
             samples = np.array(seg.samples, dtype=np.float32)
-            self.texts.append(text := _decode(samples))
+            result = _recognise(samples)
+            self.texts.append(text := result.text.strip())
             if self.on_text and text:
-                self.on_text(seg.start / RATE, (seg.start + len(samples)) / RATE, text)
+                self.on_text(seg.start / RATE, (seg.start + len(samples)) / RATE, text, samples, words(result))
             self.vad.pop()
+
+    def _preview(self):
+        """What the stretch still being spoken says so far, about every PREVIEW seconds."""
+        if not self.on_preview or not self.vad.is_speech_detected() or time.monotonic() - self.previewed < PREVIEW:
+            return
+        self.previewed = time.monotonic()
+        seg = self.vad.current_segment
+        samples = np.array(seg.samples, dtype=np.float32)
+        if len(samples) > RATE // 2:
+            tail = samples[-PREVIEW_TAIL * RATE:]
+            text = _decode(tail)
+            if text:
+                self.on_preview(seg.start / RATE, ("… " if len(samples) > len(tail) else "") + text,
+                                tail, (seg.start + len(samples) - len(tail)) / RATE)
 
     def finish(self):
         """Call once recording has stopped and the file is complete. Returns the whole transcript."""

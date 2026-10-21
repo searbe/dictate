@@ -1,5 +1,5 @@
 """Starting, stopping and the things that outlive a session: run at startup, one copy only, the quit log."""
-import os, signal, socket, subprocess, sys
+import os, signal, socket, subprocess, sys, time
 from pathlib import Path
 import pytest
 from conftest import ROOT, needs_session
@@ -26,6 +26,52 @@ def test_being_stopped_by_the_system_exits_cleanly_and_says_why(start):
 
     assert app.proc.wait(10) == 0
     assert any(l.endswith("quitting: got SIGTERM") for l in app.logs)
+
+
+@needs_session
+def test_quitting_mid_dictation_stops_the_microphone(start):
+    app = start(styles=[])
+    app.send("keys", down=["ctrl", "meta"])
+    app.wait_for("recording")
+
+    app.proc.send_signal(signal.SIGTERM)
+
+    assert app.proc.wait(10) == 0
+    assert app.happened("recording_stopped")
+
+
+@pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux records with pw-record")
+@pytest.mark.parametrize("kind", ["dictation", "transcript"])
+def test_a_recorder_never_outlives_dictate_even_if_it_crashes(tmp_path, kind):
+    """pw-record is a program of its own: without this, a Dictate that crashed (or was killed) mid-recording
+    would leave it recording the microphone, indefinitely. (A stand-in pw-record here: no microphone.)"""
+    bin_dir, pid_file = tmp_path / "bin", tmp_path / "recorder.pid"
+    bin_dir.mkdir()
+    (bin_dir / "pw-record").write_text(f"#!/bin/sh\necho $$ > {pid_file}\nexec sleep 60\n")
+    (bin_dir / "pw-record").chmod(0o755)
+    start = (f"osio.Recorder().start({str(tmp_path / 'r.wav')!r})" if kind == "dictation" else
+             f"osio.Recorder().start({str(tmp_path / 'r.ogg')!r}, on_audio=lambda chunk: None)")
+    code = f"import sys, time; sys.path.insert(0, {str(ROOT)!r}); from dictate import osio; {start}; time.sleep(60)"
+    dictate = subprocess.Popen([str(VENV_PY), "-c", code], env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"})
+    deadline = time.monotonic() + 10
+    while not (pid_file.exists() and pid_file.read_text().strip()) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    recorder = int(pid_file.read_text())
+
+    dictate.kill()  # SIGKILL: no chance to tidy up
+    dictate.wait()
+
+    deadline = time.monotonic() + 5
+    while _running(recorder) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    assert not _running(recorder)
+
+
+def _running(pid):
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().split(")")[-1].split()[0] != "Z"
+    except OSError:
+        return False
 
 
 @needs_session

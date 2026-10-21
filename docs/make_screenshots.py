@@ -27,16 +27,16 @@ SAMPLE = [  # (time, text, raw, app, style, has a recording)
 ]
 TRANSCRIPTS = {  # file name: (how long, [(clock, who, text)])
     "2026-10-20 10.00.00": ("32 min", [
-        ("10:00:04", "Them", "Morning, everyone. Shall we start with the roadmap and leave hiring for the end?"),
+        ("10:00:04", "Priya", "Morning, everyone. Shall we start with the roadmap and leave hiring for the end?"),
         ("10:00:11", "Me", "Sounds good. I'd like to talk about the release date first, because it affects everything else."),
-        ("10:00:19", "Them", "Fair. So the plan was the third of November, but the login work is running about a week late. "
+        ("10:00:19", "Priya", "Fair. So the plan was the third of November, but the login work is running about a week late. "
                              "We could ship without it, or move the date."),
         ("10:00:41", "Me", "I'd rather move the date than ship half of it."),
-        ("10:00:47", "Them", "Okay. Then the tenth? That gives QA the whole week."),
+        ("10:00:47", "Priya", "Okay. Then the tenth? That gives QA the whole week."),
     ]),
-    "2026-10-19 16.30.00": ("1 h 05 min", [("16:30:02", "Them", "Welcome to the talk. Today I want to show you how "
+    "2026-10-19 16.30.00": ("1 h 05 min", [("16:30:02", "Speaker 1", "Welcome to the talk. Today I want to show you how "
                                                                   "speech recognition got small enough to run on a laptop.")]),
-    "2026-10-16 09.15.00": ("12 min", [("09:15:06", "Them", "Hi, thanks for calling. How can I help?"),
+    "2026-10-16 09.15.00": ("12 min", [("09:15:06", "Speaker 1", "Hi, thanks for calling. How can I help?"),
                                        ("09:15:09", "Me", "Hi, I'm calling about my broadband bill.")]),
 }
 
@@ -105,10 +105,11 @@ def main():
         (transcript.FOLDER / f"{name}.md").write_text(f"# Transcript\n\nLasted {took}, until 00:00.\n" + "".join(
             f"\n**{clock} {who}:** {text}\n" for clock, who, text in paragraphs))
     now = transcript.FOLDER / "2026-10-21 14.02.00.md"  # being recorded
-    live = SimpleNamespace(path=now, started=transcript.datetime(2026, 10, 21, 14, 2), paused=False, paragraphs=lambda: [
-        ("14:02:03", "Them", "Can everyone see my screen? This is the dashboard from last week."),
-        ("14:02:10", "Me", "Yes, we can see it."),
-        ("14:02:12", "Them", "Great. So the sign-ups dropped on Thursday, and we think it's the new form.")])
+    live = SimpleNamespace(path=now, started=transcript.datetime(2026, 10, 21, 14, 2), paused=False, voices=True, previews=lambda: [("14:02:19", "…", "And if we roll back the new")], paragraphs=lambda: [
+        ("14:02:03", "Priya", "Can everyone see my screen? This is the dashboard from last week."),
+        ("14:02:07", "Speaker 2", "Yes, but it's a bit blurry."),
+        ("14:02:10", "Me", "Fine here."),
+        ("14:02:12", "Priya", "Great. So the sign-ups dropped on Thursday, and we think it's the new form.")])
     now.write_text("")
     browser = dialogs.TranscriptsWindow(lambda: live, lambda: None)
     offscreen(browser.win, DOCS / "transcripts.png", ["win"], (900, 440))

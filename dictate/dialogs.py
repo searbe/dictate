@@ -3,7 +3,7 @@ one being recorded)."""
 import json
 from datetime import datetime
 from gi.repository import Gio, Gtk, Gdk, GLib
-from . import refine, transcript
+from . import refine, transcript, voices
 
 CSS = b"""
 * { font-family: "Inter", "Noto Sans", sans-serif; }
@@ -391,16 +391,23 @@ def transcript_view():
     """A read-only text view for a transcript, and the tag for who's speaking."""
     view = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD,
                         left_margin=16, right_margin=16, top_margin=12, bottom_margin=12)
-    return view, view.get_buffer().create_tag("who", weight=700, foreground="#aab4ff")
-
-
-def show_transcript(view, who, paragraphs, empty):
-    """paragraphs: [(clock, who, text)]; empty: what to say if there are none."""
     buf = view.get_buffer()
-    buf.set_text("" if paragraphs else empty)
-    for i, (clock, name, text) in enumerate(paragraphs):
-        buf.insert_with_tags(buf.get_end_iter(), ("\n\n" if i else "") + f"{clock} {name}  ", who)
-        buf.insert(buf.get_end_iter(), text)
+    buf.create_tag("pending", foreground="#8a8d96", style=2)  # 2: italic
+    return view, buf.create_tag("who", weight=700, foreground="#aab4ff")
+
+
+def show_transcript(view, who, paragraphs, empty, previews=()):
+    """paragraphs: [(clock, who, text)]; empty: what to say if there are none; previews: what's being said
+    and not yet transcribed whole, shown greyed out after them."""
+    buf = view.get_buffer()
+    buf.set_text("" if paragraphs or previews else empty)
+    for i, (clock, name, text) in enumerate([*paragraphs, *previews]):
+        tags = ("pending",) if i >= len(paragraphs) else ()
+        buf.insert_with_tags_by_name(buf.get_end_iter(), ("\n\n" if i else "") + f"{clock} {name}  ", "who", *tags)
+        if tags:
+            buf.insert_with_tags_by_name(buf.get_end_iter(), text, *tags)
+        else:
+            buf.insert(buf.get_end_iter(), text)
 
 
 def open_uri(path):
@@ -421,7 +428,7 @@ class TranscriptsWindow:
     Pause / Resume and Stop (on_stop() stops it). A saved one has Copy all, Open file and Delete.
     Closing the window doesn't stop the recording."""
     EMPTY = "No transcripts yet. To start one, hold Ctrl+Win, lift Win and press it again."
-    LISTENING = "Listening to this computer's speakers (Them) and microphone (Me)"
+    LISTENING = "Listening to this computer's speakers and microphone (Me)"
 
     def __init__(self, current, on_stop, focus=True):
         self.current, self.on_stop, self.shown, self.paths, self.seen = current, on_stop, None, None, None
@@ -431,6 +438,8 @@ class TranscriptsWindow:
         self.closed = False
         self.bar.pack_end(button("Open folder", lambda: (transcript.FOLDER.mkdir(parents=True, exist_ok=True),
                                                           open_uri(transcript.FOLDER))))
+        if voices.available():
+            self.bar.pack_end(button("Voices…", lambda: VoicesWindow(self.win)))
         self.saved_actions, self.live_actions = Gtk.Box(spacing=6, no_show_all=True), Gtk.Box(spacing=6, no_show_all=True)
         for b in (copy_button(lambda: self.shown["path"]), button("Open file", lambda: open_uri(self.shown["path"])),
                   button("Delete", self.delete, "danger")):
@@ -448,11 +457,15 @@ class TranscriptsWindow:
         side = css(Gtk.ScrolledWindow(width_request=270, hscrollbar_policy=Gtk.PolicyType.NEVER), "sidebar")
         side.add(self.list)
         self.text, self.who = transcript_view()
-        self.scroll = css(Gtk.ScrolledWindow(hexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER), "transcript")
+        self.scroll = css(Gtk.ScrolledWindow(hexpand=True, vexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER), "transcript")
         self.scroll.add(self.text)
+        self.people = Gtk.Box(spacing=6, margin=8, margin_start=16, no_show_all=True)  # click a voice to name it
+        main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        main.pack_start(self.people, False, False, 0)
+        main.pack_start(self.scroll, True, True, 0)
         body = Gtk.Box()
         body.pack_start(side, False, False, 0)
-        body.pack_start(self.scroll, True, True, 0)
+        body.pack_start(main, True, True, 0)
         self.win.add(body)
         self.win.show_all()
         self.changed()
@@ -540,13 +553,45 @@ class TranscriptsWindow:
         if session:
             self.pause_btn.set_label("Resume" if session.paused else "Pause")
             self.bar.set_subtitle("Paused: nothing is being added" if session.paused else self.LISTENING)
-            show_transcript(self.text, self.who, session.paragraphs(), "Nothing heard yet.")
+            show_transcript(self.text, self.who, session.paragraphs(), "Nothing heard yet.", session.previews())
         else:
             self.bar.set_subtitle(None)
             show_transcript(self.text, self.who, item.get("paragraphs", []), "Nothing was heard.")
+        nameable = not session or session.voices  # without the voice model, a recording's voices are all "Them"
+        self.show_people(transcript.labels(session.paragraphs() if session else item.get("paragraphs", [])) if nameable else [])
         if session and following:
             adj = self.scroll.get_vadjustment()
             GLib.idle_add(lambda: adj.set_value(adj.get_upper() - adj.get_page_size()) and False)
+
+    def show_people(self, labels):
+        """A button per voice in the transcript shown, to name it."""
+        if labels == getattr(self.people, "labels", None):
+            return
+        self.people.labels = labels
+        for kid in self.people.get_children():
+            kid.destroy()
+        self.people.pack_start(css(Gtk.Label(label="Click a name to rename:"), "hint"), False, False, 0)
+        for label in labels:
+            self.people.pack_start(button(label, lambda l=label: self.rename(l)), False, False, 0)
+        for kid in self.people.get_children():
+            kid.show()
+        self.people.set_visible(bool(labels))
+
+    def rename(self, label):
+        it, session = self.shown, self.current()
+        live = it.get("recording") and session
+        remembers = voices.remembering() and (live or transcript.voiceprints(it["path"]).exists())
+        name = ask_name(self.win, label, remembers)
+        if not name:
+            return
+        if live:
+            session.rename(label, name)  # its on_change shows it
+        else:
+            transcript.rename(it["path"], label, name)
+            self.shown = None
+            self.paths = None  # read it again
+            self.changed()
+            self.list.select_row(next(r for r in self.list.get_children() if r.item["path"] == it["path"]))
 
     def at_end(self):
         adj = self.scroll.get_vadjustment()
@@ -564,3 +609,72 @@ class TranscriptsWindow:
             transcript.delete(it["path"])
             self.shown = None
             self.changed()
+
+
+def ask_name(parent, label, remembers):
+    """Ask what a voice is called. remembers: whether naming it remembers the voice for later transcripts."""
+    dialog = Gtk.MessageDialog(transient_for=parent, modal=True, message_type=Gtk.MessageType.QUESTION,
+                               buttons=Gtk.ButtonsType.NONE, text=f"Who is {label}?",
+                               secondary_text="Dictate will remember this voice and name it in later transcripts."
+                               if remembers else "Naming two voices the same makes them one person.")
+    entry = Gtk.Entry(placeholder_text="Name", activates_default=True)
+    if not label.startswith("Speaker "):
+        entry.set_text(label)
+    dialog.get_message_area().pack_start(entry, False, False, 6)
+    dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Rename", Gtk.ResponseType.OK)
+    dialog.set_default_response(Gtk.ResponseType.OK)
+    dialog.show_all()
+    answer, name = dialog.run(), entry.get_text()
+    dialog.destroy()
+    return transcript.clean_name(name) if answer == Gtk.ResponseType.OK else ""
+
+
+class VoicesWindow:
+    """Remembering voices (opt-in) and the voices remembered, each of which can be forgotten."""
+    EXPLAIN = ("When this is on, Dictate keeps a voiceprint of each person you name in a transcript, on this computer "
+               "only, and names them automatically in later transcripts. A voiceprint can identify someone, so ask "
+               "people before you remember their voice. Turning this off forgets every voice.")
+
+    def __init__(self, parent=None):
+        self.win, _ = window("Voices", 520, 420)
+        if parent:
+            self.win.set_transient_for(parent)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=16)
+        self.toggle = Gtk.CheckButton(label="Remember voices I name", active=voices.remembering())
+        self.toggle.connect("toggled", self.toggled)
+        box.pack_start(self.toggle, False, False, 0)
+        box.pack_start(css(Gtk.Label(label=self.EXPLAIN, xalign=0, wrap=True, max_width_chars=60), "hint"), False, False, 0)
+        box.pack_start(css(Gtk.Label(label="Remembered voices", xalign=0, margin_top=6), "heading"), False, False, 0)
+        self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        box.pack_start(self.list, False, False, 0)
+        self.win.add(box)
+        self.win.show_all()
+        self.refresh()
+
+    def refresh(self):
+        for kid in self.list.get_children():
+            kid.destroy()
+        names = [name for name, _ in voices.remembered()]
+        if not names:
+            self.list.add(css(Gtk.Label(label="None yet. Name someone in a transcript to remember their voice."
+                                        if voices.remembering() else "None.", xalign=0), "empty"))
+        for name in names:
+            row = Gtk.Box(spacing=8)
+            row.pack_start(Gtk.Label(label=name, xalign=0), True, True, 0)
+            row.pack_end(button("Forget", lambda n=name: (voices.forget(n), self.refresh()), "danger"), False, False, 0)
+            self.list.add(row)
+        self.list.show_all()
+
+    def toggled(self, toggle):
+        on = toggle.get_active()
+        n = len(voices.remembered())
+        if not on and n and not confirm(self.win, f"Forget {'the' if n == 1 else f'all {n}'} remembered "
+                                        f"voice{'s' if n > 1 else ''}?", "This can't be undone.", "Forget"):
+            toggle.handler_block_by_func(self.toggled)
+            toggle.set_active(True)
+            toggle.handler_unblock_by_func(self.toggled)
+            return
+        voices.set_remembering(on)
+        if not on:
+            transcript.forget_voiceprints()
+        self.refresh()

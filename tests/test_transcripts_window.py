@@ -84,7 +84,7 @@ def test_a_transcript_just_recorded_is_listed_with_how_long_it_lasted(start):
     app.wait_window("Transcripts")
 
     assert "under a minute" in app.read("Transcripts")
-    assert "Them  A short one." in shown(app)
+    assert "Speaker 1  A short one." in shown(app)
 
 
 def test_the_transcript_being_recorded_is_listed_and_kept_up_to_date(start):
@@ -97,7 +97,7 @@ def test_the_transcript_being_recorded_is_listed_and_kept_up_to_date(start):
 
     app.hear("Still going.")
 
-    eventually(lambda: "Them  Still going." in shown(app))
+    eventually(lambda: "Speaker 1  Still going." in shown(app))
     app.click("Stop", "Transcripts")
     eventually(lambda: "under a minute" in app.read("Transcripts"))
 
@@ -174,7 +174,7 @@ def test_a_new_recording_appears_at_the_top_of_the_transcripts_and_is_shown(star
     texts = app.read("Transcripts")
     assert "Recording now" in texts and "Stop" in texts and "Pause" in texts
     assert "Delete" not in texts  # not while it's being recorded
-    eventually(lambda: "Them  Hello, can you hear me?" in shown(app))
+    eventually(lambda: "Speaker 1  Hello, can you hear me?" in shown(app))
 
 
 def test_reading_another_transcript_meanwhile_the_recording_stays_at_the_top(start):
@@ -199,7 +199,7 @@ def test_clicking_the_recording_again_shows_what_has_been_said_since(start):
 
     app.send("select", row=rows(app)[0], window_title="Transcripts")
 
-    eventually(lambda: "Them  Said while you were reading." in shown(app))
+    eventually(lambda: "Speaker 1  Said while you were reading." in shown(app))
     assert "Stop" in app.read("Transcripts")
 
 
@@ -229,7 +229,7 @@ def test_once_stopped_it_is_listed_like_the_others(start):
     app.click("Stop", "Transcripts")
 
     eventually(lambda: "under a minute" in app.read("Transcripts"))
-    assert "Them  The end." in shown(app)  # still the one shown
+    assert "Speaker 1  The end." in shown(app)  # still the one shown
     assert "Copy all" in app.read("Transcripts") and "Delete" in app.read("Transcripts")
 
 
@@ -240,7 +240,7 @@ def test_clicking_the_icon_while_recording_shows_the_recording(start):
 
     app.send("click_icon")
 
-    eventually(lambda: "Them  Back to the call." in shown(app))
+    eventually(lambda: "Speaker 1  Back to the call." in shown(app))
     assert "Stop" in app.read("Transcripts")
 
 

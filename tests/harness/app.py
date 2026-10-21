@@ -12,13 +12,14 @@ With DICTATE_TEST_LLAMA pointing at the real llama-server, refining is real too.
 Commands arrive as JSON lines on stdin (see COMMANDS); each gets a "done" reply with the same id.
 Events go to stdout as lines starting with "EVENT "; anything else on stdout is the app's own log.
 """
-import json, os, sys, time, wave
+import json, os, sys, time, wave, zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import dictate  # noqa: E402
 dictate.bootstrap()
-from dictate import osio, refine, stt  # noqa: E402
+from dictate import osio, refine, stt, voices  # noqa: E402
+import numpy as np  # noqa: E402
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
 
@@ -46,14 +47,15 @@ REAL_SPEECH, REAL_SPEAKERS = os.environ.get("DICTATE_TEST_SPEECH"), os.environ.g
 
 
 class Recorder:
-    def start(self, path, speakers=False, on_audio=None):
+    def start(self, path, speakers=False, on_audio=None, echo_cancel=False):
         real = REAL_SPEAKERS if speakers else REAL_SPEECH
         audio = bytes(3200)  # what the microphone or speakers give: silence, or the speech
         if real:
             with wave.open(real) as sample:
                 audio = sample.readframes(sample.getnframes())
         if on_audio:  # streamed as it's recorded (transcribe mode)
-            on_audio.__self__.source = "speakers" if speakers else "mic"  # the stt.Live it streams to
+            if ears:  # (not when it's the real stt.Live)
+                ears[-1].source = "speakers" if speakers else "mic"  # the stt.Live it streams to: the newest
             on_audio(audio)
             Path(path).write_bytes(b"recording")
         else:
@@ -61,15 +63,15 @@ class Recorder:
                 w.setnchannels(1), w.setsampwidth(2), w.setframerate(16000)
                 w.writeframes(audio)
             heard[path], speech["next"] = speech["next"], None
-        event("recording", path=path, speakers=speakers)
+        event("recording", path=path, speakers=speakers, echo_cancel=echo_cancel)
 
     def stop(self):
         event("recording_stopped")
 
 
 class Live:
-    def __init__(self, path=None, on_text=None):
-        self.path, self.on_text, self.t0 = path, on_text, time.monotonic()
+    def __init__(self, path=None, on_text=None, on_preview=None, pause=None):
+        self.path, self.on_text, self.on_preview, self.t0 = path, on_text, on_preview, time.monotonic()
         if on_text:
             ears.append(self)
 
@@ -114,6 +116,18 @@ if not REAL_SPEECH and not REAL_SPEAKERS:
     stt.Live, stt.load = Live, lambda: None
     stt.transcribe = lambda path: heard.get(str(path)) or ""
 refine.SERVER = Path(os.environ["DICTATE_TEST_LLAMA"])
+
+
+def fake_voiceprint(name, size=192):
+    """The same voiceprint for the same voice, unrelated ones for different voices."""
+    v = np.random.default_rng(zlib.crc32(name.encode())).standard_normal(size).astype(np.float32)
+    return v / np.linalg.norm(v)
+
+
+_voiceprint, _narrowband = voices.voiceprint, voices.narrowband  # the real ones, for real recordings
+voices.voiceprint = lambda s: fake_voiceprint(s[1]) if isinstance(s, tuple) else _voiceprint(s)
+voices.narrowband = lambda s=None, power=None: False if isinstance(s, tuple) else _narrowband(s, power)
+voices.available = lambda: not os.environ.get("DICTATE_TEST_NO_VOICES")
 refine.IDLE = float(os.environ.get("DICTATE_TEST_IDLE", refine.IDLE))
 
 from dictate import app as dictate_app  # noqa: E402  (after the swaps, like the real launcher's order)
@@ -225,13 +239,25 @@ def cmd_say(text):
     speech["next"] = text
 
 
-def cmd_hear(text, source, length=1.0):
-    """Someone says text through the speakers (source "speakers"), or into the microphone ("mic"), while
-    Dictate is transcribing: it's heard as a stretch of speech that has just ended."""
+def now():
+    """Seconds into the transcript being recorded, by its own clock (as a real recording's samples are)."""
+    return time.monotonic() - app.session.t0
+
+
+def cmd_hear(text, source, length=1.0, voice="them"):
+    """Someone (voice) says text through the speakers (source "speakers"), or into the microphone ("mic"),
+    while Dictate is transcribing: it's heard as a stretch of speech that has just ended."""
     for live in reversed(ears):
         if getattr(live, "source", None) == source:
-            end = time.monotonic() - live.t0
-            return live.on_text(max(0.0, end - length), end, text)
+            end = now()
+            return live.on_text(end - length, end, text, ("voice", voice))  # may have begun before the recording
+
+
+def cmd_hear_so_far(text, source, length=1.0):
+    """Someone is saying text through the speakers (or into the microphone, "mic") and hasn't paused yet."""
+    for live in reversed(ears):
+        if getattr(live, "source", None) == source:
+            return live.on_preview(now() - length, text)
 
 
 def cmd_keys(down=(), up=()):

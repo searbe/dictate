@@ -477,6 +477,9 @@ class App:
     def quit(self, reason):
         """Every way out goes through here, so the log says why Dictate stopped."""
         log(f"quitting: {reason}")
+        if self.rec:  # mid-dictation: don't leave the microphone recording
+            self.rec.stop()
+            self.rec = None
         if self.session:  # save what's still to be transcribed
             session, self.session = self.session, None
             return session.stop(Gtk.main_quit)

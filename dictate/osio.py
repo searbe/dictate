@@ -3,13 +3,21 @@
 Linux reads keyboards with evdev, records with pw-record and pastes through uinput (works on Wayland).
 Windows and macOS use pynput for keys and sounddevice for the microphone.
 """
-import subprocess, sys, threading, time, unicodedata, wave
+import ctypes, itertools, os, signal, subprocess, sys, threading, time, unicodedata, wave
 from pathlib import Path
 from gi.repository import GLib
 from . import ROOT
 
 LINUX, WINDOWS, MAC = sys.platform.startswith("linux"), sys.platform == "win32", sys.platform == "darwin"
 HEARS_SPEAKERS = LINUX  # Recorder can record what the computer plays (transcribe mode)
+
+
+def _die_with_us():  # Linux, in the child: if Dictate exits or crashes, the recorder (or player) stops too
+    ctypes.CDLL("libc.so.6").prctl(1, signal.SIGTERM)  # PR_SET_PDEATHSIG; pw-record finishes its file on SIGTERM
+
+
+TIED = {"preexec_fn": _die_with_us} if LINUX else {}  # (it's the starting *thread* that counts: start these
+# from the GTK thread, which lasts as long as Dictate)
 RATE = 16000
 SCRIPT = ROOT / "dictate.py"
 # macOS virtual key codes (ANSI layout) for A–Z; Option changes the typed character, so match the key itself
@@ -115,20 +123,30 @@ if LINUX:
                         if ev.type == e.EV_KEY and ev.value != 2:
                             self.chord.key(ev.code, KINDS.get(ev.code), ev.value == 1, ev.timestamp())
 
+    _cancellers = itertools.count()
+
     class Recorder:
-        def start(self, path, speakers=False, on_audio=None):
+        def start(self, path, speakers=False, on_audio=None, echo_cancel=False):
             """Record the microphone, or (speakers) whatever this computer is playing: PipeWire's monitor of
             the default output (still heard while the output is muted). Into a WAV file; or, with on_audio,
             into an Ogg Opus file (about a tenth of the size) while passing each chunk of 16-bit samples to
-            on_audio as it's recorded (on the recorder's thread)."""
-            sink = ["-P", "{ stream.capture.sink=true }"] if speakers else []
-            cmd = ["pw-record", *sink, "--rate", str(RATE), "--channels", "1", "--format", "s16"]
+            on_audio as it's recorded (on the recorder's thread). echo_cancel: the microphone with what the
+            speakers are playing taken out of it (see _echo_cancelled), where PipeWire can."""
+            self.canceller = None
+            if speakers:
+                source = ["-P", "{ stream.capture.sink=true }"]
+            elif echo_cancel and (found := _echo_cancelled()):
+                self.canceller, name = found
+                source = ["--target", name]
+            else:
+                source = []
+            cmd = ["pw-record", *source, "--rate", str(RATE), "--channels", "1", "--format", "s16"]
             if not on_audio:
-                self.proc, self.reader = subprocess.Popen([*cmd, path]), None
+                self.proc, self.reader = subprocess.Popen([*cmd, path], **TIED), None
                 return
             import numpy as np, soundfile
             out = soundfile.SoundFile(path, "w", RATE, 1, format="OGG", subtype="OPUS")
-            self.proc = subprocess.Popen([*cmd, "--raw", "-"], stdout=subprocess.PIPE)
+            self.proc = subprocess.Popen([*cmd, "--raw", "-"], stdout=subprocess.PIPE, **TIED)
 
             def pump():
                 with out:
@@ -144,6 +162,32 @@ if LINUX:
             self.proc.wait()
             if self.reader:
                 self.reader.join()  # everything recorded has been passed on and saved
+            if self.canceller:
+                self.canceller.terminate()  # which unloads the echo canceller
+                self.canceller.wait()
+
+    def _echo_cancelled():
+        """(process, node name) of a microphone with the speakers taken out of it, or None if PipeWire can't:
+        its WebRTC echo canceller, comparing the default microphone with what the default output plays. Without
+        it, the microphone hears the speakers too (unless it's headphones), as if you'd said it. Loaded by a
+        pw-cli that keeps it loaded until it's stopped (or Dictate is), so nothing is left behind."""
+        name = f"dictate-echo-cancel-{os.getpid()}-{next(_cancellers)}"
+        args = (f'{{ library.name = aec/libspa-aec-webrtc monitor.mode = true audio.rate = {RATE} audio.channels = 1 '
+                f'source.props = {{ node.name = "{name}" node.description = "Dictate: microphone without the speakers" '
+                f'node.passive = true }} capture.props = {{ node.name = "{name}-capture" }} }}')
+        try:
+            proc = subprocess.Popen(["pw-cli", "-m", "load-module", "libpipewire-module-echo-cancel", args],
+                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **TIED)
+        except OSError:
+            return None
+        for _ in range(30):  # it's there within a few tenths of a second
+            if proc.poll() is not None:
+                return None
+            if "id:" in subprocess.run(["pw-cli", "info", name], capture_output=True, text=True).stdout:
+                return proc, name
+            time.sleep(0.1)
+        proc.terminate()
+        return None
 
     def _layout():
         """The first keyboard layout KDE is set to (e.g. "gb"), else "us"."""
@@ -226,8 +270,8 @@ else:
             self.listener.start()
 
     class Recorder:
-        def start(self, path, speakers=False, on_audio=None):
-            if speakers or on_audio:
+        def start(self, path, speakers=False, on_audio=None, echo_cancel=False):
+            if speakers or on_audio:  # (so echo_cancel doesn't arise)
                 raise NotImplementedError("recording the speakers is Linux-only for now")
             self.wav = wave.open(path, "wb")
             self.wav.setnchannels(1)
@@ -279,7 +323,7 @@ class Player:
                 self.on_playing(False)
             on_done()
         if LINUX:
-            proc = self.proc = subprocess.Popen(["pw-play", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            proc = self.proc = subprocess.Popen(["pw-play", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **TIED)
             wait = proc.wait
         else:
             import numpy as np

@@ -57,6 +57,9 @@ def main():
         (MODELS / name).rename(MODELS / "parakeet")
         (MODELS / f"{name}.tar.bz2").unlink()
     download(f"{SHERPA}/silero_vad.onnx", MODELS / "silero_vad.onnx")
+    # telling voices apart in transcripts: TitaNet small (see voices.py; compare with bench_voices.py)
+    download("https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/"  # sic
+             "nemo_en_titanet_small.onnx", MODELS / "titanet_small.onnx")
     # refinement: 4B for the CPU, 9B for the GPU (see MODELS in refine.py; compare others with bench.py)
     download(f"{HF}/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf", MODELS / "qwen3.5-4b-q4_k_m.gguf")
     download(f"{HF}/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf", MODELS / "qwen3.5-9b-q4_k_m.gguf")

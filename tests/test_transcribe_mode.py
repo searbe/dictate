@@ -1,6 +1,6 @@
-"""Transcribe mode: Ctrl+Win, lift Win, Win again, and everything said through the speakers ("Them") and into
-the microphone ("Me") is written into a transcript as it's heard, shown at the top of the Transcripts window,
-until it's stopped the same way, or with the Stop button."""
+"""Transcribe mode: Ctrl+Win, lift Win, Win again, and everything said through the speakers (by "Speaker 1",
+"Speaker 2", …: see test_voices.py) and into the microphone ("Me") is written into a transcript as it's heard,
+shown at the top of the Transcripts window, until it's stopped the same way, or with the Stop button."""
 import re, time
 import pytest
 from conftest import needs_models, needs_session, sample_speech
@@ -30,10 +30,10 @@ def test_what_the_speakers_and_the_microphone_hear_is_written_down_as_it_is_said
     app.hear("I think we should cut it.", source="mic")
 
     text = shows(app, "So what do you think about the budget?", "I think we should cut it.")
-    assert re.search(r"\d\d:\d\d:\d\d Them  So what do you think about the budget\?", text)
+    assert re.search(r"\d\d:\d\d:\d\d Speaker 1  So what do you think about the budget\?", text)
     assert re.search(r"\d\d:\d\d:\d\d Me  I think we should cut it\.", text)
     saved = app.transcript_file()
-    assert "**" in saved and "Them:** So what do you think about the budget?" in saved
+    assert "**" in saved and "Speaker 1:** So what do you think about the budget?" in saved
     assert "Me:** I think we should cut it." in saved
 
 
@@ -46,7 +46,7 @@ def test_one_person_talking_on_is_one_paragraph(start):
 
     text = shows(app, "Fair enough.")
     assert "First point. Second point." in text
-    assert text.count("Them") == 1
+    assert text.count("Speaker 1") == 1
 
 
 def test_starting_it_neither_pastes_nor_keeps_a_dictation(start):
@@ -143,6 +143,26 @@ def test_the_speakers_picked_up_by_the_microphone_are_not_written_down_twice(sta
     assert "Can everyone hear me ok\n" not in text + "\n" and text.count("Can everyone") == 1
 
 
+def test_an_echo_of_two_of_their_stretches_at_once_is_not_written_down(start):
+    """The microphone pauses where the speakers don't, so it can hear two of their stretches as one."""
+    app = started(start)
+
+    app.hear("Then I'll put this")
+    app.hear("at the very end.")
+    app.hear("Then I'll put this at the very end.", source="mic")
+    app.hear("Sounds good.", source="mic")
+
+    text = shows(app, "at the very end.", "Sounds good.")
+    assert "Me  Then" not in text and text.count("Then I'll put this") == 1
+
+
+def test_the_microphone_is_recorded_with_the_speakers_taken_out_of_it(start):
+    app = started(start)
+
+    assert app.happened("recording", speakers=False, echo_cancel=True)
+    assert app.happened("recording", speakers=True, echo_cancel=False)
+
+
 def test_playing_a_recording_from_history_is_not_transcribed(start, model):
     model.rules({"prompt": "CLEANUP", "reply": "Played back."})
     app = start(styles=[], settings={"keep_audio_hours": 24})
@@ -208,4 +228,97 @@ def test_speech_through_the_speakers_is_transcribed_by_the_real_model(start, tmp
 
     app.click("Stop", "Transcripts")  # the sample ends mid-word: its last stretch is transcribed on stopping
     eventually(lambda: SAID in app.transcript_file().lower(), timeout=60)
+    assert "Speaker 1:**" in app.transcript_file()  # its voice, told apart by the real voice model
     assert "Me:**" not in app.transcript_file()  # the microphone heard silence
+
+
+def test_what_is_being_said_shows_before_the_pause_and_is_then_replaced(start):
+    app = started(start)
+
+    app.hear_so_far("So the plan is")
+    shows(app, "…  So the plan is")
+    app.hear("So the plan is to ship on Monday.")
+
+    text = shows(app, "Speaker 1  So the plan is to ship on Monday.")
+    assert "…" not in text
+    assert "So the plan is to ship on Monday." in app.transcript_file()
+
+
+def test_what_is_being_said_is_not_saved_until_it_is_transcribed_whole(start):
+    app = started(start)
+
+    app.hear_so_far("Half a sent")
+    shows(app, "Half a sent")
+
+    assert "Half a sent" not in app.transcript_file()
+
+
+def test_a_dictation_does_not_show_up_while_it_is_being_said(start):
+    app = started(start)
+    app.dictate("note to self", wait=False)
+
+    app.hear_so_far("note to self", source="mic")
+    app.hear_so_far("On the call meanwhile")
+
+    shows(app, "On the call meanwhile")
+    assert "note to self" not in app.transcript()
+    app.send("keys", up=["meta", "ctrl"])
+
+
+def test_nothing_shows_while_paused(start):
+    app = started(start)
+    app.click("Pause", "Transcripts")
+
+    app.hear_so_far("Off the record")
+    app.hear("Still off.")
+
+    app.click("Resume", "Transcripts")
+    time.sleep(0.3)
+    app.hear("Back on.")
+    text = shows(app, "Back on.")
+    assert "Off the record" not in text and "Still off." not in text
+
+
+@needs_models
+@pytest.mark.models
+def test_a_stretch_cut_between_voices_loses_no_words_with_the_real_models(start, tmp_path):
+    """Two voices without a pause: the stretch is transcribed whole, then cut between words where the voice
+    changes, so every word is kept, once, in order. (The second voice is the sample sped up by a fifth;
+    scripts/bench_voices.py measures how well real different voices are told apart.)"""
+    import numpy as np, soundfile
+    voice = soundfile.read(str(sample_speech(tmp_path / "one.wav")), dtype="float32")[0]
+    other = np.interp(np.arange(0, len(voice), 1.2), np.arange(len(voice)), voice)
+    both = tmp_path / "both.wav"
+    soundfile.write(str(both), np.concatenate([voice, other]), 16000, subtype="PCM_16")
+    app = started(start, env={"DICTATE_TEST_SPEAKERS": str(both)})
+
+    app.click("Stop", "Transcripts")
+    eventually(lambda: app.transcript_file().lower().count("country") == 4, timeout=60)
+
+    said = " ".join(re.sub(r"\*\*[^*]+:\*\*", " ", app.transcript_file().split("\n", 3)[3]).split()).lower()
+    whole = "ask not what your country can do for you. ask what you can do for your country."
+    assert said == f"{whole} {whole}"
+
+
+@needs_models
+@pytest.mark.models
+def test_the_speakers_echoing_into_the_microphone_are_not_you_with_the_real_models(start, tmp_path):
+    """Without headphones: the microphone hears them through the speakers (here, a made-up room: see
+    test_echo.py), then you say the same once they've stopped."""
+    import numpy as np, soundfile
+    from test_echo import room
+    them = soundfile.read(str(sample_speech(tmp_path / "speech.wav")), dtype="float32")[0]
+    gap = np.zeros(16000 * 3, np.float32)
+    speakers, mic = tmp_path / "speakers.wav", tmp_path / "mic.wav"
+    soundfile.write(str(speakers), np.concatenate([them, gap, np.zeros_like(them)]), 16000, subtype="PCM_16")
+    echoed = room(them)
+    soundfile.write(str(mic), np.concatenate([echoed, gap[len(echoed) - len(them):], them]), 16000, subtype="PCM_16")
+    app = started(start, env={"DICTATE_TEST_SPEAKERS": str(speakers), "DICTATE_TEST_SPEECH": str(mic)})
+
+    app.click("Stop", "Transcripts")
+    eventually(lambda: app.transcript_file().count("country") >= 4, timeout=60)
+    time.sleep(1)  # for anything more to arrive
+
+    said = re.findall(r"\*\*\S+ (.+?):\*\* ([^\n]*)", app.transcript_file())
+    assert sum(t.lower().count("ask not") for who, t in said if who == "Speaker 1") == 1
+    assert sum(t.lower().count("ask not") for who, t in said if who == "Me") == 1

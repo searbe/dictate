@@ -83,9 +83,14 @@ class Dictate:
         self.send("keys", down=["meta"])
         self.send("keys", up=["meta", "ctrl"])
 
-    def hear(self, text, source="speakers", length=0.2):
-        """Someone says text through the speakers (or "mic": into the microphone), ending now."""
-        self.send("hear", text=text, source=source, length=length)
+    def hear(self, text, source="speakers", length=0.2, voice="them"):
+        """Someone (voice: anyone, as long as it's the same for the same person) says text through the
+        speakers (or "mic": into the microphone), ending now, after length seconds."""
+        self.send("hear", text=text, source=source, length=length, voice=voice)
+
+    def hear_so_far(self, text, source="speakers"):
+        """Someone has been saying text for a second, without a pause yet."""
+        self.send("hear_so_far", text=text, source=source)
 
     def transcript(self):
         """What the Transcripts window shows of the selected transcript."""

@@ -54,13 +54,16 @@ them. `tests/harness/client.py` has the vocabulary (`dictate()`, `click()`, `rea
 | History window: order, labels, search, copy, play, delete, clear (with confirmation), keep-recordings setting | `test_history_window.py` |
 | Refinement styles window: add, edit, validate, delete, rename, vocabulary, cleanup prompt and reset | `test_style_manager.py` |
 | Another computer (Synergy's log): typed not pasted, its own default style, ignoring the hotkey, switching back | `test_other_computer.py` |
-| Quit (menu and signal) with the reason logged, run at startup, single instance, switching to `.venv` | `test_running_dictate.py` |
+| Quit (menu and signal) with the reason logged, the microphone never left recording (quitting mid-dictation, or crashing mid-recording), run at startup, single instance, switching to `.venv` | `test_running_dictate.py` |
 | Tray icon over the StatusNotifierItem protocol: registers, same menu, turns red while recording | `test_tray.py` |
 | Keys typed and pasted on US and UK layouts, Shift+Enter for new lines, plain punctuation | `test_typing_and_pasting.py` |
 | Speech-to-text with the real models: English, German, silence and noise, live = whole-file | `test_speech_to_text.py` |
 | Downloads: complete, interrupted, not repeated; unpacking | `test_downloads.py` |
-| Transcribe mode: the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / menu, closing the window carries on, pause, dictating meanwhile, echoes, History playback, recordings kept or not, the real model on speakers audio | `test_transcribe_mode.py` |
+| Transcribe mode: what's being said shown before the pause and replaced by the whole stretch (not saved; not while muted or paused), a stretch cut between voices loses no words (real models), the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / menu, closing the window carries on, pause, dictating meanwhile, echoes (the same words at once, and with the real models a made-up room's echo), History playback, recordings kept or not, the real model on speakers audio | `test_transcribe_mode.py` |
 | Transcripts window: listed newest first with when and how long, the recording at the top and kept up to date while reading others, reading one, copy, delete (with confirmation) with its recordings, older transcripts' length from their recording, none yet, clicking the icon while recording | `test_transcripts_window.py` |
+| Echoes: the speakers heard again by the microphone (in made-up rooms, quieter or later) told from you speaking, alone or over them | `test_echo.py` |
+| Grouping voices into people on a call's worth of made-up voiceprints: one voice each, short parts never someone new, numbers kept when one is named | `test_voice_grouping.py` |
+| Voices: told apart, named live or after the call, merged by naming two the same, remembered only when turned on (live and after the call), listed and forgotten, all forgotten when turned off, "Them" without the voice model | `test_voices.py` |
 | The real thing end to end (real speech model, llama-server and refinement model), and `scripts/prove_local.py`: no network call leaves the computer | `test_local_only.py` |
 
 ## Manual checklist
@@ -128,13 +131,21 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
 
 ### 7. Transcribe mode (real speakers, microphone and calls)
 
-- Play a video with speech, start transcribe mode (Ctrl+Win, lift Win, Win again): its words appear under "Them"
-  a moment after each pause, accurately. Speak: under "Me". The Transcripts window doesn't take focus.
-- On a call on headphones, and again on the laptop's speakers: the other person isn't also written as "Me".
+- Play a video with speech, start transcribe mode (Ctrl+Win, lift Win, Win again): its words appear under
+  "Speaker 1" a moment after each pause, accurately. Speak: under "Me". The Transcripts window doesn't take focus.
+- On a call on headphones, and again on the speakers: the other person isn't also written as "Me", and what you
+  say (on its own, and over them) still is. While it runs, "Dictate: microphone without the speakers" is listed
+  among the microphones (PipeWire's echo canceller); it's gone once you stop.
 - Dictate into another app meanwhile: pasted as usual, not in the transcript.
 - An hour-long session: the transcript keeps up, CPU use stays reasonable, the file in `data/transcripts/` is
   complete after Stop.
 - Switch the output device (e.g. headphones on) mid-session: still transcribed (the default output's monitor).
+- A call or podcast with 2–4 people (a long one too, 15 min or more): as many "Speaker N" as there are people, each
+  mostly keeping theirs, including in quick back-and-forth; note where it slips (talking over each other, one-word
+  answers). Sentences aren't broken up at short pauses. The greyed-out preview keeps up within about a second
+  of someone speaking. After changing `voices.py`, run `python scripts/bench_voices.py
+  LibriSpeech/dev-clean` (download it from openslr.org/12) and compare with the README's figures.
+- With Remember voices on: name someone, and in a later call with them they're named from their first stretch.
 
 ### 8. The desktop shell
 
