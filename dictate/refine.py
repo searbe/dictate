@@ -6,14 +6,14 @@ else CPU (smaller model), so the model is loading while you speak. Stopped after
 import atexit, ctypes, difflib, json, os, queue, re, shutil, signal, socket, subprocess, sys, threading, time, urllib.request
 from pathlib import Path
 
-from . import ROOT
+from . import DATA, ROOT
 SERVER = ROOT / "bin/llama" / ("llama-server.exe" if sys.platform == "win32" else "llama-server")
 MODELS = {"gpu": ROOT / "models/qwen3.5-9b-q4_k_m.gguf", "cpu": ROOT / "models/qwen3.5-4b-q4_k_m.gguf"}
 IDLE = 30            # seconds unused before unloading
 SPARE_VRAM_MB = 2000  # free VRAM needed beyond the model's own size to use the GPU
 MAX_GPU_BUSY = 30    # % busy above which we assume a game/app is using the GPU
-STYLES = ROOT / "data/styles.json"
-VOCAB = ROOT / "data/vocab.txt"  # one name/term per line, fed to cleanup
+STYLES = DATA / "styles.json"
+VOCAB = DATA / "vocab.txt"  # one name/term per line, fed to cleanup
 
 
 def _free_port():
@@ -171,7 +171,7 @@ Output: I ran the build on my laptop and it gave me something that doesn't look 
 def load_styles():
     """{"cleanup": prompt, "styles": [{"name", "key", "prompt"}, ...]}, created with defaults on first use."""
     if not STYLES.exists():
-        old = ROOT / "data/styles/default.txt"  # earlier single-style version
+        old = DATA / "styles/default.txt"  # earlier single-style version
         save_styles({"cleanup": old.read_text() if old.exists() else CLEANUP, "styles": DEFAULT_STYLES})
         if old.exists():
             old.unlink()
@@ -249,7 +249,10 @@ def _launcher():
     fires when the *thread* that started a child exits, so a short-lived worker must never start it."""
     while True:
         cmd, done = _launches.get()
-        done.put(subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **SPAWN))
+        try:
+            done.put(subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **SPAWN))
+        except OSError as err:  # e.g. llama-server missing: report it, and keep this thread for next time
+            done.put(err)
 
 
 threading.Thread(target=_launcher, daemon=True).start()
@@ -258,7 +261,10 @@ threading.Thread(target=_launcher, daemon=True).start()
 def _launch(cmd):
     done = queue.Queue()
     _launches.put((cmd, done))
-    return done.get()
+    proc = done.get()
+    if isinstance(proc, OSError):
+        raise proc
+    return proc
 
 
 def gpu_free(need_mb):
@@ -301,8 +307,12 @@ def warm(mode=None):
         _mode = mode or ("gpu" if gpu_ok() else "cpu")
         gpu = ["-ngl", "99"] if sys.platform == "darwin" else ["--device", "Vulkan0", "-ngl", "99"]  # Metal / Vulkan
         dev = gpu if _mode == "gpu" else ["--device", "none", "-ngl", "0"]
-        _proc = _launch([SERVER, "-m", MODELS[_mode], "--host", "127.0.0.1", "--port", str(PORT), "-c", "4096",
-                         "--no-webui", "--reasoning", "off", "-t", str(min(8, os.cpu_count() or 4)), *dev])
+        try:
+            _proc = _launch([SERVER, "-m", MODELS[_mode], "--host", "127.0.0.1", "--port", str(PORT), "-c", "4096",
+                             "--no-webui", "--reasoning", "off", "-t", str(min(8, os.cpu_count() or 4)), *dev])
+        except OSError as err:  # refining is skipped (the transcript is used as it is) until this is fixed
+            _proc = None
+            return print("refine: can't start llama-server:", err, flush=True)
         print("refine: loading", MODELS[_mode].name, "on", _mode, flush=True)
 
 
@@ -379,6 +389,8 @@ def complete(text, prompt, app=""):
     """The raw model output for text under prompt (waits for the model to finish loading)."""
     warm()
     for _ in range(600):  # wait up to 60s for the model to load
+        if not _proc or _proc.poll() is not None:
+            raise OSError("llama-server isn't running")
         try:
             _post("/health", timeout=1)
             break

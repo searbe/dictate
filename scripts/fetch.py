@@ -31,6 +31,8 @@ def download(url, dest):
             if total and done * 10 // total != shown:
                 shown = done * 10 // total
                 print(f"  {shown * 10}%", flush=True)
+    if total and done < total:  # a dropped connection just ends the stream early; it doesn't raise
+        raise OSError(f"{dest.name}: download interrupted at {done} of {total} bytes; run setup again")
     part.rename(dest)
 
 
