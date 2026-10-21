@@ -88,3 +88,13 @@ def test_the_hotkey_can_be_ignored_while_the_other_computer_has_the_keyboard(sta
 
     assert not app.happened("recording", after=mark)
     assert app.history() == []
+
+
+def test_when_the_other_computer_drops_off_the_keyboard_is_back_here(start, tmp_path):
+    """Synergy says "jump", not "switch", when it brings the keyboard home because the other computer went away."""
+    app = start_with_synergy(start, tmp_path, ("deck", "laptop"), styles=[])
+    with open(tmp_path / "home/.local/state/Synergy/synergy.jsonl", "a") as f:
+        f.write(json.dumps({"msg": 'error writing to client "laptop"'}) + "\n")
+        f.write(json.dumps({"msg": 'jump from "laptop" to "deck" at 1720,720'}) + "\n")
+
+    assert app.dictate("back here")["type"] == "pasted"

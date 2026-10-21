@@ -7,7 +7,8 @@ Two sources, because in testing neither caught every switch on its own:
   (activated = input is going elsewhere, deactivated = it's back), but not for every switch. A capture only
   counts once it has lasted SETTLE seconds: when Synergy can't reach the other computer it grabs and
   releases every few milliseconds.
-- Synergy's log records every switch ('switch from "a" to "b"'); on each hotkey press we read the lines
+- Synergy's log records every switch ('switch from "a" to "b"', or 'jump from' when it brings the keyboard
+  home because the other computer dropped off); on each hotkey press we read the lines
   added since last time. It could go stale if Synergy died while away, so KWin's "back" resets it.
 Remote if either says so."""
 import configparser, json, re, sys, time
@@ -44,7 +45,7 @@ def on_remote_screen():
 
 # --- fallback: Synergy's log ---
 ROOTS = [Path.home() / ".var/app/com.symless.synergy", Path.home()]  # Flatpak, then a native install
-SWITCH = re.compile(r'switch from "[^"]*" to "([^"]*)"')
+SWITCH = re.compile(r'(?:switch|jump) from "[^"]*" to "([^"]*)"')  # jump: e.g. back home when the other computer drops off
 _log, _local, _pos, _screen = None, None, 0, None
 
 
