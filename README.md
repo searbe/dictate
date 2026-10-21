@@ -120,4 +120,4 @@ Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can'
 `styles.json`, `vocab.txt` and `state.json`. Logs go to `journalctl --user` when started from the desktop.
 
 ## License
-MIT: see [LICENSE](LICENSE). The models and tools the setup scripts download come under their own licenses: Parakeet TDT (CC BY 4.0), Qwen3.5 (Apache 2.0), Silero VAD (MIT), TitaNet (CC BY 4.0), llama.cpp (MIT), sherpa-onnx (Apache 2.0), and, on Windows, the gvsbuild GTK runtime (LGPL).
+MIT: see [LICENSE](LICENSE). The models and tools the setup scripts download come under their own licenses: [Parakeet TDT](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), [Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-9B), [Silero VAD](https://github.com/snakers4/silero-vad), [TitaNet](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/titanet_small), [llama.cpp](https://github.com/ggml-org/llama.cpp), [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) and, on Windows, [gvsbuild](https://github.com/wingtk/gvsbuild)'s GTK runtime.
