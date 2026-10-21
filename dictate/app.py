@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 import cairo, gi
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gio, Gtk, Gdk, GLib
+from gi.repository import Gtk, Gdk, GLib
 from . import DATA, activewin, dialogs, osio, refine, remote, stt, transcript, tray
 
 HISTORY = DATA / "history.jsonl"
@@ -82,9 +82,9 @@ class App:
         if osio.HEARS_SPEAKERS:
             self.transcribe_item = Gtk.MenuItem(label=self.TRANSCRIBE)
             self.transcribe_item.connect("activate", lambda _: self.toggle_transcribing())
-            folder = Gtk.MenuItem(label="Transcripts folder")
-            folder.connect("activate", lambda _: self.open_folder(transcript.FOLDER))
-            for item in (self.transcribe_item, folder, Gtk.SeparatorMenuItem()):
+            browse = Gtk.MenuItem(label="Transcripts")
+            browse.connect("activate", lambda _: self.show_transcripts())
+            for item in (self.transcribe_item, browse, Gtk.SeparatorMenuItem()):
                 self.menu.append(item)
         away = Gtk.MenuItem(label="When another computer has the keyboard")  # e.g. through Synergy
         away_menu, group = Gtk.Menu(), None
@@ -112,6 +112,7 @@ class App:
 
         self.state, self.hovered, self.rec, self.wav, self.anim, self.save_id = "idle", False, None, None, None, None
         self.session = self.transcript_win = self.cancelled = None  # transcribe mode; a dictation to drop
+        self.transcripts_win = None  # the Transcripts window, while open
         self.t0 = time.monotonic()
         self.tray = tray.Tray(self.menu, self.render_icon, self.build_default_menu)  # same menu in the system tray
         self.clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
@@ -404,7 +405,7 @@ class App:
             return log(f"transcribe mode: can't record ({err})")
         self.session, win = session, dialogs.TranscriptWindow(session, self.stop_transcribing)
         self.transcript_win = win
-        session.on_change = lambda: (win.refresh(), self.win.queue_draw(), self.tray.update())
+        session.on_change = lambda: (win.refresh(), self.transcripts_changed(), self.win.queue_draw(), self.tray.update())
         self.transcribe_item.set_label("Stop transcribing")
         session.on_change()
         log(f"transcribing: {session.path.name}")
@@ -419,15 +420,21 @@ class App:
             if self.cfg["keep_audio_hours"] == 0:
                 for path in session.recordings:
                     Path(path).unlink(missing_ok=True)
+            self.transcripts_changed()
             log(f"transcribing: stopped, {len(session.paragraphs())} paragraphs saved to {session.path.name}")
         session.stop(saved)
         self.transcribe_item.set_label(self.TRANSCRIBE)
         self.win.queue_draw()
         self.tray.update()
 
-    def open_folder(self, folder):
-        folder.mkdir(parents=True, exist_ok=True)
-        Gio.AppInfo.launch_default_for_uri(folder.as_uri(), None)
+    def show_transcripts(self):
+        if self.transcripts_win and not self.transcripts_win.closed:
+            return self.transcripts_win.win.present()
+        self.transcripts_win = dialogs.TranscriptsWindow(lambda: self.session)
+
+    def transcripts_changed(self):
+        if self.transcripts_win:
+            self.transcripts_win.changed()
 
     # --- windows ---
     def show_history(self):

@@ -31,10 +31,12 @@ written down, with the time, as soon as there's a pause. Stop it the same way, w
 or from the menu (**Transcribe this computer** / **Stop transcribing**); **Pause** leaves out what's said until
 **Resume**. You can dictate as usual meanwhile: your dictations stay out of the transcript, as does Dictate playing
 a recording back, and the speakers' sound picked up by your microphone isn't written down twice. Transcripts are
-saved as Markdown in `data/transcripts/` (menu > **Transcripts folder**), with a recording of each side (Ogg Opus,
-about 12 MB an hour) kept as long as dictation recordings are. The icon has a blue ring while it's on, grey while paused.
+saved as Markdown in `data/transcripts/`, with a recording of each side (Ogg Opus, about 12 MB an hour) kept as
+long as dictation recordings are. **Transcripts** in the menu lists them all, newest first, with when each was
+recorded, how long it lasted and how it starts; click one to read it, copy it, open the file, delete it, or open
+the folder. The icon has a blue ring while it's on, grey while paused.
 
-The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it. Right-click it (or click the system tray icon) for the menu: Refine text, Default style, History, Refinement styles…, Transcribe this computer, Transcripts folder, When another computer has the keyboard, Run at startup and Quit.
+The floating dot is dark when idle, red with pulsing rings while recording, and shows a spinner while transcribing. Drag it to move it. Right-click it (or click the system tray icon) for the menu: Refine text, Default style, History, Refinement styles…, Transcribe this computer, Transcripts, When another computer has the keyboard, Run at startup and Quit.
 
 **History** lists every dictation with what was applied (raw transcript, cleanup, and any style). Each entry can play its recording, copy the text or the original transcript, or be deleted; **Clear history** removes everything. **Keep recordings** at the top sets how long audio is kept: not at all, 1–24 hours (default 24), or forever.
 
@@ -45,6 +47,8 @@ The floating dot is dark when idle, red with pulsing rings while recording, and 
 | ![Style picker](docs/picker.png) | ![History](docs/history.png) |
 
 ![Refinement styles](docs/styles.png)
+
+![Transcripts](docs/transcripts.png)
 
 Screenshots are generated from sample data with `python docs/make_screenshots.py` (rendered off-screen).
 

@@ -60,6 +60,7 @@ them. `tests/harness/client.py` has the vocabulary (`dictate()`, `click()`, `rea
 | Speech-to-text with the real models: English, German, silence and noise, live = whole-file | `test_speech_to_text.py` |
 | Downloads: complete, interrupted, not repeated; unpacking | `test_downloads.py` |
 | Transcribe mode: the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / closing / menu, pause, dictating meanwhile, echoes, History playback, recordings kept or not, the real model on speakers audio | `test_transcribe_mode.py` |
+| Transcripts window: listed newest first with when and how long, reading one, copy, delete (with confirmation) with its recordings, the one being recorded kept up to date, older transcripts' length from their recording, none yet | `test_transcripts_window.py` |
 | The real thing end to end (real speech model, llama-server and refinement model), and `scripts/prove_local.py`: no network call leaves the computer | `test_local_only.py` |
 
 ## Manual checklist

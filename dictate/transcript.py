@@ -7,7 +7,8 @@ back, anything said while paused, and the speakers' sound picked up again by the
 words at the same time as Them are an echo, not you).
 
 Saved as Markdown in data/transcripts/, rewritten after every new stretch, with an Ogg Opus recording per
-source beside it (about 12 MB an hour each, kept as long as dictation recordings are)."""
+source beside it (about 12 MB an hour each, kept as long as dictation recordings are). saved() reads them
+back for the Transcripts window."""
 import re, threading, time
 from datetime import datetime, timedelta
 from gi.repository import GLib
@@ -18,6 +19,58 @@ SOURCES = (("me", False), ("them", True))  # who, recorded from the speakers
 NAMES = {"me": "Me", "them": "Them"}
 JOIN = 10  # seconds: a stretch this soon after the same person's last one continues their paragraph
 ECHO = 0.6  # share of a stretch's words also heard through the speakers at the same time, for it to be an echo
+STAMP = "%Y-%m-%d %H.%M.%S"  # a transcript's file name: when it started
+LASTED = re.compile(r"^Lasted (.+), until \d\d:\d\d\.$", re.M)
+PARAGRAPH = re.compile(r"^\*\*(\d\d:\d\d:\d\d) (.+?):\*\* (.*)$", re.M)
+
+
+def length(seconds):
+    """e.g. "under a minute", "27 min", "1 h 05 min"."""
+    minutes = round(seconds / 60)
+    if seconds < 60:
+        return "under a minute"
+    return f"{minutes} min" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d} min"
+
+
+def recordings(path):
+    """The recordings saved beside the transcript at path."""
+    return [f for f in path.parent.glob(f"{path.stem} *") if f.suffix in (".ogg", ".wav")]
+
+
+def read(path):
+    """A saved transcript: {"path", "started", "length", "paragraphs": [(clock, who, text)]}, or None."""
+    try:
+        started, text = datetime.strptime(path.stem, STAMP), path.read_text()
+    except (ValueError, OSError):
+        return None
+    paragraphs = PARAGRAPH.findall(text)
+    lasted = LASTED.search(text)
+    if lasted:
+        took = lasted[1]
+    else:  # saved before transcripts said how long they lasted: the longest recording, else the last paragraph
+        import soundfile
+        seconds = 0.0
+        for rec in recordings(path):
+            try:
+                seconds = max(seconds, soundfile.info(str(rec)).duration)
+            except RuntimeError:
+                pass
+        if not seconds and paragraphs:
+            last = datetime.combine(started.date(), datetime.strptime(paragraphs[-1][0], "%H:%M:%S").time())
+            seconds = (last - started).total_seconds() % 86400
+        took = length(seconds)
+    return {"path": path, "started": started, "length": took, "paragraphs": paragraphs}
+
+
+def saved():
+    """Every saved transcript, newest first."""
+    return [t for t in map(read, sorted(FOLDER.glob("*.md"), reverse=True)) if t]
+
+
+def delete(path):
+    """Delete a saved transcript and its recordings."""
+    for f in [path, *recordings(path)]:
+        f.unlink(missing_ok=True)
 
 
 class Session:
@@ -26,7 +79,7 @@ class Session:
     def __init__(self, on_change=lambda: None):
         FOLDER.mkdir(parents=True, exist_ok=True)
         self.started, self.t0, self.on_change = datetime.now(), time.monotonic(), on_change
-        stamp = f"{self.started:%Y-%m-%d %H.%M.%S}"
+        stamp = f"{self.started:{STAMP}}"
         self.path = FOLDER / f"{stamp}.md"
         self.heard = []  # (who, start, end, text), in seconds since the start
         self.muted = {who: [] for who, _ in SOURCES}  # [start, end] (end None: still muted)
@@ -108,7 +161,7 @@ class Session:
         return [tuple(p) for p in out]
 
     def markdown(self):
-        head = f"# Transcript, {self.started:%A %-d %B %Y, %H:%M}\n"
+        head = f"# Transcript, {self.started:%A %-d %B %Y, %H:%M}\n\nLasted {length(self.now())}, until {datetime.now():%H:%M}.\n"
         return head + "".join(f"\n**{clock} {who}:** {text}\n" for clock, who, text in self.paragraphs())
 
     def save(self):

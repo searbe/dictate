@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import dictate  # noqa: E402
 dictate.bootstrap()
-from dictate import dialogs, osio, refine  # noqa: E402
+from dictate import dialogs, osio, refine, transcript  # noqa: E402
 from dictate.app import KEEP_AUDIO  # noqa: E402
 from gi.repository import GLib, Gtk  # noqa: E402
 
@@ -25,6 +25,20 @@ SAMPLE = [  # (time, text, raw, app, style, has a recording)
      "run the tests with pytest dash k login and tell me what fails", "other computer", "AI agent", True),
     ("15:22:47", "running about ten minutes late sorry", None, "firefox", None, False),
 ]
+TRANSCRIPTS = {  # file name: (how long, [(clock, who, text)])
+    "2026-10-20 10.00.00": ("32 min", [
+        ("10:00:04", "Them", "Morning, everyone. Shall we start with the roadmap and leave hiring for the end?"),
+        ("10:00:11", "Me", "Sounds good. I'd like to talk about the release date first, because it affects everything else."),
+        ("10:00:19", "Them", "Fair. So the plan was the third of November, but the login work is running about a week late. "
+                             "We could ship without it, or move the date."),
+        ("10:00:41", "Me", "I'd rather move the date than ship half of it."),
+        ("10:00:47", "Them", "Okay. Then the tenth? That gives QA the whole week."),
+    ]),
+    "2026-10-19 16.30.00": ("1 h 05 min", [("16:30:02", "Them", "Welcome to the talk. Today I want to show you how "
+                                                                  "speech recognition got small enough to run on a laptop.")]),
+    "2026-10-16 09.15.00": ("12 min", [("09:15:06", "Them", "Hi, thanks for calling. How can I help?"),
+                                       ("09:15:09", "Me", "Hi, I'm calling about my broadband bill.")]),
+}
 
 
 def offscreen(win, path, classes, size):
@@ -84,6 +98,14 @@ def main():
     manager = dialogs.StyleManager()
     manager.list.select_row(manager.list.get_row_at_index(manager.FIXED))  # the first style (Slack)
     offscreen(manager.win, DOCS / "styles.png", ["win", "editor"], (760, 560))
+
+    transcript.FOLDER = tmp / "transcripts"
+    transcript.FOLDER.mkdir()
+    for name, (took, paragraphs) in TRANSCRIPTS.items():
+        (transcript.FOLDER / f"{name}.md").write_text(f"# Transcript\n\nLasted {took}, until 00:00.\n" + "".join(
+            f"\n**{clock} {who}:** {text}\n" for clock, who, text in paragraphs))
+    browser = dialogs.TranscriptsWindow(lambda: None)
+    offscreen(browser.win, DOCS / "transcripts.png", ["win"], (900, 440))
     shutil.rmtree(tmp)
 
 

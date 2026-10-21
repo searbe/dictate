@@ -1,8 +1,9 @@
-"""Dictate's windows: History, the refinement style manager, the style picker, and the transcript."""
+"""Dictate's windows: History, the refinement style manager, the style picker, the transcript being
+recorded, and the Transcripts browser."""
 import json
 from datetime import datetime
 from gi.repository import Gio, Gtk, Gdk, GLib
-from . import refine
+from . import refine, transcript
 
 CSS = b"""
 * { font-family: "Inter", "Noto Sans", sans-serif; }
@@ -196,10 +197,10 @@ def history_card(app, it, line, audio_dir, delete):
     return row
 
 
-def confirm(parent, question, detail):
+def confirm(parent, question, detail, action="Delete all"):
     dialog = Gtk.MessageDialog(transient_for=parent, modal=True, message_type=Gtk.MessageType.WARNING,
                                buttons=Gtk.ButtonsType.NONE, text=question, secondary_text=detail)
-    dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, "Delete all", Gtk.ResponseType.OK)
+    dialog.add_buttons("Cancel", Gtk.ResponseType.CANCEL, action, Gtk.ResponseType.OK)
     answer = dialog.run()
     dialog.destroy()
     return answer == Gtk.ResponseType.OK
@@ -385,7 +386,34 @@ class StylePicker:
         self.on_choose(style, paste)
 
 
-# --- transcript ---
+# --- transcripts ---
+def transcript_view():
+    """A read-only text view for a transcript, and the tag for who's speaking."""
+    view = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD,
+                        left_margin=16, right_margin=16, top_margin=12, bottom_margin=12)
+    return view, view.get_buffer().create_tag("who", weight=700, foreground="#aab4ff")
+
+
+def show_transcript(view, who, paragraphs, empty):
+    """paragraphs: [(clock, who, text)]; empty: what to say if there are none."""
+    buf = view.get_buffer()
+    buf.set_text("" if paragraphs else empty)
+    for i, (clock, name, text) in enumerate(paragraphs):
+        buf.insert_with_tags(buf.get_end_iter(), ("\n\n" if i else "") + f"{clock} {name}  ", who)
+        buf.insert(buf.get_end_iter(), text)
+
+
+def open_uri(path):
+    Gio.AppInfo.launch_default_for_uri(path.as_uri(), None)
+
+
+def copy_button(path):
+    """Copy all: the transcript's Markdown, as saved."""
+    copy = button("Copy all", lambda: (Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(path().read_text(), -1),
+                                       flash(copy, "Copied ✓", "Copy all")))
+    return copy
+
+
 class TranscriptWindow:
     """The transcript as it grows, newest at the bottom (kept in view unless you've scrolled up).
     While recording: Pause / Resume and Stop. Closing the window stops too. Once stopped: Copy all, Open file."""
@@ -402,9 +430,7 @@ class TranscriptWindow:
         self.stop_btn = button("Stop", self.stop, "danger")
         self.bar.pack_start(self.stop_btn)
         self.bar.pack_start(self.pause_btn)
-        self.text = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD,
-                                 left_margin=16, right_margin=16, top_margin=12, bottom_margin=12)
-        self.who = self.text.get_buffer().create_tag("who", weight=700, foreground="#aab4ff")
+        self.text, self.who = transcript_view()
         self.scroll = css(Gtk.ScrolledWindow(hscrollbar_policy=Gtk.PolicyType.NEVER), "transcript")
         self.scroll.add(self.text)
         self.win.add(self.scroll)
@@ -416,14 +442,8 @@ class TranscriptWindow:
             return
         adj = self.scroll.get_vadjustment()
         following = adj.get_value() >= adj.get_upper() - adj.get_page_size() - 20
-        buf = self.text.get_buffer()
-        buf.set_text("")
-        paragraphs = self.session.paragraphs()
-        if not paragraphs:
-            buf.insert(buf.get_end_iter(), "Nothing heard yet." if not self.session.stopped else "Nothing was heard.")
-        for i, (clock, who, text) in enumerate(paragraphs):
-            buf.insert_with_tags(buf.get_end_iter(), ("\n\n" if i else "") + f"{clock} {who}  ", self.who)
-            buf.insert(buf.get_end_iter(), text)
+        show_transcript(self.text, self.who, self.session.paragraphs(),
+                        "Nothing was heard." if self.session.stopped else "Nothing heard yet.")
         if following:
             GLib.idle_add(lambda: adj.set_value(adj.get_upper() - adj.get_page_size()) and False)
 
@@ -444,9 +464,91 @@ class TranscriptWindow:
             b.destroy()
         self.bar.set_subtitle(f"Stopped. Saved as {self.session.path.name}")
         path = self.session.path
-        copy = button("Copy all", lambda: (Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(path.read_text(), -1),
-                                           flash(copy, "Copied ✓", "Copy all")))
-        self.bar.pack_start(copy)
-        self.bar.pack_start(button("Open file", lambda: Gio.AppInfo.launch_default_for_uri(path.as_uri(), None)))
+        self.bar.pack_start(copy_button(lambda: path))
+        self.bar.pack_start(button("Open file", lambda: open_uri(path)))
         self.bar.show_all()
         self.refresh()
+
+
+class TranscriptsWindow:
+    """Every saved transcript: a list on the left (when, how long, how it starts), the selected one on the
+    right. The one being recorded, if any (current() gives its Session), is listed first and kept up to date."""
+    EMPTY = "No transcripts yet. To start one, hold Ctrl+Win, lift Win and press it again."
+
+    def __init__(self, current):
+        self.current, self.shown = current, None
+        self.win, bar = window("Transcripts", 900, 600)
+        self.win.connect("destroy", lambda *_: setattr(self, "closed", True))
+        self.closed = False
+        bar.pack_end(button("Open folder", lambda: (transcript.FOLDER.mkdir(parents=True, exist_ok=True),
+                                                     open_uri(transcript.FOLDER))))
+        self.actions = Gtk.Box(spacing=6)
+        self.delete_btn = button("Delete", self.delete, "danger")
+        for b in (copy_button(lambda: self.shown["path"]), button("Open file", lambda: open_uri(self.shown["path"])),
+                  self.delete_btn):
+            self.actions.pack_start(b, False, False, 0)
+        bar.pack_start(self.actions)
+
+        self.list = Gtk.ListBox()
+        self.list.connect("row-selected", lambda _, row: row and self.show(row.item))
+        side = css(Gtk.ScrolledWindow(width_request=270, hscrollbar_policy=Gtk.PolicyType.NEVER), "sidebar")
+        side.add(self.list)
+        self.text, self.who = transcript_view()
+        scroll = css(Gtk.ScrolledWindow(hexpand=True, hscrollbar_policy=Gtk.PolicyType.NEVER), "transcript")
+        scroll.add(self.text)
+        body = Gtk.Box()
+        body.pack_start(side, False, False, 0)
+        body.pack_start(scroll, True, True, 0)
+        self.win.add(body)
+        self.win.show_all()
+        self.rebuild()
+
+    def items(self):
+        """The saved transcripts, newest first; the one being recorded marked "recording"."""
+        session = self.current()
+        items = transcript.saved()
+        for it in items:
+            it["recording"] = bool(session and it["path"] == session.path)
+        return items
+
+    def rebuild(self, select=None):
+        for row in self.list.get_children():
+            self.list.remove(row)
+        items = self.items()
+        for it in items:
+            row = Gtk.ListBoxRow()
+            row.item = it
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_top=2, margin_bottom=2)
+            box.add(Gtk.Label(label=f"{it['started']:%a %d %b · %H:%M}", xalign=0))
+            box.add(css(Gtk.Label(label="Recording now" if it["recording"] else it["length"], xalign=0), "time"))
+            start = " ".join(text for _, _, text in it["paragraphs"])[:200] or "Nothing was heard."
+            box.add(css(Gtk.Label(label=start, xalign=0, ellipsize=3, max_width_chars=30), "hint"))  # 3: END
+            row.add(box)
+            self.list.add(row)
+        self.list.show_all()
+        rows = self.list.get_children()
+        self.actions.set_visible(bool(rows))
+        if not rows:
+            self.shown = None
+            return show_transcript(self.text, self.who, [], self.EMPTY)
+        chosen = next((r for r in rows if r.item["path"] == select), rows[0])
+        self.list.select_row(chosen)
+
+    def show(self, item):
+        self.shown = item
+        session = self.current() if item["recording"] else None
+        paragraphs = session.paragraphs() if session else item["paragraphs"]
+        show_transcript(self.text, self.who, paragraphs, "Nothing heard yet." if session else "Nothing was heard.")
+        self.delete_btn.set_sensitive(not item["recording"])
+
+    def changed(self):
+        """The transcript being recorded has changed, or has stopped."""
+        if not self.closed:
+            self.rebuild(select=self.shown and self.shown["path"])
+
+    def delete(self):
+        it = self.shown
+        if it and confirm(self.win, f"Delete the transcript from {it['started']:%a %d %b, %H:%M}?",
+                          "Its recordings are deleted too. This can't be undone.", "Delete"):
+            transcript.delete(it["path"])
+            self.rebuild()
