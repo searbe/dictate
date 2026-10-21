@@ -335,6 +335,8 @@ class App:
             return
         entry = {"t": datetime.now().isoformat(timespec="seconds"), "text": text,
                  "app": "other computer" if app.get("remote") else app["cls"], "cleanup": cleanup}
+        if app.get("title"):
+            entry["title"] = app["title"]  # what per-app styles matched against
         if raw != text:
             entry["raw"] = raw
         if style:

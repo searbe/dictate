@@ -21,16 +21,17 @@ if sys.platform.startswith("linux"):
 
     SCRIPT, PLUGIN = Path(__file__).parent / "kwin_active.js", "dictate-active"
     XML = """<node><interface name="local.dictate"><method name="Active">
-<arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="i" direction="in"/></method></interface></node>"""
+<arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="i" direction="in"/><arg type="b" direction="in"/>
+</method></interface></node>"""
 
     def snapshot():
         return dict(current)
 
     def _on_call(conn, sender, path, iface, method, params, invocation):
-        cls, title, pid = params.unpack()
+        cls, title, pid, switched = params.unpack()  # switched: focus moved here, not just a new title
         if pid != os.getpid():
             current.update(cls=cls, title=title)
-            for callback in on_switch:
+            for callback in on_switch if switched else ():
                 callback()
         invocation.return_value(None)
 
