@@ -7,9 +7,8 @@ from pathlib import Path
 import cairo, gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
-from . import ROOT, activewin, dialogs, osio, refine, remote, stt, tray
+from . import DATA, activewin, dialogs, osio, refine, remote, stt, tray
 
-DATA = ROOT / "data"  # everything stays inside this folder
 HISTORY = DATA / "history.jsonl"
 AUDIO = DATA / "audio"  # each dictation's recording, kept for playback for "keep_audio_hours"
 KEEP_AUDIO = ((0, "Don't keep"), (1, "1 hour"), (2, "2 hours"), (3, "3 hours"), (12, "12 hours"), (24, "24 hours"),

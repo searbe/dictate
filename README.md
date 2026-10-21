@@ -99,9 +99,10 @@ Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can'
 - `scripts/fetch.py`: downloads the models and the right llama.cpp build; used by every setup script.
 - `scripts/bench.py`: compares every `models/*.gguf` on your recent dictations: `python scripts/bench.py`.
 - `docs/make_screenshots.py`: regenerates the README screenshots from sample data.
+- `tests/` and `scripts/test.py`: the automated tests, run in their own invisible desktop: `python scripts/test.py`. [docs/TESTING.md](docs/TESTING.md) explains them and lists what to check by hand.
 
 ## Technical notes
-- **Data** (`data/`, not in git):
+- **Data** (`data/`, not in git; the `DICTATE_DATA` environment variable moves it elsewhere):
   - `history.jsonl`: one JSON object per dictation: `t`, `text`, `app`, `cleanup` (bool), and, when present, `title` (the window title per-app styles matched against), `raw` (the transcript, if refinement changed it), `style`, `audio`.
   - `audio/*.wav`: the recordings (16 kHz mono, about 2 MB a minute). They're pruned to the **Keep recordings** setting at startup, every 10 minutes and when it changes.
   - `styles.json`: the cleanup prompt; the styles (`name`, `key`, `apps`, `prompt`, `default`); and `remote_default` (absent means "same as here").

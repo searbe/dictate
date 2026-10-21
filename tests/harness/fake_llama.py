@@ -1,0 +1,63 @@
+#!/usr/bin/env python3
+"""Stands in for llama-server: same command line, same HTTP API, but answers by rules instead of a model.
+
+Rules (JSON list in $FAKE_LLAMA_RULES, re-read on every request) are tried in order; the first whose
+"prompt" and "text" substrings are both found in the system prompt / transcript decides the answer:
+  {"reply": "..."}             answer with this text
+  {"op": "upper"}              answer with the transcript in capitals
+  {"op": "error"}              answer HTTP 500
+No rule matches → the transcript comes back unchanged (a model with nothing to fix).
+Each request is appended to $FAKE_LLAMA_LOG as {"system", "text", "args"}; startup is logged as {"started"}."""
+import json, os, re, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+ARGS = sys.argv[1:]
+LOG = os.environ["FAKE_LLAMA_LOG"]
+
+
+def log(entry):
+    with open(LOG, "a") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def answer(system, text):
+    rules = json.loads(open(os.environ["FAKE_LLAMA_RULES"]).read()) if os.path.exists(os.environ["FAKE_LLAMA_RULES"]) else []
+    for rule in rules:
+        if rule.get("prompt", "") in system and rule.get("text", "") in text:
+            if rule.get("op") == "upper":
+                return text.upper()
+            if rule.get("op") == "error":
+                return None
+            return rule["reply"]
+    return text
+
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *_):
+        pass
+
+    def reply(self, code, body):
+        data = json.dumps(body).encode()
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        self.reply(200, {"status": "ok"})
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        system = next(m["content"] for m in body["messages"] if m["role"] == "system")
+        user = next(m["content"] for m in body["messages"] if m["role"] == "user")
+        text = re.search(r"<transcript>\n(.*)\n</transcript>", user, re.S).group(1)
+        log({"system": system, "text": text, "args": ARGS})
+        out = answer(system, text)
+        if out is None:
+            return self.reply(500, {"error": "fake failure"})
+        self.reply(200, {"choices": [{"message": {"content": out}}]})
+
+
+log({"started": os.getpid(), "args": ARGS})
+HTTPServer(("127.0.0.1", int(ARGS[ARGS.index("--port") + 1])), Handler).serve_forever()

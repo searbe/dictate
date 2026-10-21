@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import dictate  # noqa: E402
 dictate.bootstrap(gui=False)
-from dictate import ROOT, refine  # noqa: E402
+from dictate import DATA, ROOT, refine  # noqa: E402
 
 TRICKY = [  # known-hard cases, always included
     "So how do I make this like how do I make this uh like run on booth on SteamOS?",
@@ -20,7 +20,7 @@ TRICKY = [  # known-hard cases, always included
 
 
 def recent(n):
-    path = ROOT / "data/history.jsonl"
+    path = DATA / "history.jsonl"
     raws = [json.loads(l).get("raw") or json.loads(l)["text"] for l in path.read_text().splitlines()] if path.exists() else []
     return list(dict.fromkeys(reversed(raws)))[:n]
 

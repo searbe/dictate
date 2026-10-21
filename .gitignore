@@ -9,3 +9,4 @@ Dictate.lnk
 # Per-user data: history, settings, styles, vocabulary
 data/
 __pycache__/
+.pytest_cache/

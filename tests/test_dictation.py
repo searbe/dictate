@@ -1,0 +1,124 @@
+"""Holding the hotkey, speaking and releasing: what ends up pasted, on the clipboard and in history."""
+import os, time
+from conftest import needs_session
+from harness.client import style
+
+pytestmark = needs_session
+
+
+def test_speech_is_cleaned_up_copied_and_pasted(start, model):
+    model.rules({"prompt": "CLEANUP", "text": "um so the meeting", "reply": "So, the meeting is at three."})
+    app = start(styles=[])
+    app.focus("org.kde.kate", "notes.txt — Kate")
+
+    pasted = app.dictate("um so the meeting is at uh three")
+
+    assert pasted == {"type": "pasted", "terminal": False, "text": "So, the meeting is at three."}
+    assert app.send("clipboard")["text"] == "So, the meeting is at three."
+
+
+def test_terminals_get_the_terminal_paste_shortcut(start):
+    app = start(styles=[])
+    app.focus("org.kde.konsole", "~ : bash — Konsole")
+
+    assert app.dictate("list the files")["terminal"] is True
+
+
+def test_each_dictation_is_kept_in_history_with_what_was_done_to_it(start, model):
+    model.rules({"prompt": "CLEANUP", "reply": "Hello there."}, {"prompt": "STYLE:Chat", "reply": "hello there!"})
+    app = start(styles=[style("Chat", "c", apps="slack")])
+    app.focus("Slack", "general - Acme - Slack")
+
+    app.dictate("uh hello there")
+
+    [entry] = app.history()
+    assert entry["text"] == "hello there!" and entry["raw"] == "uh hello there"
+    assert entry["style"] == "Chat" and entry["cleanup"] is True
+    assert entry["app"] == "Slack" and entry["title"] == "general - Acme - Slack"
+    assert (app.data / "audio" / entry["audio"]).exists()  # the recording is kept for playback
+
+
+def test_saying_nothing_pastes_nothing_and_leaves_no_trace(start):
+    app = start(styles=[])
+
+    assert app.dictate(None) is None
+    assert app.history() == []
+    assert list((app.data / "audio").glob("*.wav")) == []
+
+
+def test_with_refinement_off_the_raw_transcript_is_pasted_without_asking_the_model(start, model):
+    model.rules({"prompt": "CLEANUP", "reply": "Should not be used."})
+    app = start(styles=[], settings={"refine": False})
+
+    assert app.dictate("um raw words")["text"] == "um raw words"
+    assert model.requests() == []
+    assert app.history()[0]["cleanup"] is False
+
+
+def test_turning_refinement_off_from_the_menu_takes_effect_and_is_remembered(start, model):
+    model.rules({"prompt": "CLEANUP", "reply": "Cleaned."})
+    app = start(styles=[])
+    app.send("menu", path=["Refine text"])
+    assert app.dictate("um words")["text"] == "um words"
+    app.stop()
+
+    again = start(styles=[])
+    assert {"label": "Refine text", "ticked": False} in again.send("menu_items")["items"]
+    assert again.dictate("um words")["text"] == "um words"
+
+
+def test_recordings_are_not_kept_when_set_to_dont_keep(start):
+    app = start(styles=[], settings={"keep_audio_hours": 0})
+
+    app.dictate("hello")
+
+    assert "audio" not in app.history()[0]
+    assert list((app.data / "audio").glob("*.wav")) == []
+
+
+def test_old_recordings_are_deleted_when_dictate_starts(start, tmp_path):
+    audio = tmp_path / "data/audio"
+    audio.mkdir(parents=True)
+    old, new = audio / "old.wav", audio / "new.wav"
+    old.write_bytes(b"RIFF"), new.write_bytes(b"RIFF")
+    two_hours_ago = time.time() - 2 * 3600
+    os.utime(old, (two_hours_ago, two_hours_ago))
+
+    start(styles=[], settings={"keep_audio_hours": 1})
+
+    assert not old.exists() and new.exists()
+
+
+def test_holding_the_keys_down_records_once(start):
+    """Keyboards repeat a held key; that mustn't restart the recording."""
+    app = start(styles=[])
+    mark = app.mark()
+    app.send("say", text="one long thought")
+    app.send("keys", down=["ctrl", "meta"])
+    app.send("keys", down=["meta", "ctrl", "meta"])  # auto-repeat
+    app.send("keys", up=["meta", "ctrl"])
+
+    assert app.result(mark)["text"] == "one long thought"
+    assert sum(ev["type"] == "recording" for ev in app.events[mark:]) == 1
+
+
+def test_the_keys_can_be_pressed_in_either_order(start):
+    app = start(styles=[])
+    mark = app.mark()
+    app.send("say", text="win first")
+    app.send("keys", down=["meta"])
+    app.send("keys", down=["ctrl"])
+    app.send("keys", up=["ctrl", "meta"])
+
+    assert app.result(mark)["text"] == "win first"
+
+
+def test_win_alone_or_ctrl_alone_does_nothing(start):
+    app = start(styles=[])
+    mark = app.mark()
+
+    for key in ("meta", "ctrl"):
+        app.send("keys", down=[key])
+        app.send("keys", up=[key])
+
+    assert not app.happened("recording", after=mark)

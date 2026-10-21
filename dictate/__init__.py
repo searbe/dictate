@@ -6,7 +6,8 @@ transcription in stt.py, clean-up / restyling in refine.py, and the other window
 import os, sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent  # the project folder: .venv, bin/, models/ and data/ live here
+ROOT = Path(__file__).resolve().parent.parent  # the project folder: .venv, bin/ and models/ live here
+DATA = Path(os.environ.get("DICTATE_DATA") or ROOT / "data")  # history, settings, styles (the tests use their own)
 
 
 def bootstrap(gui=True):
@@ -26,4 +27,5 @@ def bootstrap(gui=True):
         os.environ["XDG_DATA_DIRS"] = str(gtk / "share")
     if gui:
         import gi
-        gi.require_version("Gtk", "3.0")  # before any module imports Gtk, which would otherwise pick GTK 4
+        gi.require_version("Gtk", "3.0")  # before any module imports Gtk or Gdk, which would otherwise pick 4
+        gi.require_version("Gdk", "3.0")
