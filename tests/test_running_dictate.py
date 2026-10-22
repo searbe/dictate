@@ -9,7 +9,7 @@ VENV_PY = ROOT / ".venv/bin/python"
 
 @needs_session
 def test_quit_from_the_menu_exits_and_says_why_in_the_log(start):
-    app = start(styles=[])
+    app = start(refinements=[])
 
     app.send("menu", path=["Quit"])
 
@@ -20,7 +20,7 @@ def test_quit_from_the_menu_exits_and_says_why_in_the_log(start):
 
 @needs_session
 def test_being_stopped_by_the_system_exits_cleanly_and_says_why(start):
-    app = start(styles=[])
+    app = start(refinements=[])
 
     app.proc.send_signal(signal.SIGTERM)
 
@@ -30,7 +30,7 @@ def test_being_stopped_by_the_system_exits_cleanly_and_says_why(start):
 
 @needs_session
 def test_quitting_mid_dictation_stops_the_microphone(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     app.send("keys", down=["ctrl", "meta"])
     app.wait_for("recording")
 
@@ -76,7 +76,7 @@ def _running(pid):
 
 @needs_session
 def test_run_at_startup_adds_a_login_entry_that_starts_dictate_and_removes_it_again(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     entry = app.home / ".config/autostart/dictate.desktop"
 
     app.send("menu", path=["Run at startup"])

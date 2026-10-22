@@ -17,12 +17,12 @@ def past(data, *entries, audio=()):
 
 
 MONDAY = {"t": "2026-10-19T09:00:00", "text": "Morning all, standup in five.", "raw": "morning all standup in five",
-          "app": "Slack", "cleanup": True, "style": "Chat", "audio": "monday.wav"}
+          "app": "Slack", "cleanup": True, "refinement": "Chat", "audio": "monday.wav"}
 TUESDAY = {"t": "2026-10-20T14:30:00", "text": "Pick up milk", "app": "firefox", "cleanup": False}
 
 
 def open_dictations(start, *entries, audio=()):
-    app = start(styles=[])
+    app = start(refinements=[])
     past(app.data, *entries, audio=audio)
     app.send("menu", path=["Dictations"])
     app.wait_window("Dictations")
@@ -125,12 +125,12 @@ def test_keeping_recordings_for_less_time_deletes_older_ones_and_hides_their_pla
 
 
 
-STYLED = {"t": "2026-10-20T16:00:00", "text": "SO, THE MEETING IS AT THREE.", "raw": "um so the meeting is at three",
-          "cleaned": "So, the meeting is at three.", "app": "Slack", "cleanup": True, "style": "Chat"}
+REFINEMENTD = {"t": "2026-10-20T16:00:00", "text": "SO, THE MEETING IS AT THREE.", "raw": "um so the meeting is at three",
+          "cleaned": "So, the meeting is at three.", "app": "Slack", "cleanup": True, "refinement": "Chat"}
 
 
 def test_clicking_a_step_shows_what_it_changed(start):
-    app = open_dictations(start, STYLED)
+    app = open_dictations(start, REFINEMENTD)
 
     app.click("Cleanup", window="Dictations")
 
@@ -148,8 +148,8 @@ def test_clicking_a_step_shows_what_it_changed(start):
 
 
 def test_without_the_cleaned_up_text_the_steps_cannot_be_opened(start):
-    """Dictations with a style kept before 22 Oct 2026 didn't keep the text in between."""
-    app = open_dictations(start, {k: v for k, v in STYLED.items() if k != "cleaned"})
+    """Dictations with a refinement kept before 22 Oct 2026 didn't keep the text in between."""
+    app = open_dictations(start, {k: v for k, v in REFINEMENTD.items() if k != "cleaned"})
 
     with pytest.raises(AssertionError):  # (a tag, not a button)
         app.click("Cleanup", window="Dictations")

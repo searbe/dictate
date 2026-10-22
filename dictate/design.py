@@ -332,7 +332,7 @@ def _icon_paths(cr, name):
     elif name == "transcript":
         for y, w in ((4, 10), (7, 8), (10, 10), (13, 6)):
             m(3, y); l(3 + w, y)
-    elif name == "styles":
+    elif name == "refinements":
         m(8, 2); c(8.5, 5.5, 10.5, 7.5, 14, 8); c(10.5, 8.5, 8.5, 10.5, 8, 14); c(7.5, 10.5, 5.5, 8.5, 2, 8)
         c(5.5, 7.5, 7.5, 5.5, 8, 2); cr.close_path()
     elif name == "voices":

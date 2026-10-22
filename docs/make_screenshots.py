@@ -2,7 +2,7 @@
 """Regenerates the screenshots in docs/ from sample data: python docs/make_screenshots.py [folder] [--light]
 
 Everything is drawn off-screen and saved straight to PNG, so nothing on the screen is captured and no real
-history, styles or settings are used. Translucent things (the capsule, HUDs) are shown over a backdrop."""
+history, refinements or settings are used. Translucent things (the capsule, HUDs) are shown over a backdrop."""
 import json, shutil, sys, tempfile, time, wave
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,7 +18,7 @@ from dictate import capsule, design, huds, hub, osio, refine, summary, topics, t
 from dictate.app import KEEP_AUDIO, REMOTE_MODES, SAME  # noqa: E402
 
 DOCS = ROOT / "docs"
-SAMPLE = [  # (time, text, raw, app, style, has a recording)
+SAMPLE = [  # (time, text, raw, app, refinement, has a recording)
     ("09:12:04", "Morning! Can you send me the slides before the 10 o'clock?",
      "um morning can you can you send me the slides before the uh ten o'clock", "Slack", "Slack", True),
     ("11:40:31", "For the release, we need to:\n- fix the login bug\n- write the release notes\n- tell marketing",
@@ -166,17 +166,17 @@ def main(out):
         design._desktop_scheme = lambda: "light"
     design.install()
     tmp = Path(tempfile.mkdtemp())
-    refine.STYLES, refine.VOCAB = tmp / "styles.json", tmp / "vocab.txt"  # the built-in default styles
-    refine.save_styles({"cleanup": refine.CLEANUP, "styles": refine.DEFAULT_STYLES})
+    refine.REFINEMENTS, refine.VOCAB = tmp / "refinements.json", tmp / "vocab.txt"  # the built-in default refinements
+    refine.save_refinements({"cleanup": refine.CLEANUP, "refinements": refine.DEFAULT_REFINEMENTS})
     (tmp / "audio").mkdir()
     today, lines = transcript.datetime.now().strftime("%Y-%m-%d"), []
-    for when, text, raw, app_name, style, has_audio in SAMPLE:
+    for when, text, raw, app_name, refinement, has_audio in SAMPLE:
         entry = {"t": f"{today if when > '12' else '2026-10-20'}T{when}", "text": text, "app": app_name,
                  "cleanup": raw is not None}
         if raw:
             entry["raw"] = raw
-        if style:
-            entry["style"] = style
+        if refinement:
+            entry["refinement"] = refinement
         if has_audio:
             entry["audio"] = f"{when}.wav"
             with wave.open(str(tmp / "audio" / entry["audio"]), "wb") as w:  # a silent placeholder recording
@@ -186,7 +186,7 @@ def main(out):
     voices.remembered = lambda: [("Priya", None), ("Sam", None)]
     voices.remembering = voices.available = lambda: True
 
-    for page in ("dictations", "styles", "settings", "voices"):
+    for page in ("dictations", "refinements", "settings", "voices"):
         hub_shot(tmp, page, out / f"{page}.png")
 
     transcript.FOLDER = tmp / "transcripts"
@@ -213,7 +213,7 @@ def main(out):
     hub_shot(tmp, "transcripts", out / "transcripts.png", (1180, 600), session=live)
     hub_shot(tmp, "transcripts", out / "summary.png", (1180, 600), session=live, tab="Summary")
 
-    picker = huds.StylePicker("So for the release, we need to fix the login bug, write the release notes, and then "
+    picker = huds.RefinementPicker("So for the release, we need to fix the login bug, write the release notes, and then "
                               "tell marketing.", lambda *a: None)
     save(picker.hud.card, out / "picker.png", (-1, -1), ("hud-window",), backdrop=True)
     picker.hud.win.destroy()

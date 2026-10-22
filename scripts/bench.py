@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare refinement models on your own dictations: python scripts/bench.py [N recent transcripts, default 15]
 
-Runs the default cleanup (and the default style) with every models/*.gguf on the GPU, printing each output,
+Runs the default cleanup (and the default refinement) with every models/*.gguf on the GPU, printing each output,
 its time, and any problem the safety checks would have caught. Doesn't touch history or settings."""
 import json, sys, time
 from pathlib import Path
@@ -27,7 +27,7 @@ def recent(n):
 
 def main():
     texts = TRICKY + [t for t in recent(int(sys.argv[1]) if len(sys.argv) > 1 else 15) if t not in TRICKY]
-    style = refine.default_style()
+    refinement = refine.default_refinement()
     models = sorted(ROOT.glob("models/*.gguf"))
     results = {}
     for model in models:
@@ -39,18 +39,18 @@ def main():
         for text in texts:
             t = time.monotonic()
             clean = refine.complete(text, refine.cleanup_prompt())
-            styled = refine.complete(clean, style["prompt"]) if style else ""
+            refined = refine.complete(clean, refinement["prompt"]) if refinement else ""
             results.setdefault(text, []).append((model.name, time.monotonic() - t, clean,
-                                                 refine.suspicious(text, clean, True), styled,
-                                                 style and refine.suspicious(clean, styled, False)))
+                                                 refine.suspicious(text, clean, True), refined,
+                                                 refinement and refine.suspicious(clean, refined, False)))
         refine.release()
         refine.stop()
     for text, rows in results.items():
         print("\n" + "=" * 100 + f"\nSPOKEN: {text}")
-        for name, secs, clean, p1, styled, p2 in rows:
+        for name, secs, clean, p1, refined, p2 in rows:
             print(f"\n  [{name}  {secs:.2f}s]\n    cleanup: {clean}" + (f"   <<{p1}>>" if p1 else ""))
-            if style:
-                print(f"    {style['name'].lower()}: " + styled.replace("\n", " / ") + (f"   <<{p2}>>" if p2 else ""))
+            if refinement:
+                print(f"    {refinement['name'].lower()}: " + refined.replace("\n", " / ") + (f"   <<{p2}>>" if p2 else ""))
 
 
 if __name__ == "__main__":

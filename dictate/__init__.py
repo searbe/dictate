@@ -8,7 +8,7 @@ import os, sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent  # the project folder: .venv, bin/ and models/ live here
-DATA = Path(os.environ.get("DICTATE_DATA") or ROOT / "data")  # history, settings, styles (the tests use their own)
+DATA = Path(os.environ.get("DICTATE_DATA") or ROOT / "data")  # history, settings, refinements (the tests use their own)
 
 
 def bootstrap(gui=True):

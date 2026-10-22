@@ -102,4 +102,5 @@ A wins: it has B's restraint without hiding the one control, and C's drawer can 
    label or, for icon buttons, their tooltip.
 7. **Docs:** screenshots regenerated; README updated.
 
-Since: History was renamed **Dictations**, so it reads as a pair with Transcripts (both are things you made).
+Since: History was renamed **Dictations**, so it reads as a pair with Transcripts (both are things you made);
+and styles were renamed **refinements** (cleanup, then an app's refinement; the live summary's is one too).

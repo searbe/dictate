@@ -104,7 +104,7 @@ def inside(live, work):
     strace = recorder(trace)
     if live:
         print("\n2. Your Dictate is now running in the sandbox, with every network call recorded.\n"
-              "   Dictate as you normally would (several times, with and without Alt for a style).\n"
+              "   Dictate as you normally would (several times, with and without Alt for a refinement).\n"
               "   When you're done, choose Quit from Dictate's menu.\n")
         kept = Path(os.environ.get("DICTATE_DATA") or ROOT / "data") / "dictations.jsonl"
         before = len(kept.read_text().splitlines()) if kept.exists() else 0
@@ -124,7 +124,7 @@ def inside(live, work):
                              capture_output=True, text=True, env={**os.environ, "TMPDIR": str(work)})
         summary = (ran.stdout.strip().splitlines() or ["(no output)"])[-1]
         worked = ran.returncode == 0 and "passed" in summary and "skipped" not in summary
-        print(f"   A sample recording was transcribed, cleaned up and restyled: {'yes' if worked else 'NO'} ({summary})")
+        print(f"   A sample recording was transcribed, cleaned up and refined: {'yes' if worked else 'NO'} ({summary})")
         if not worked:
             print(ran.stdout[-3000:])
         marker, done = "tests/harness/app.py", "Dictate transcribed and refined speech with the real models"

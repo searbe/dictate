@@ -97,7 +97,7 @@ selecting a row. With the desktop's animations off (`gtk-enable-animations`), ev
 look the same on every desktop theme. Colour `text-2` at rest, `text` on hover, `accent` when on. One icon per
 action, always with a tooltip naming the action ("Copy", "Delete"), which is also how tests find them.
 
-The set: `mic`, `history`, `transcript`, `styles`, `voices`, `settings`, `search`, `copy`, `play`, `stop`,
+The set: `mic`, `history`, `transcript`, `refinements`, `voices`, `settings`, `search`, `copy`, `play`, `stop`,
 `pause`, `trash`, `undo` (the original text), `folder`, `open`, `plus`, `check`, `warning`, `close`.
 
 ## The app icon
@@ -122,7 +122,7 @@ Build every surface from these, in `design.py`; add a component here before usin
 - **Segmented control.** Two to four views of one thing (a rail's Topics and Summary): equal buttons on a
   surface-3 track (r-sm, 2 px in), small 600 text-2; the chosen one on `raised` with a 1 px shadow, in text.
   Switches at once; remembers its choice for the window's life.
-- **Step chip.** A chip that can be clicked to open what it stands for (a dictation's Cleanup or style: what
+- **Step chip.** A chip that can be clicked to open what it stands for (a dictation's Cleanup or refinement: what
   that step changed); hover surface-4; chosen: the accent chip. Only one open per item.
 - **Step card.** What a step did to some text, under the item: surface-2, `line` border, r-md, 10/12 padding,
   a caption heading ("What cleanup changed"). Light edits are marked in place: what went struck through in
@@ -144,7 +144,7 @@ Build every surface from these, in `design.py`; add a component here before usin
   line under the title when something's live.
 - **Status pill.** Caption 600 on surface-3, r-full, with a 6 px dot: record red when recording, text-3 when
   paused; a tabular timer.
-- **HUD card.** A window of its own for a moment's question or notice (style picker, rename, confirm,
+- **HUD card.** A window of its own for a moment's question or notice (refinement picker, rename, confirm,
   reminder): r-lg, `hud` fill, border and top highlight, 16 padding, a title, short body, buttons at the bottom
   right (the safe choice left of the primary). Opens with `fade`, near what it's about (the capsule, the pointer
   or the screen's centre). Escape cancels; Enter takes the primary.

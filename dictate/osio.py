@@ -83,15 +83,15 @@ class Chord:
     Lifting Win and pressing it again within AGAIN seconds, with Ctrl held throughout, calls on_again()
     instead of starting another hold (transcribe mode). The first hold has already been reported by then.
 
-    Any other key with Ctrl+Win (Ctrl+Win+→, Shift, Alt and a letter that's no style's: letters() gives the
-    styles' letters) makes it another app's shortcut, not a dictation: on_other() is called, if the hold has
+    Any other key with Ctrl+Win (Ctrl+Win+→, Shift, Alt and a letter that's no refinement's: letters() gives the
+    refinements' letters) makes it another app's shortcut, not a dictation: on_other() is called, if the hold has
     been reported, and nothing more is said about it. So is Ctrl+Win pressed while another key's held."""
     AGAIN = 1.0
     MODIFIERS = {"ctrl", "meta", "alt"}
 
     def __init__(self, callback, on_again=None, on_other=lambda: None, letters=None):
         self.callback, self.on_again, self.held, self.active, self.alt, self.letter = callback, on_again, {}, False, False, None
-        self.on_other, self.letters = on_other, letters  # letters None: any letter is a style's
+        self.on_other, self.letters = on_other, letters  # letters None: any letter is a refinement's
         self.pressed_at = None  # when the chord's key was physically pressed (wall clock), for latency logs
         self.lifted = None  # when Win was let go with Ctrl still down (monotonic), until Ctrl is let go too
         self.again = False  # this hold is the "again" press: report nothing about it

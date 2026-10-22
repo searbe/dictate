@@ -1,5 +1,5 @@
 """The Dictate window: one home for everything but the capsule and a moment's HUD (docs/design/DESIGN.md). A
-sidebar of pages (Dictations, Transcripts, Styles, Voices, Settings); the window's title is the page shown. Pages
+sidebar of pages (Dictations, Transcripts, Refinements, Voices, Settings); the window's title is the page shown. Pages
 are built when first shown, and told each time they're shown again (so Dictations shows the latest)."""
 import json
 from datetime import datetime, timedelta
@@ -8,7 +8,7 @@ from . import design as d, huds, refine, summary, transcript, voices
 from .transcripts_page import TranscriptsPage
 
 PAGES = (("dictations", "Dictations", "history"), ("transcripts", "Transcripts", "transcript"),
-         ("styles", "Styles", "styles"), ("voices", "Voices", "voices"), ("settings", "Settings", "settings"))
+         ("refinements", "Refinements", "refinements"), ("voices", "Voices", "voices"), ("settings", "Settings", "settings"))
 
 
 class Hub:
@@ -77,7 +77,7 @@ class Hub:
         """Show page key (building it the first time), passing kw to it; bring the window forward (unless not
         focus: e.g. started from the keyboard mid-conversation)."""
         if key not in self.pages:
-            self.pages[key] = page = {"dictations": DictationsPage, "transcripts": TranscriptsPage, "styles": StylesPage,
+            self.pages[key] = page = {"dictations": DictationsPage, "transcripts": TranscriptsPage, "refinements": RefinementsPage,
                                       "voices": VoicesPage, "settings": SettingsPage}[key](self)
             self.stack.add_named(page.widget, key)
             page.widget.show_all()
@@ -126,17 +126,17 @@ def day(when):
 
 def applied(it):
     """What was done to an entry's text, e.g. ["Cleanup", "Slack"]."""
-    return ["Cleanup" if it["cleanup"] else "Raw transcript"] + ([it["style"]] if "style" in it else [])
+    return ["Cleanup" if it["cleanup"] else "Raw transcript"] + ([it["refinement"]] if "refinement" in it else [])
 
 
 def steps(it):
     """{label: (title, before, after)}: what each step of an entry did to its text, where it's known (an entry
-    with a style keeps the cleaned-up text in between since 22 Oct 2026)."""
-    out, styled, cleaned = {}, "style" in it, it.get("cleaned")
-    if it["cleanup"] and (cleaned is not None or not styled):
-        out["Cleanup"] = ("What cleanup changed", it.get("raw", it["text"]), cleaned if styled else it["text"])
-    if styled and cleaned is not None:
-        out[it["style"]] = (f"What {it['style']} changed", cleaned, it["text"])
+    with a refinement keeps the cleaned-up text in between since 22 Oct 2026)."""
+    out, refined, cleaned = {}, "refinement" in it, it.get("cleaned")
+    if it["cleanup"] and (cleaned is not None or not refined):
+        out["Cleanup"] = ("What cleanup changed", it.get("raw", it["text"]), cleaned if refined else it["text"])
+    if refined and cleaned is not None:
+        out[it["refinement"]] = (f"What {it['refinement']} changed", cleaned, it["text"])
     return out
 
 
@@ -311,23 +311,23 @@ class DictationsPage:
             row.refresh_audio()
 
 
-# --- styles ---
-class StylesPage:
-    """The cleanup every dictation gets, the vocabulary, and the refinement styles: a list, and an editor for the
+# --- refinements ---
+class RefinementsPage:
+    """The cleanup every dictation gets, the vocabulary, and the refinements: a list, and an editor for the
     one selected."""
-    FIXED = 3  # list rows before the styles: Cleanup, Vocabulary, Live summary
+    FIXED = 3  # list rows before the refinements: Cleanup, Vocabulary, Live summary
     DEFAULTS = {0: lambda: refine.CLEANUP, 2: lambda: summary.PROMPT}  # what Reset to default puts back
 
     def __init__(self, hub):
-        self.hub, self.data, self.i = hub, refine.load_styles(), 0
+        self.hub, self.data, self.i = hub, refine.load_refinements(), 0
         self.widget = page_box()
-        self.widget.pack_start(page_header("Styles"), False, False, 0)
+        self.widget.pack_start(page_header("Refinements"), False, False, 0)
         body = Gtk.Box(spacing=0, margin_start=12, margin_end=24, margin_bottom=24)
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=200, spacing=8)
         self.list = d.classes(Gtk.ListBox(), "pick")
         self.list.connect("row-selected", lambda _, row: row and self.show(row.get_index()))
         left.pack_start(self.list, False, False, 0)
-        new = d.button("New style", self.add, "quiet", icon="plus")
+        new = d.button("New refinement", self.add, "quiet", icon="plus")
         new.set_halign(Gtk.Align.START)
         new.set_margin_start(8)
         left.pack_start(new, False, False, 0)
@@ -376,7 +376,7 @@ class StylesPage:
         for row in self.list.get_children():
             self.list.remove(row)
         rows = [("Cleanup", None), ("Vocabulary", None), ("Live summary", None)] + \
-            [(s["name"], s["key"]) for s in self.data["styles"]]
+            [(s["name"], s["key"]) for s in self.data["refinements"]]
         for name, key in rows:
             box = Gtk.Box(spacing=8, margin=8)
             box.pack_start(Gtk.Label(label=name, xalign=0), True, True, 0)
@@ -388,15 +388,15 @@ class StylesPage:
 
     def show(self, i):
         self.i = i
-        style = self.data["styles"][i - self.FIXED] if i >= self.FIXED else {}
-        self.title.set_text(["Cleanup", "Vocabulary", "Live summary"][i] if i < self.FIXED else style.get("name") or "New style")
-        text = [lambda: self.data["cleanup"], refine.load_vocab, summary.prompt][i]() if i < self.FIXED else style["prompt"]
+        refinement = self.data["refinements"][i - self.FIXED] if i >= self.FIXED else {}
+        self.title.set_text(["Cleanup", "Vocabulary", "Live summary"][i] if i < self.FIXED else refinement.get("name") or "New refinement")
+        text = [lambda: self.data["cleanup"], refine.load_vocab, summary.prompt][i]() if i < self.FIXED else refinement["prompt"]
         self.fields.set_visible(i >= self.FIXED)
         self.delete_btn.set_visible(i >= self.FIXED)
         self.reset_btn.set_visible(i in self.DEFAULTS)
-        self.name.set_text(style.get("name", ""))
-        self.key.set_text(style.get("key", "").upper())
-        self.apps.set_text(style.get("apps", ""))
+        self.name.set_text(refinement.get("name", ""))
+        self.key.set_text(refinement.get("key", "").upper())
+        self.apps.set_text(refinement.get("apps", ""))
         self.prompt.get_buffer().set_text(text)
         self.error.set_text("")
         self.saved.set_text("")
@@ -408,12 +408,12 @@ class StylesPage:
             "pass when it's stopped. Say what it should cover and how.",
         ][i] if i < self.FIXED else
             "Applied after cleanup: hold Ctrl+Win and press Alt and its letter, or tap Alt to choose afterwards. "
-            "Also used automatically when you dictate into a matching app. Describe the style and give an example "
+            "Also used automatically when you dictate into a matching app. Describe the refinement and give an example "
             "or two.")
 
     def add(self):
-        self.data["styles"].append({"name": "New style", "key": "", "apps": "", "prompt": ""})
-        self.rebuild(len(self.data["styles"]) + self.FIXED - 1)
+        self.data["refinements"].append({"name": "New refinement", "key": "", "apps": "", "prompt": ""})
+        self.rebuild(len(self.data["refinements"]) + self.FIXED - 1)
         self.name.grab_focus()
 
     def save(self):
@@ -427,25 +427,25 @@ class StylesPage:
         else:
             j = self.i - self.FIXED
             name, key = self.name.get_text().strip(), self.key.get_text().lower()
-            others = [s["key"] for k, s in enumerate(self.data["styles"]) if k != j]
-            err = ("Give the style a name." if not name else
+            others = [s["key"] for k, s in enumerate(self.data["refinements"]) if k != j]
+            err = ("Give the refinement a name." if not name else
                    "Choose a letter A–Z." if not (key.isascii() and key.isalpha()) else
-                   f"{key.upper()} is already used by another style." if key in others else
-                   "Describe the style." if not text else "")
+                   f"{key.upper()} is already used by another refinement." if key in others else
+                   "Describe the refinement." if not text else "")
             if err:
                 return self.error.set_text(err)
-            if self.data.get("remote_default") == self.data["styles"][j]["name"]:  # follow a rename
+            if self.data.get("remote_default") == self.data["refinements"][j]["name"]:  # follow a rename
                 self.data["remote_default"] = name
-            self.data["styles"][j].update(name=name, key=key, apps=self.apps.get_text().strip(), prompt=text)
-        refine.save_styles({**self.data, "styles": [s for s in self.data["styles"] if s["key"]]})  # skip unsaved new
+            self.data["refinements"][j].update(name=name, key=key, apps=self.apps.get_text().strip(), prompt=text)
+        refine.save_refinements({**self.data, "refinements": [s for s in self.data["refinements"] if s["key"]]})  # skip unsaved new
         self.rebuild(self.i)
         self.saved.set_text("Saved")
         if self.on_change:
             self.on_change()
 
     def remove(self):
-        del self.data["styles"][self.i - self.FIXED]
-        refine.save_styles(self.data)
+        del self.data["refinements"][self.i - self.FIXED]
+        refine.save_refinements(self.data)
         self.rebuild(0)
         if self.on_change:
             self.on_change()
@@ -520,29 +520,30 @@ class SettingsPage:
         for kid in self.body.get_children():
             kid.destroy()
         app, cfg = self.app, self.app.cfg
-        styles = [s["name"] for s in refine.load_styles()["styles"]]
-        here = refine.default_style()
-        data = refine.load_styles()
+        refinements = [s["name"] for s in refine.load_refinements()["refinements"]]
+        here = refine.default_refinement()
+        data = refine.load_refinements()
         there = data.get("remote_default", app.SAME)
         rows = [
             ("Dictation",),
-            ("Refine text", "Clean up filler words, corrections and punctuation with a local model. Off pastes exactly "
-                            "what was heard.", switch(cfg["refine"], app.set_refine)),
-            ("Default style", "Applied after cleanup to every dictation that no app's style matches.",
-             combo([(None, "None (cleanup only)")] + [(n, n) for n in styles], here and here["name"], refine.set_default)),
+            ("Refine text", "Cleanup, then the refinement for the app you're dictating into (or the default), with a "
+                            "local model. Off pastes exactly what was heard; Alt still picks a refinement.",
+             switch(cfg["refine"], app.set_refine)),
+            ("Default refinement", "Applied after cleanup to every dictation that no app's refinement matches.",
+             combo([(None, "None (cleanup only)")] + [(n, n) for n in refinements], here and here["name"], refine.set_default)),
             ("Recordings",),
             ("Keep dictation recordings", "How long each dictation's audio is kept, to play back from Dictations. "
                                           "Its text is kept until you delete it.",
              combo(list(app.KEEP_AUDIO), cfg["keep_audio_hours"], app.set_keep_audio)),
-            ("Keep call recordings", "How long a transcribed call's audio is kept, to play back from Transcripts. "
-                                     "The transcript is kept until you delete it.",
+            ("Keep transcript recordings", "How long a transcript's audio is kept, to play back from Transcripts. "
+                                           "The transcript is kept until you delete it.",
              combo(list(app.KEEP_AUDIO), cfg["keep_call_hours"], app.set_keep_calls)),
             ("Another computer",),
             ("When it has the keyboard", "When your keyboard controls another computer (Synergy and similar).",
              combo(list(app.REMOTE_MODES), cfg["remote_mode"], lambda m: app.save_state(remote_mode=m))),
-            ("Default style there", "Its apps can't be seen from here, so this is used for everything.",
-             combo([(app.SAME, "Same as here"), (None, "None (cleanup only)")] + [(n, n) for n in styles],
-                   there if there in [app.SAME, None, *styles] else None,
+            ("Default refinement there", "Its apps can't be seen from here, so this is used for everything.",
+             combo([(app.SAME, "Same as here"), (None, "None (cleanup only)")] + [(n, n) for n in refinements],
+                   there if there in [app.SAME, None, *refinements] else None,
                    lambda v: refine.set_remote_default(v, same=v is app.SAME))),
             ("Startup",),
             ("Run at startup", "Start Dictate when you log in.", switch(app.autostart(), app.set_autostart)),

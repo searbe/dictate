@@ -10,7 +10,7 @@ LONG = 2.0  # seconds: long enough to tell a new voice by
 
 
 def recording(start, **kw):
-    app = start(styles=[], **kw)
+    app = start(refinements=[], **kw)
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     return app
@@ -137,7 +137,7 @@ def test_voices_are_not_remembered_unless_you_turn_it_on(start):
 
 
 def test_with_remembering_on_a_named_voice_is_named_in_later_transcripts(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     remember_voices(app)
     app.send("close", window_title="Voices")
     again(app)
@@ -156,7 +156,7 @@ def test_with_remembering_on_a_named_voice_is_named_in_later_transcripts(start):
 
 
 def test_with_remembering_on_a_voice_named_after_the_call_is_remembered(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     remember_voices(app)
     app.send("close", window_title="Voices")
     again(app)
@@ -174,7 +174,7 @@ def test_with_remembering_on_a_voice_named_after_the_call_is_remembered(start):
 
 
 def test_the_voices_window_lists_remembered_voices_and_can_forget_one(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     remember_voices(app)
     app.send("close", window_title="Voices")
     again(app)
@@ -196,7 +196,7 @@ def test_the_voices_window_lists_remembered_voices_and_can_forget_one(start):
 
 
 def test_turning_remembering_off_asks_then_forgets_every_voice(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     remember_voices(app)
     app.send("close", window_title="Voices")
     again(app)

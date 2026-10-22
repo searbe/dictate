@@ -61,17 +61,17 @@ def model(tmp_path):
 
 @pytest.fixture
 def start(tmp_path, model):
-    """start(styles=..., vocab=..., settings=...) runs a fresh Dictate with its own home and data folders.
-    styles: the "styles" list for styles.json (with a "CLEANUP" cleanup prompt); settings: state.json."""
+    """start(refinements=..., vocab=..., settings=...) runs a fresh Dictate with its own home and data folders.
+    refinements: the "refinements" list for refinements.json (with a "CLEANUP" cleanup prompt); settings: state.json."""
     running = []
 
-    def start(styles=None, vocab=None, settings=None, cleanup="CLEANUP", llama=ROOT / "tests/harness/fake_llama.py",
+    def start(refinements=None, vocab=None, settings=None, cleanup="CLEANUP", llama=ROOT / "tests/harness/fake_llama.py",
               env=None):
         home, data = tmp_path / "home", tmp_path / "data"
         home.mkdir(exist_ok=True)
         data.mkdir(exist_ok=True)
-        if styles is not None:
-            (data / "styles.json").write_text(json.dumps({"cleanup": cleanup, "styles": styles}))
+        if refinements is not None:
+            (data / "refinements.json").write_text(json.dumps({"cleanup": cleanup, "refinements": refinements}))
         if vocab is not None:
             (data / "vocab.txt").write_text(vocab)
         if settings is not None:

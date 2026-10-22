@@ -7,7 +7,7 @@ far (topics.py) and what was said since, and writes the whole summary again, upd
 conversation does, without the model having to read all of it each time: quick, and a little rough (it hasn't
 heard where things went). When it's stopped there's a final pass, careful: from the whole transcript if it fits
 the model's context, else from the summary, the topics and the end of it.
-The prompt is the user's to change (Styles → Live summary; kept in data/summary.txt)."""
+The prompt is the user's to change (Refinements → Live summary; kept in data/summary.txt)."""
 import re
 from xml.sax.saxutils import escape
 from . import DATA, refine, topics

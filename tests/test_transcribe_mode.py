@@ -11,7 +11,7 @@ SAID = "ask not what your country can do for you"
 
 
 def started(start, **kw):
-    app = start(styles=[], **kw)
+    app = start(refinements=[], **kw)
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     return app
@@ -50,7 +50,7 @@ def test_one_person_talking_on_is_one_paragraph(start):
 
 
 def test_starting_it_neither_pastes_nor_keeps_a_dictation(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     mark = app.mark()
     app.send("say", text="hello there")
 
@@ -165,7 +165,7 @@ def test_the_microphone_is_recorded_with_the_speakers_taken_out_of_it(start):
 
 def test_playing_a_recording_from_history_is_not_transcribed(start, model):
     model.rules({"prompt": "CLEANUP", "reply": "Played back."})
-    app = start(styles=[], settings={"keep_audio_hours": 24})
+    app = start(refinements=[], settings={"keep_audio_hours": 24})
     app.dictate("played back")
     app.ctrl_win_win()
     app.wait_window("Transcripts")
@@ -184,7 +184,7 @@ def test_playing_a_recording_from_history_is_not_transcribed(start, model):
 
 
 def test_it_can_be_started_and_stopped_from_the_menu(start):
-    app = start(styles=[])
+    app = start(refinements=[])
 
     app.send("menu", path=["Transcribe this computer"])
     app.wait_window("Transcripts")
@@ -197,7 +197,7 @@ def test_it_can_be_started_and_stopped_from_the_menu(start):
 
 def test_an_ordinary_dictation_is_not_mistaken_for_it(start):
     """Letting go of Win before Ctrl, or pressing Win again after a moment, is just dictating."""
-    app = start(styles=[])
+    app = start(refinements=[])
     mark = app.mark()
     app.send("say", text="first")
     app.send("keys", down=["ctrl", "meta"])
@@ -344,7 +344,7 @@ def test_call_recordings_are_kept_longer_than_dictations_if_set_to(start, tmp_pa
         f.write_bytes(b"audio")
         os.utime(f, (two_days_ago, two_days_ago))
 
-    start(styles=[], settings={"keep_audio_hours": 24, "keep_call_hours": 168})
+    start(refinements=[], settings={"keep_audio_hours": 24, "keep_call_hours": 168})
 
     eventually(lambda: not (data / "audio/old.wav").exists())
     assert (data / "transcripts/2026-10-19 10.00.00 them.ogg").exists()

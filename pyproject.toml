@@ -1,7 +1,7 @@
 [project]
 name = "dictate"
 version = "0.1.0"
-description = "Hold a hotkey to dictate: local speech-to-text, cleaned up and styled by a local LLM, pasted into any app."
+description = "Hold a hotkey to dictate: local speech-to-text, cleaned up and refined by a local LLM, pasted into any app."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.12"

@@ -1,4 +1,4 @@
-"""Knows which window has focus, so text can be styled for (and pasted into) the right app.
+"""Knows which window has focus, so text can be refined for (and pasted into) the right app.
 
 KDE (Linux): a tiny KWin script, loaded at runtime, reports each activation over D-Bus.
 Windows: asks the OS for the foreground window. macOS: asks for the frontmost app.

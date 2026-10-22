@@ -33,7 +33,7 @@ def saved(app, name, text):
 
 
 def opened(start, *transcripts):
-    app = start(styles=[])
+    app = start(refinements=[])
     for name, text in transcripts:
         saved(app, name, text)
     app.send("menu", path=["Transcripts"])
@@ -76,7 +76,7 @@ def test_copy_all_copies_the_transcript(start):
 
 
 def test_a_transcript_just_recorded_is_listed_with_how_long_it_lasted(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     app.hear("A short one.")
@@ -91,7 +91,7 @@ def test_a_transcript_just_recorded_is_listed_with_how_long_it_lasted(start):
 
 
 def recording(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     app.send("menu", path=["Transcripts"])
@@ -157,7 +157,7 @@ def test_scrolled_up_it_stays_put_as_more_is_said_until_scrolled_back_to_the_end
 
 
 def test_the_transcript_being_recorded_is_listed_and_kept_up_to_date(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     app.send("menu", path=["Transcripts"])
@@ -207,7 +207,7 @@ def test_with_no_transcripts_it_says_how_to_make_one(start):
 
 def recording(start, *transcripts):
     """Dictate with these saved transcripts, transcribing."""
-    app = start(styles=[])
+    app = start(refinements=[])
     for name, text in transcripts:
         saved(app, name, text)
     app.ctrl_win_win()
@@ -311,7 +311,7 @@ def test_clicking_the_icon_while_recording_reopens_the_window(start):
 
 
 def test_clicking_the_icon_otherwise_opens_nothing(start):
-    app = start(styles=[])
+    app = start(refinements=[])
 
     app.send("click_icon")
 
@@ -328,7 +328,7 @@ def recorded(app, name, seconds=3):
 
 
 def test_a_transcripts_recording_can_be_played_while_it_is_kept(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     saved(app, "2026-10-19 10.00.00", MONDAY)
     recorded(app, "2026-10-19 10.00.00")
     app.send("menu", path=["Transcripts"])

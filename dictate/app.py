@@ -1,5 +1,5 @@
 """The capsule (capsule.py: drag to move, right-click for the menu, click while transcribing to see the
-transcript), the Dictate window (hub.py), and the dictation pipeline: record → transcribe → cleanup → style →
+transcript), the Dictate window (hub.py), and the dictation pipeline: record → transcribe → cleanup → refinement →
 paste or type. Started by dictate.py, after dictate.bootstrap(). Ctrl+Win, lift Win, Win again starts or stops
 transcribe mode (transcript.py). So it isn't left running by mistake, closing the Dictate window while it is (the
 first time each day), or nothing being heard for QUIET seconds, brings up a reminder beside the capsule (a desktop
@@ -19,7 +19,7 @@ KEEP_AUDIO = ((0, "Don't keep"), (1, "1 hour"), (3, "3 hours"), (12, "12 hours")
               (168, "1 week"), (None, "Forever"))  # hours, for dictations' and calls' recordings; None = never delete
 STATE = DATA / "state.json"
 REMOTE_MODES = (("type", "Type the text there"), ("ignore", "Ignore the hotkey"))
-SAME = "same"  # remote default style: same as here
+SAME = "same"  # remote default refinement: same as here
 QUIET = 600  # seconds with nothing added to a transcript before reminding that it's still being recorded
 QUIET_CHECK = 30  # seconds between checks (and updates of the tray icon's tooltip)
 OTHER_COMPUTER = {"cls": "", "title": "", "remote": True}  # where text goes when Synergy has the keyboard
@@ -73,11 +73,11 @@ class App:
         self.refine_item = Gtk.CheckMenuItem(label="Refine text", active=self.cfg["refine"])
         self.refine_item.connect("toggled", lambda t: self.save_state(refine=t.get_active()))
         self.menu.append(self.refine_item)
-        default = Gtk.MenuItem(label="Default style")
+        default = Gtk.MenuItem(label="Default refinement")
         self.default_menu = Gtk.Menu()
         default.set_submenu(self.default_menu)
         self.menu.append(default)
-        for label, cb in (("Dictations", self.show_dictations), ("Styles…", lambda: self.open_hub("styles")),
+        for label, cb in (("Dictations", self.show_dictations), ("Refinements…", lambda: self.open_hub("refinements")),
                           ("Settings…", lambda: self.open_hub("settings")), (None, None)):
             item = Gtk.MenuItem(label=label) if label else Gtk.SeparatorMenuItem()
             if cb:
@@ -100,10 +100,10 @@ class App:
         for item, (mode, _) in zip(away_menu.get_children(), REMOTE_MODES):  # connected after ticking,
             item.connect("toggled", lambda i, m=mode: i.get_active() and self.save_state(remote_mode=m))  # so setup isn't saved
         away_menu.append(Gtk.SeparatorMenuItem())
-        remote_style = Gtk.MenuItem(label="Default style there")  # per-app styles can't apply: we can't see its apps
-        self.remote_style_menu = Gtk.Menu()
-        remote_style.set_submenu(self.remote_style_menu)
-        away_menu.append(remote_style)
+        remote_refinement = Gtk.MenuItem(label="Default refinement there")  # per-app refinements can't apply: we can't see its apps
+        self.remote_refinement_menu = Gtk.Menu()
+        remote_refinement.set_submenu(self.remote_refinement_menu)
+        away_menu.append(remote_refinement)
         away.set_submenu(away_menu)
         self.menu.append(away)
         self.startup_item = Gtk.CheckMenuItem(label="Run at startup", active=osio.autostart_enabled())
@@ -129,7 +129,7 @@ class App:
         activewin.start()
         remote.start()
         self.hotkey = osio.Hotkey(self.on_hotkey, self.on_again, self.on_other_shortcut,
-                                  lambda: {s["key"] for s in refine.load_styles()["styles"]})
+                                  lambda: {s["key"] for s in refine.load_refinements()["refinements"]})
         self.hotkey.start()
         self.loader = threading.Thread(target=stt.load, daemon=True)  # warm up so first dictation is fast
         self.loader.start()
@@ -196,24 +196,24 @@ class App:
         return True
 
     def build_default_menu(self):
-        """Refresh the two "default style" radio lists (here, and on the other computer), and the settings'
-        ticks (they can change in Settings too). Called whenever the menu opens, as styles may have changed."""
+        """Refresh the two "default refinement" radio lists (here, and on the other computer), and the settings'
+        ticks (they can change in Settings too). Called whenever the menu opens, as refinements may have changed."""
         for item, on in ((self.refine_item, self.cfg["refine"]), (self.startup_item, osio.autostart_enabled()),
                          *((i, m == self.cfg["remote_mode"]) for i, (m, _) in zip(self.remote_items, REMOTE_MODES))):
             if item.get_active() != on:
                 item.set_active(on)
-        data = refine.load_styles()
-        names = [s["name"] for s in data["styles"]]
-        here = refine.default_style()
-        self.fill_style_menu(self.default_menu, [(None, "None (cleanup only)")] + [(n, n) for n in names],
+        data = refine.load_refinements()
+        names = [s["name"] for s in data["refinements"]]
+        here = refine.default_refinement()
+        self.fill_refinement_menu(self.default_menu, [(None, "None (cleanup only)")] + [(n, n) for n in names],
                              here and here["name"], refine.set_default)
         remote = data.get("remote_default", SAME)
-        self.fill_style_menu(self.remote_style_menu,
+        self.fill_refinement_menu(self.remote_refinement_menu,
                              [(SAME, "Same as here"), (None, "None (cleanup only)")] + [(n, n) for n in names],
                              remote if remote in [SAME, None, *names] else None,
                              lambda v: refine.set_remote_default(v, same=v is SAME))
 
-    def fill_style_menu(self, menu, choices, current, pick):
+    def fill_refinement_menu(self, menu, choices, current, pick):
         """A radio list of (value, label) choices with current ticked; pick(value) saves a choice.
         Rebuilt only if the choices changed, otherwise just re-ticked, so the tray's item ids stay valid.
         While building, GTK ticks items itself (e.g. when the ticked one is removed); those aren't choices."""
@@ -285,7 +285,7 @@ class App:
                 self.session.mute("me", False)
             rec, self.rec = self.rec, None
             self.set_state("busy")
-            refining = self.cfg["refine"] or alt  # Alt asks for a style, which always includes cleanup
+            refining = self.cfg["refine"] or alt  # Alt asks for a refinement, which always includes cleanup
             threading.Thread(target=self.process, args=(rec, self.live, self.wav, refining, alt, letter, self.app),
                              daemon=True).start()
 
@@ -311,9 +311,9 @@ class App:
         threading.Thread(target=drop, daemon=True).start()
 
     def process(self, rec, live, wav, refining, alt, letter, app):
-        """Stop recording → transcribe → cleanup → a style: Alt+letter's, or (Alt alone, or a style's letter
-        since deleted) ask which, or (no Alt) the style matching the focused app, else the default style."""
-        raw = text = cleaned = style = ""
+        """Stop recording → transcribe → cleanup → a refinement: Alt+letter's, or (Alt alone, or a refinement's letter
+        since deleted) ask which, or (no Alt) the refinement matching the focused app, else the default refinement."""
+        raw = text = cleaned = refinement = ""
         ctx = activewin.describe(app)
         try:
             rec.stop()  # here, not on the GTK thread: pw-record takes ~0.35 s to finish the file
@@ -326,28 +326,28 @@ class App:
                 text = refine.cleanup(raw, ctx)
             cleaned = text
             if alt and raw:
-                style = letter and refine.style_for_key(letter)
-                if not style:
-                    return GLib.idle_add(self.pick_style, text, raw, app, wav)
-            elif refining and raw and app.get("remote"):  # we can't see its apps: its own default style
-                style = refine.default_style(remote=True)
+                refinement = letter and refine.refinement_for_key(letter)
+                if not refinement:
+                    return GLib.idle_add(self.pick_refinement, text, raw, app, wav)
+            elif refining and raw and app.get("remote"):  # we can't see its apps: its own default refinement
+                refinement = refine.default_refinement(remote=True)
             elif refining and raw:
-                style = refine.style_for_app(f"{app['cls']} {app['title']}") or refine.default_style()
-            if style:
-                text = refine.apply(text, style, ctx)
+                refinement = refine.refinement_for_app(f"{app['cls']} {app['title']}") or refine.default_refinement()
+            if refinement:
+                text = refine.apply(text, refinement, ctx)
         except Exception as err:  # never leave the icon stuck on "busy"
             print("transcription failed:", err)
         finally:
             if refining:
                 refine.release()
-        GLib.idle_add(lambda: self.paste(text, raw, app, style and style["name"], audio=wav, cleanup=refining,
+        GLib.idle_add(lambda: self.paste(text, raw, app, refinement and refinement["name"], audio=wav, cleanup=refining,
                                          cleaned=cleaned))
 
-    def paste(self, text, raw, app, style=None, paste=True, delay=150, audio=None, cleanup=False, cleaned=None):
-        """Keep it in Dictations (with the recording, and each step: what was heard, cleaned up, styled), then
-        paste or type the text. cleaned: the text after cleanup, before the style."""
+    def paste(self, text, raw, app, refinement=None, paste=True, delay=150, audio=None, cleanup=False, cleaned=None):
+        """Keep it in Dictations (with the recording, and each step: what was heard, cleaned up, refined), then
+        paste or type the text. cleaned: the text after cleanup, before the refinement."""
         if audio and self.hotkey.chord.may_go_again():  # this hold may be the start of Ctrl+Win, Win again
-            GLib.timeout_add(50, lambda: self.paste(text, raw, app, style, paste, delay, audio, cleanup, cleaned) and False)
+            GLib.timeout_add(50, lambda: self.paste(text, raw, app, refinement, paste, delay, audio, cleanup, cleaned) and False)
             return
         self.set_state("idle")
         if audio and audio == self.cancelled:  # it was: not a dictation
@@ -360,12 +360,12 @@ class App:
         entry = {"t": datetime.now().isoformat(timespec="seconds"), "text": text,
                  "app": "other computer" if app.get("remote") else app["cls"], "cleanup": cleanup}
         if app.get("title"):
-            entry["title"] = app["title"]  # what per-app styles matched against
+            entry["title"] = app["title"]  # what per-app refinements matched against
         if raw != text:
             entry["raw"] = raw
-        if style:
-            entry["style"] = style
-            entry["cleaned"] = cleaned  # (so what the style changed can be seen, apart from cleanup)
+        if refinement:
+            entry["refinement"] = refinement
+            entry["cleaned"] = cleaned  # (so what the refinement changed can be seen, apart from cleanup)
         if audio and self.cfg["keep_audio_hours"] == 0:  # recordings aren't being kept
             Path(audio).unlink(missing_ok=True)
         elif audio:
@@ -528,17 +528,17 @@ class App:
     def show_dictations(self):
         self.open_hub("dictations")
 
-    def pick_style(self, text, raw, app, audio):
-        def chosen(style, paste):
-            if not style:
+    def pick_refinement(self, text, raw, app, audio):
+        def chosen(refinement, paste):
+            if not refinement:
                 return self.paste(text, raw, app, paste=paste, delay=400, audio=audio, cleanup=True)
             self.set_state("busy")
-            def restyle():
-                styled = refine.apply(text, style, activewin.describe(app))
-                GLib.idle_add(lambda: self.paste(styled, raw, app, style["name"], True, 400, audio=audio, cleanup=True,
+            def run():
+                refined = refine.apply(text, refinement, activewin.describe(app))
+                GLib.idle_add(lambda: self.paste(refined, raw, app, refinement["name"], True, 400, audio=audio, cleanup=True,
                                                  cleaned=text))
-            threading.Thread(target=restyle, daemon=True).start()
-        huds.StylePicker(text, chosen, on_new=lambda: self.open_hub("styles", new=True))
+            threading.Thread(target=run, daemon=True).start()
+        huds.RefinementPicker(text, chosen, on_new=lambda: self.open_hub("refinements", new=True))
 
     def quit(self, reason):
         """Every way out goes through here, so the log says why Dictate stopped."""

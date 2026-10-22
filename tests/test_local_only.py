@@ -18,7 +18,7 @@ def test_a_real_dictation_is_transcribed_and_refined_on_this_computer(start, tmp
     from dictate.refine import CLEANUP
     shout = {"name": "Shout", "key": "s", "apps": "",
              "prompt": "Rewrite the message in CAPITAL LETTERS. Change nothing else."}  # unmistakably the model's work
-    app = start(styles=[shout], cleanup=CLEANUP, llama=LLAMA,
+    app = start(refinements=[shout], cleanup=CLEANUP, llama=LLAMA,
                 env={"DICTATE_TEST_SPEECH": str(sample_speech(tmp_path / "speech.wav"))})
     app.focus("org.kde.kate", "notes.txt — Kate")
 
@@ -27,7 +27,7 @@ def test_a_real_dictation_is_transcribed_and_refined_on_this_computer(start, tmp
 
     assert SAID in cleaned["text"].lower()  # heard by the speech model
     assert SAID.upper() in shouted["text"]  # rewritten by the refinement model
-    assert [e.get("style") for e in app.dictations()] == [None, "Shout"]
+    assert [e.get("refinement") for e in app.dictations()] == [None, "Shout"]
 
 
 @pytest.mark.skipif(not shutil.which("bwrap") or not shutil.which("strace"), reason="needs bubblewrap and strace")

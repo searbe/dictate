@@ -4,11 +4,11 @@ import subprocess, sys, time
 from pathlib import Path
 import pytest
 from conftest import needs_kwin
-from harness.client import style
+from harness.client import refinement
 
 pytestmark = needs_kwin
 HERE = Path(__file__).parent
-STYLES = [style("Chat", "c", apps="whatsapp"), style("Mail", "m", apps="gmail")]
+REFINEMENTS = [refinement("Chat", "c", apps="whatsapp"), refinement("Mail", "m", apps="gmail")]
 
 
 class Window:
@@ -51,42 +51,42 @@ def windows():
             w.close()
 
 
-def test_dictating_into_a_window_uses_the_style_for_its_title(start, windows):
-    app = start(styles=STYLES)
+def test_dictating_into_a_window_uses_the_refinement_for_its_title(start, windows):
+    app = start(refinements=REFINEMENTS)
     windows("firefox", "Inbox - me@gmail.com - Gmail — Mozilla Firefox")
 
     app.dictate("dear sir")
 
-    assert app.dictations()[-1]["style"] == "Mail"
+    assert app.dictations()[-1]["refinement"] == "Mail"
     assert app.dictations()[-1]["title"] == "Inbox - me@gmail.com - Gmail — Mozilla Firefox"
 
 
-def test_switching_browser_tab_changes_the_style_without_refocusing(start, windows):
-    """The bug that styled a WhatsApp message as an email: the tab changed, the window didn't."""
-    app = start(styles=STYLES)
+def test_switching_browser_tab_changes_the_refinement_without_refocusing(start, windows):
+    """The bug that refined a WhatsApp message as an email: the tab changed, the window didn't."""
+    app = start(refinements=REFINEMENTS)
     browser = windows("firefox", "Inbox - me@gmail.com - Gmail — Mozilla Firefox")
     app.dictate("dear sir")
 
     browser.retitle("WhatsApp — Mozilla Firefox")
     app.dictate("see you soon")
 
-    assert [e["style"] for e in app.dictations()] == ["Mail", "Chat"]
+    assert [e["refinement"] for e in app.dictations()] == ["Mail", "Chat"]
 
 
-def test_switching_to_another_window_switches_style(start, windows):
-    app = start(styles=STYLES)
+def test_switching_to_another_window_switches_refinement(start, windows):
+    app = start(refinements=REFINEMENTS)
     windows("firefox", "WhatsApp — Mozilla Firefox")
     app.dictate("see you soon")
 
     windows("thunderbird", "Write: Gmail draft")
     app.dictate("dear sir")
 
-    assert [e["style"] for e in app.dictations()] == ["Chat", "Mail"]
+    assert [e["refinement"] for e in app.dictations()] == ["Chat", "Mail"]
 
 
 def test_dictate_ignores_its_own_windows_when_tracking_focus(start, windows):
     """Opening Dictations mustn't make Dictate think the text is going into it."""
-    app = start(styles=STYLES)
+    app = start(refinements=REFINEMENTS)
     windows("firefox", "WhatsApp — Mozilla Firefox")
     app.send("menu", path=["Dictations"])
     app.wait_window("Dictations")
@@ -94,4 +94,4 @@ def test_dictate_ignores_its_own_windows_when_tracking_focus(start, windows):
 
     app.dictate("see you soon")
 
-    assert app.dictations()[-1]["style"] == "Chat"
+    assert app.dictations()[-1]["refinement"] == "Chat"

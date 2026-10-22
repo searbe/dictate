@@ -14,7 +14,7 @@ WAYS = ["•  Stop, in Transcripts (click the capsule to open it)", "•  Ctrl+W
 
 
 def recording(start, **kw):
-    app = start(styles=[], **kw)
+    app = start(refinements=[], **kw)
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     return app
@@ -91,7 +91,7 @@ def test_it_is_said_again_the_next_day(start):
 
 
 def test_closing_the_window_when_not_recording_says_nothing(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     app.send("menu", path=["Transcripts"])
     app.wait_window("Transcripts")
 

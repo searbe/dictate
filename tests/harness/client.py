@@ -158,9 +158,9 @@ class Dictate:
                 self.proc.wait()
 
 
-def style(name, key, apps="", default=False):
-    """A test style whose prompt is just a marker, so the fake model can be told what to do with it."""
-    return {"name": name, "key": key, "apps": apps, "prompt": f"STYLE:{name}", "default": default}
+def refinement(name, key, apps="", default=False):
+    """A test refinement whose prompt is just a marker, so the fake model can be told what to do with it."""
+    return {"name": name, "key": key, "apps": apps, "prompt": f"REFINEMENT:{name}", "default": default}
 
 
 def eventually(check, timeout=5):

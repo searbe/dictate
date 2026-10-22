@@ -22,7 +22,7 @@ HIRING = answer("hire", ("Hiring", "Speaker 1 wants to hire a designer.", [1]))
 
 def recording(start, model, *rules):
     model.rules(*rules)
-    app = start(styles=[])
+    app = start(refinements=[])
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     return app
@@ -127,7 +127,7 @@ BUSY = "Warning: using a less reliable model because your graphics card is busy.
 
 def test_with_the_graphics_card_busy_a_warning_says_a_less_reliable_model_is_in_use(start, model):
     model.rules(BUDGET)
-    app = start(styles=[], env={"DICTATE_TEST_GPU": "busy"})
+    app = start(refinements=[], env={"DICTATE_TEST_GPU": "busy"})
     app.ctrl_win_win()
     app.wait_window("Transcripts")
 
@@ -139,7 +139,7 @@ def test_with_the_graphics_card_busy_a_warning_says_a_less_reliable_model_is_in_
 
 
 def test_without_a_graphics_card_the_warning_says_so(start, model):
-    app = start(styles=[], env={"DICTATE_TEST_GPU": "none"})
+    app = start(refinements=[], env={"DICTATE_TEST_GPU": "none"})
     app.ctrl_win_win()
     app.wait_window("Transcripts")
 
@@ -149,7 +149,7 @@ def test_without_a_graphics_card_the_warning_says_so(start, model):
 
 def test_it_switches_to_the_better_model_once_the_graphics_card_is_free(start, model):
     model.rules(BUDGET)
-    app = start(styles=[], env={"DICTATE_TEST_GPU": "busy"})
+    app = start(refinements=[], env={"DICTATE_TEST_GPU": "busy"})
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     eventually(lambda: BUSY in app.read("Transcripts"))
@@ -165,7 +165,7 @@ def test_it_switches_to_the_better_model_once_the_graphics_card_is_free(start, m
 
 def test_it_does_not_switch_in_the_middle_of_a_dictation(start, model):
     model.rules({"prompt": "CLEANUP", "reply": "Note to self."})
-    app = start(styles=[], env={"DICTATE_TEST_GPU": "busy"})
+    app = start(refinements=[], env={"DICTATE_TEST_GPU": "busy"})
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     eventually(lambda: BUSY in app.read("Transcripts"))
@@ -184,7 +184,7 @@ def test_it_does_not_switch_in_the_middle_of_a_dictation(start, model):
 
 def test_topics_found_by_the_less_reliable_model_say_so_once_saved(start, model):
     model.rules(BUDGET)
-    app = start(styles=[], env={"DICTATE_TEST_GPU": "busy"})
+    app = start(refinements=[], env={"DICTATE_TEST_GPU": "busy"})
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     app.hear("Shall we look at the budget?")
@@ -207,7 +207,7 @@ def four_topics(start, model, *rules):
     model.rules(*rules, answer("costs", ("Cutting costs", "Me will cut the travel costs.", [1])),  # (newest first:
                 answer("office", ("Office move", "Me says the move is in May.", [1])),  # the lines before are
                 answer("hire", ("Hiring", "Speaker 1 wants a designer.", [1])), BUDGET)  # sent too)
-    app = start(styles=[])
+    app = start(refinements=[])
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     for said, source in (("Shall we look at the budget?", "speakers"), ("And we need to hire a designer.", "speakers"),
@@ -242,7 +242,7 @@ def test_topics_are_not_merged_unless_asked_again_they_are_one_subject(start, mo
 
 def test_the_less_reliable_model_does_not_merge_topics(start, model):
     model.rules(answer("hire", ("Hiring", "Speaker 1 wants a designer.", [1])), BUDGET)
-    app = start(styles=[], env={"DICTATE_TEST_GPU": "busy"})
+    app = start(refinements=[], env={"DICTATE_TEST_GPU": "busy"})
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     for said in ("Shall we look at the budget?", "And we need to hire a designer.", "Budget again.", "Hire again."):

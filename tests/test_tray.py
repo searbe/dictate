@@ -69,16 +69,16 @@ def redness(pixmaps):
 
 
 def test_dictate_shows_a_tray_icon_with_the_same_menu(start, tray):
-    start(styles=[])
+    start(refinements=[])
     service = registered(tray)
 
     assert prop(service, "Title") == "Dictate"
     _rev, layout = item_call(service, "com.canonical.dbusmenu", "GetLayout", (0, -1, ["label"]), "(iias)")
-    assert {"Open Dictate", "Refine text", "Default style", "Dictations", "Styles…", "Settings…", "Run at startup", "Quit"} <= set(labels(layout))
+    assert {"Open Dictate", "Refine text", "Default refinement", "Dictations", "Refinements…", "Settings…", "Run at startup", "Quit"} <= set(labels(layout))
 
 
 def test_the_tray_icon_turns_red_while_recording(start, tray):
-    app = start(styles=[])
+    app = start(refinements=[])
     service = registered(tray)
     idle = redness(prop(service, "IconPixmap"))
 
@@ -94,7 +94,7 @@ def test_the_tray_icons_tooltip_says_how_long_it_has_been_transcribing_and_the_t
     import json
     model.rules({"prompt": "live list of the topics", "text": "budget", "reply": json.dumps(
         {"topics": [{"topic": 0, "title": "The budget", "said": "Speaker 1 asked about it.", "lines": [1]}]})})
-    app = start(styles=[])
+    app = start(refinements=[])
     service = registered(tray)
     assert prop(service, "ToolTip")[3] == "Hold Ctrl+Win to dictate"
 

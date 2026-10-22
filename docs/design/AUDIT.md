@@ -1,6 +1,7 @@
 # Dictate's UI before the revamp: an audit
 
 Screenshots of every surface as it was are in [before/](before/). What they show, and what's wrong with it.
+(Styles have since been renamed refinements.)
 
 ## Surfaces
 

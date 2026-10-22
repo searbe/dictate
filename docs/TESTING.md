@@ -49,12 +49,12 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 | Area | File |
 |---|---|
 | Dictating: cleanup, clipboard, Ctrl+V / Ctrl+Shift+V in terminals, history, nothing heard, refine off, recordings kept or not, the hotkey itself, another key with it being another app's shortcut | `test_dictation.py` |
-| Choosing a style: by window title or app, title changes without refocusing, default style, Alt+letter (one that's no style's being another app's shortcut), the picker (letter, Enter, Escape, click) | `test_choosing_a_style.py` |
+| Choosing a refinement: by window title or app, title changes without refocusing, default refinement, Alt+letter (one that's no refinement's being another app's shortcut), the picker (letter, Enter, Escape, click) | `test_choosing_a_refinement.py` |
 | Real windows on a real KWin, reported by Dictate's KWin script (incl. the Gmail → WhatsApp tab bug) | `test_focused_window.py` |
 | The model: vocabulary and window context in the prompt, loading on key press, unloading when idle, never outliving Dictate, rejecting answers / placeholders / rewrites, errors and a missing llama-server | `test_refinement_model.py` |
 | Dictations: grouped by day, labels, search, copy, play, delete, clear (with confirmation), the keep-dictation-recordings setting | `test_dictations_page.py` |
-| Styles: add, edit, validate, delete, rename, vocabulary, cleanup prompt and reset | `test_style_manager.py` |
-| Another computer (Synergy's log): typed not pasted, its own default style, ignoring the hotkey, switching back | `test_other_computer.py` |
+| Refinements: add, edit, validate, delete, rename, vocabulary, cleanup prompt and reset | `test_refinement_manager.py` |
+| Another computer (Synergy's log): typed not pasted, its own default refinement, ignoring the hotkey, switching back | `test_other_computer.py` |
 | Quit (menu and signal) with the reason logged, the microphone never left recording (quitting mid-dictation, or crashing mid-recording), run at startup, single instance, switching to `.venv` | `test_running_dictate.py` |
 | Tray icon over the StatusNotifierItem protocol: registers, same menu, turns red while recording, its tooltip saying how long it has been transcribing (paused or not) and the topic now | `test_tray.py` |
 | Keyboards coming and going (Linux): Ctrl+Win still works after one is unplugged, one plugged in later (or dropping out and coming back) works, unplugged mid-dictation counts as let go, Dictate's own virtual keyboard not watched | `test_keyboards.py` |
@@ -66,7 +66,7 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 | Echoes: the speakers heard again by the microphone (in made-up rooms, quieter or later) told from you speaking, alone or over them | `test_echo.py` |
 | Topics: listed beside the transcript with who brought each up and who else spoke on it, the current one marked, carried on when the conversation goes back to one, a new paragraph where the topic changes, small talk left out, saved at the top of the transcript (including what was said last, when it's stopped), the transcript carrying on when the model fails, a warning while the less reliable model is used (graphics card busy, or none) and once saved, switching to the better one once the graphics card is free but not mid-dictation, topics that turn out to be one subject merged (only if the model says so again about each pair, and not by the less reliable model) | `test_topics.py` |
 | Still transcribing: closing the window while recording says it carries on and every way to stop it (once a day), Stop now, Keep going, a desktop notification when the capsule isn't on screen, the reminder after a while with nothing heard (not again until something is) | `test_still_transcribing.py` |
-| Live summary: the Summary tab beside Topics, kept up to date with only what's new sent each time, the final pass when it's stopped saved at the top of the transcript, a saved transcript's summary, its prompt changed and reset in Styles | `test_summary.py` |
+| Live summary: the Summary tab beside Topics, kept up to date with only what's new sent each time, the final pass when it's stopped saved at the top of the transcript, a saved transcript's summary, its prompt changed and reset in Refinements | `test_summary.py` |
 | Grouping voices into people on a call's worth of made-up voiceprints: one voice each, short parts never someone new, numbers kept when one is named | `test_voice_grouping.py` |
 | Voices: told apart, named live or after the call, merged by naming two the same, remembered only when turned on (live and after the call), listed and forgotten, all forgotten when turned off, "Them" without the voice model | `test_voices.py` |
 | The real thing end to end (real speech model, llama-server and refinement model), and `scripts/prove_local.py`: no network call leaves the computer | `test_local_only.py` |
@@ -80,7 +80,7 @@ the key was pressed`, `refine: loading … on gpu|cpu`, `refine: output rejected
 ### 1. Refinement quality (non-deterministic: the model's wording)
 
 The tests check that the model is *asked* the right thing and that bad answers are *caught*; whether a real
-model's answers are good can only be judged by reading them. After changing a prompt, a style or the model:
+model's answers are good can only be judged by reading them. After changing a prompt, a refinement or the model:
 
 - `python scripts/bench.py` runs every `models/*.gguf` over tricky cases and your recent dictations. Compare
   the outputs, timings and `<<rejected>>` markers.
@@ -110,21 +110,21 @@ model's answers are good can only be judged by reading them. After changing a pr
   XWayland one): the capsule grows and its level meter follows your voice; release → three dots, then the text
   appears where the cursor is.
 - In Konsole the paste works (it uses Ctrl+Shift+V); in a chat app a multi-line message isn't sent early.
-- Ctrl+Win+Alt+letter applies that style; Ctrl+Win with Alt tapped opens the picker, which takes the letter.
+- Ctrl+Win+Alt+letter applies that refinement; Ctrl+Win with Alt tapped opens the picker, which takes the letter.
 - On Ubuntu / Debian after setup: the hotkey works without root (the udev rule), after logging out and in.
 
 ### 4. Window tracking on the real desktop
 
 The automated tests run Dictate's KWin script on a headless KWin; check it on your real session too:
 
-- In Firefox, dictate in a Gmail tab, switch to a WhatsApp Web tab, dictate again: Email then WhatsApp style
+- In Firefox, dictate in a Gmail tab, switch to a WhatsApp Web tab, dictate again: Email then WhatsApp refinement
   (Dictations shows both; each entry's `title` in `data/dictations.jsonl` shows what was matched).
 - Right-click the capsule, then click into another app: the menu closes. With the menu open, a chat
   notification changing the browser's title must not close it.
 
 ### 5. Another computer (Synergy / Deskflow / Input Leap)
 
-- Move the mouse to the other computer, dictate: the text is typed there, with "Default style there".
+- Move the mouse to the other computer, dictate: the text is typed there, with "Default refinement there".
 - Unplug the network to the other computer (Synergy flickers its capture): the hotkey still works here.
 - "Ignore the hotkey" mode: dictating while over there does nothing here.
 - Switch back: pasting works here again.
@@ -180,7 +180,7 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
   to the left. Only the capsule takes clicks: just beside it, the window underneath gets them. A click (no drag)
   while transcribing opens Transcripts on the recording; a drag doesn't.
 - The look ([design/DESIGN.md](design/DESIGN.md)): switch Plasma between light and dark (System Settings →
-  Colours): Dictate follows at once. The style picker and reminders blur what's behind them (KWin's blur on).
+  Colours): Dictate follows at once. The refinement picker and reminders blur what's behind them (KWin's blur on).
   With animations off (System Settings → Animation speed → Instant), the capsule changes size without morphing.
 - Tick "Run at startup", log out and in: Dictate starts. Untick: it doesn't.
 
@@ -190,7 +190,7 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
   quick and downloads nothing.
 - Windows 10/11 and macOS: run the setup script, then the whole checklist above. On macOS, grant the
   permissions it asks for (Microphone, Input Monitoring, Accessibility, Screen Recording) and check per-app
-  styles see window titles.
+  refinements see window titles.
 - The download URLs in `scripts/fetch.py` still work (a fresh setup is the test).
 
 ## Known quirks

@@ -1,6 +1,6 @@
 """The live summary: while a conversation is transcribed, the Summary tab beside Topics has a summary of it (what
 it's about, what was discussed and agreed, the action points), kept up to date as it goes on, with a final pass
-when it's stopped; saved at the top of the transcript. Its prompt is in Styles. The model writes it (here, its
+when it's stopped; saved at the top of the transcript. Its prompt is in Refinements. The model writes it (here, its
 stand-in: see harness/fake_llama.py)."""
 import json
 from conftest import needs_session
@@ -19,7 +19,7 @@ def summary_rule(reply, text="", user=""):
 
 def recording(start, model, *rules):
     model.rules(*rules)
-    app = start(styles=[])
+    app = start(refinements=[])
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     return app
@@ -68,7 +68,7 @@ def test_when_it_is_stopped_a_final_pass_is_saved_at_the_top_of_the_transcript(s
 
 
 def test_a_saved_transcripts_summary_is_shown(start):
-    app = start(styles=[])
+    app = start(refinements=[])
     folder = app.data / "transcripts"
     folder.mkdir()
     (folder / "2026-10-19 10.00.00.md").write_text("# Transcript, Monday 19 October 2026, 10:00\n\nLasted 2 min, until "
@@ -83,22 +83,22 @@ def test_a_saved_transcripts_summary_is_shown(start):
     assert "•  Speaker 1: post the job." in app.read("Transcripts")
 
 
-def test_the_summarys_prompt_can_be_changed_in_styles(start, model):
+def test_the_summarys_prompt_can_be_changed_in_refinements(start, model):
     model.rules(summary_rule(FIRST))
-    app = start(styles=[])
-    app.send("menu", path=["Styles…"])
-    app.wait_window("Styles")
-    app.send("select", row="Live summary", window_title="Styles")
-    app.send("fill", name="text", text="Summarise it like a ship's log.", window_title="Styles")
-    app.click("Save", window="Styles")
+    app = start(refinements=[])
+    app.send("menu", path=["Refinements…"])
+    app.wait_window("Refinements")
+    app.send("select", row="Live summary", window_title="Refinements")
+    app.send("fill", name="text", text="Summarise it like a ship's log.", window_title="Refinements")
+    app.click("Save", window="Refinements")
 
     app.ctrl_win_win()
     app.wait_window("Transcripts")
     app.hear("Shall we look at the budget?")
 
     eventually(lambda: any("ship's log" in r["system"] for r in model.requests()))
-    app.send("select", row="Styles", window_title="Transcripts")
-    app.send("select", row="Live summary", window_title="Styles")
-    app.click("Reset to default", window="Styles")
-    app.click("Save", window="Styles")
+    app.send("select", row="Refinements", window_title="Transcripts")
+    app.send("select", row="Live summary", window_title="Refinements")
+    app.click("Reset to default", window="Refinements")
+    app.click("Save", window="Refinements")
     assert not (app.data / "summary.txt").exists()  # back to following the default

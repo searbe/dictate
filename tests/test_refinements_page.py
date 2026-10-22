@@ -1,23 +1,23 @@
-"""Styles, in the Dictate window: creating, editing and deleting styles, the vocabulary and the cleanup prompt.
+"""Refinements, in the Dictate window: creating, editing and deleting refinements, the vocabulary and the cleanup prompt.
 Each change is checked by what it does to the next dictation, not by what's in the settings file."""
 import json
 from conftest import needs_session
-from harness.client import style
+from harness.client import refinement
 
 pytestmark = needs_session
-W = "Styles"
+W = "Refinements"
 
 
 def open_manager(start, model, **kw):
-    model.rules({"prompt": "STYLE:", "op": "upper"}, {"prompt": "Shout everything", "op": "upper"})
+    model.rules({"prompt": "REFINEMENT:", "op": "upper"}, {"prompt": "Shout everything", "op": "upper"})
     app = start(**kw)
-    app.send("menu", path=["Styles…"])
+    app.send("menu", path=["Refinements…"])
     app.wait_window(W)
     return app
 
 
-def add_style(app, name, letter, apps, prompt):
-    app.click("New style", window=W)
+def add_refinement(app, name, letter, apps, prompt):
+    app.click("New refinement", window=W)
     app.send("fill", name="Name", text=name, window_title=W)
     app.send("fill", name="Letter", text=letter, window_title=W)
     app.send("fill", name="Use automatically in apps", text=apps, window_title=W)
@@ -25,9 +25,9 @@ def add_style(app, name, letter, apps, prompt):
     app.click("Save", window=W)
 
 
-def test_a_new_style_is_used_in_its_apps_and_by_its_letter(start, model):
-    app = open_manager(start, model, styles=[])
-    add_style(app, "Loud", "l", "discord", "Shout everything")
+def test_a_new_refinement_is_used_in_its_apps_and_by_its_letter(start, model):
+    app = open_manager(start, model, refinements=[])
+    add_refinement(app, "Loud", "l", "discord", "Shout everything")
     assert "Saved" in app.read(W)
 
     app.focus("discord", "#general - Discord")
@@ -36,38 +36,38 @@ def test_a_new_style_is_used_in_its_apps_and_by_its_letter(start, model):
     assert app.dictate("hello friends", alt=True, letter="l")["text"] == "HELLO FRIENDS"
 
 
-def test_a_new_style_is_offered_in_the_picker_and_the_default_style_menu(start, model):
-    app = open_manager(start, model, styles=[])
-    add_style(app, "Loud", "l", "", "Shout everything")
+def test_a_new_refinement_is_offered_in_the_picker_and_the_default_refinement_menu(start, model):
+    app = open_manager(start, model, refinements=[])
+    add_refinement(app, "Loud", "l", "", "Shout everything")
 
-    assert "Loud" in [i["label"] for i in app.send("menu_items", path=["Default style"])["items"]]
+    assert "Loud" in [i["label"] for i in app.send("menu_items", path=["Default refinement"])["items"]]
     app.dictate("hello friends", alt=True, wait=False)
     app.wait_window("Refine")
     assert "Loud" in app.read("Refine")
 
 
-def test_a_style_needs_a_name_a_free_letter_and_a_description(start, model):
-    app = open_manager(start, model, styles=[style("Chat", "c")])
-    app.click("New style", window=W)
+def test_a_refinement_needs_a_name_a_free_letter_and_a_description(start, model):
+    app = open_manager(start, model, refinements=[refinement("Chat", "c")])
+    app.click("New refinement", window=W)
     app.send("fill", name="Name", text="", window_title=W)
 
-    for name, letter, prompt, error in (("", "x", "p", "Give the style a name."),
+    for name, letter, prompt, error in (("", "x", "p", "Give the refinement a name."),
                                         ("Loud", "", "p", "Choose a letter A–Z."),
                                         ("Loud", "1", "p", "Choose a letter A–Z."),
-                                        ("Loud", "c", "p", "C is already used by another style."),
-                                        ("Loud", "l", "", "Describe the style.")):
+                                        ("Loud", "c", "p", "C is already used by another refinement."),
+                                        ("Loud", "l", "", "Describe the refinement.")):
         app.send("fill", name="Name", text=name, window_title=W)
         app.send("fill", name="Letter", text=letter, window_title=W)
         app.send("fill", name="text", text=prompt, window_title=W)
         app.click("Save", window=W)
         assert error in app.read(W)
 
-    assert [s["name"] for s in json.loads((app.data / "styles.json").read_text())["styles"]] == ["Chat"]
+    assert [s["name"] for s in json.loads((app.data / "refinements.json").read_text())["refinements"]] == ["Chat"]
 
 
-def test_editing_a_style_changes_what_it_does(start, model):
+def test_editing_a_refinement_changes_what_it_does(start, model):
     model.rules({"prompt": "Shout everything", "op": "upper"})
-    app = open_manager(start, model, styles=[{**style("Chat", "c", apps="slack"), "prompt": "Leave it alone"}])
+    app = open_manager(start, model, refinements=[{**refinement("Chat", "c", apps="slack"), "prompt": "Leave it alone"}])
     app.send("select", row="Chat", window_title=W)
     app.send("fill", name="text", text="Shout everything", window_title=W)
     app.click("Save", window=W)
@@ -76,31 +76,31 @@ def test_editing_a_style_changes_what_it_does(start, model):
     assert app.dictate("hello team")["text"] == "HELLO TEAM"
 
 
-def test_a_deleted_style_is_no_longer_used(start, model):
-    app = open_manager(start, model, styles=[style("Chat", "c", apps="slack")])
+def test_a_deleted_refinement_is_no_longer_used(start, model):
+    app = open_manager(start, model, refinements=[refinement("Chat", "c", apps="slack")])
     app.send("select", row="Chat", window_title=W)
     app.click("Delete", window=W)
 
     app.focus("Slack", "general - Slack")
     app.dictate("hello team")
-    assert "style" not in app.dictations()[-1]
+    assert "refinement" not in app.dictations()[-1]
 
 
-def test_renaming_the_other_computers_default_style_keeps_it_as_the_default(start, model):
-    app = start(styles=[style("Chat", "c")])
-    app.send("menu", path=["When another computer has the keyboard", "Default style there", "Chat"])
-    app.send("menu", path=["Styles…"])
+def test_renaming_the_other_computers_default_refinement_keeps_it_as_the_default(start, model):
+    app = start(refinements=[refinement("Chat", "c")])
+    app.send("menu", path=["When another computer has the keyboard", "Default refinement there", "Chat"])
+    app.send("menu", path=["Refinements…"])
     app.wait_window(W)
     app.send("select", row="Chat", window_title=W)
     app.send("fill", name="Name", text="Messages", window_title=W)
     app.click("Save", window=W)
 
-    items = app.send("menu_items", path=["When another computer has the keyboard", "Default style there"])["items"]
+    items = app.send("menu_items", path=["When another computer has the keyboard", "Default refinement there"])["items"]
     assert {"label": "Messages", "ticked": True} in items
 
 
 def test_vocabulary_edits_reach_the_model(start, model):
-    app = open_manager(start, model, styles=[])
+    app = open_manager(start, model, refinements=[])
     app.send("select", row="Vocabulary", window_title=W)
     app.send("fill", name="text", text="Synergy\nDeskflow", window_title=W)
     app.click("Save", window=W)
@@ -111,7 +111,7 @@ def test_vocabulary_edits_reach_the_model(start, model):
 
 
 def test_the_cleanup_prompt_can_be_edited_and_reset_to_the_default(start, model):
-    app = open_manager(start, model, styles=[])
+    app = open_manager(start, model, refinements=[])
     app.send("select", row="Cleanup", window_title=W)
     app.send("fill", name="text", text="Shout everything", window_title=W)
     app.click("Save", window=W)

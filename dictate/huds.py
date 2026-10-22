@@ -1,4 +1,4 @@
-"""HUDs: a moment's question or notice, on one card (docs/design/DESIGN.md, "HUD card"): the style picker after
+"""HUDs: a moment's question or notice, on one card (docs/design/DESIGN.md, "HUD card"): the refinement picker after
 Ctrl+Win with Alt, the confirmations, naming a voice, and the reminder that a call is still being transcribed."""
 import cairo
 from gi.repository import Gdk, GLib, Gtk
@@ -70,17 +70,17 @@ def ask_name(parent, label, remembers):
     return transcript.clean_name(name) if answer == Gtk.ResponseType.OK else ""
 
 
-# --- the style picker (after Ctrl+Win with Alt tapped) ---
-class StylePicker:
-    """Shows the cleaned-up text, then calls on_choose(style, paste): style is None for "Paste as is", paste is
-    False after Esc (the text is kept in history and on the clipboard only). on_new() opens Styles to add one."""
+# --- the refinement picker (after Ctrl+Win with Alt tapped) ---
+class RefinementPicker:
+    """Shows the cleaned-up text, then calls on_choose(refinement, paste): refinement is None for "Paste as is", paste is
+    False after Esc (the text is kept in history and on the clipboard only). on_new() opens Refinements to add one."""
 
     def __init__(self, text, on_choose, on_new=lambda: None):
         self.on_choose = on_choose
         self.hud = d.Hud("Refine", width=420)
         self.hud.on_escape = lambda: self.choose(None, paste=False)
         self.hud.win.connect("key-press-event", self.on_key)
-        self.hud.heading("Refine with a style", "styles")
+        self.hud.heading("Pick a refinement", "refinements")
         quote = d.classes(Gtk.Box(), "quote")
         said = d.text(text, "body", wrap=True, max_chars=56, selectable=True)
         said.set_can_focus(False)  # (else it opens with its text selected)
@@ -89,7 +89,7 @@ class StylePicker:
         self.choices = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         self.hud.box.pack_start(self.choices, False, False, 0)
         self.refresh()
-        new = d.button("New style…", lambda: (self.choose(None, paste=False, keep=True), on_new()), "quiet", icon="plus")
+        new = d.button("New refinement…", lambda: (self.choose(None, paste=False, keep=True), on_new()), "quiet", icon="plus")
         foot = self.hud.buttons(d.button("Paste as is", lambda: self.choose(None), "primary", keyhint="Enter"))
         foot.pack_start(new, False, False, 0)
         foot.pack_start(d.text("Esc copies only", "caption"), False, False, 8)
@@ -102,8 +102,8 @@ class StylePicker:
     def refresh(self):
         for c in self.choices.get_children():
             self.choices.remove(c)
-        self.styles = refine.load_styles()["styles"]
-        for s in self.styles:
+        self.refinements = refine.load_refinements()["refinements"]
+        for s in self.refinements:
             row = Gtk.Box(spacing=10)
             row.pack_start(d.key_badge(s["key"]), False, False, 0)
             row.pack_start(Gtk.Label(label=s["name"], xalign=0), True, True, 0)
@@ -118,14 +118,14 @@ class StylePicker:
         if name in ("Return", "KP_Enter"):
             self.choose(None)
         else:
-            s = next((s for s in self.styles if s["key"] == name.lower()), None)
+            s = next((s for s in self.refinements if s["key"] == name.lower()), None)
             if s:
                 self.choose(s)
         return False
 
-    def choose(self, style, paste=True, keep=False):
+    def choose(self, refinement, paste=True, keep=False):
         self.hud.close()
-        self.on_choose(style, paste)
+        self.on_choose(refinement, paste)
 
 
 # --- still transcribing ---

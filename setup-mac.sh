@@ -20,6 +20,6 @@ you launch it from (e.g. Terminal) under System Settings > Privacy & Security:
   - Microphone          (recording)
   - Input Monitoring    (the global Ctrl+Cmd hotkey)
   - Accessibility       (pasting with Cmd+V)
-  - Screen Recording    (optional: lets per-app styles see window titles, not just app names)
+  - Screen Recording    (optional: lets per-app refinements see window titles, not just app names)
 Restart Dictate after granting them.
 EOD
