@@ -173,11 +173,16 @@ class TranscriptsPage:
         # transcript could only ever get a little narrower than it is: "external" lets it be any width)
         self.scroll.set_policy(Gtk.PolicyType.EXTERNAL, Gtk.PolicyType.AUTOMATIC)
         # at the end, it stays there as more is heard: moved as the text grows, before it's drawn (moving it a
-        # moment later showed the new line below the bottom, then jumped); scrolled up, it stays put
+        # moment later showed the new line below the bottom, then jumped). It stops only when you scroll up
+        # (not whenever it isn't at the end: a wheel's or touchpad's scrolling glides on, to where the end was
+        # before the text grew), and follows again once you're back at the end
         self.following, self.moving = True, False
         adj = self.scroll.get_vadjustment()
         adj.connect("value-changed", self.scrolled)
         adj.connect("changed", lambda _: self.follow())
+        self.text.connect("scroll-event", self.wheel)
+        self.text.connect("key-press-event", self.key)
+        self.scroll.get_vscrollbar().connect("change-value", self.dragged)
         self.empty = d.empty_state("transcript", self.EMPTY, self.HOW)
         self.content = Gtk.Stack(width_request=300)  # (narrower, a transcript is unreadable)
         main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -506,6 +511,7 @@ class TranscriptsPage:
         """Scroll the transcript to where topic i is first talked about."""
         mark = self.firsts.get(i)
         if mark and not mark.get_deleted():
+            self.following = False
             self.text.scroll_to_mark(mark, 0.0, True, 0.0, 0.1)
 
     def show_people(self, labels):
@@ -543,8 +549,28 @@ class TranscriptsPage:
         return adj.get_value() >= adj.get_upper() - adj.get_page_size() - 20
 
     def scrolled(self, _):
-        if not self.moving:  # (scrolled by you: follow on only if that's to the end)
-            self.following = self.at_end()
+        if self.moving:
+            return
+        if self.at_end():
+            self.following = True
+        else:  # moved, not by you (you scrolling up stops it following first): back to the end
+            self.follow()
+
+    def wheel(self, _, ev):
+        up = ev.direction == Gdk.ScrollDirection.UP or (ev.direction == Gdk.ScrollDirection.SMOOTH and ev.delta_y < 0)
+        if up:
+            self.following = False
+        return False
+
+    def key(self, _, ev):
+        if Gdk.keyval_name(ev.keyval) in ("Up", "Page_Up", "Home", "KP_Up", "KP_Page_Up", "KP_Home"):
+            self.following = False
+        return False
+
+    def dragged(self, bar, _, value):
+        adj = bar.get_adjustment()
+        self.following = value >= adj.get_upper() - adj.get_page_size() - 20
+        return False
 
     def follow(self):
         """Keep it at the end, if it's following (the text has grown, or the window's changed size)."""

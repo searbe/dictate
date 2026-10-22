@@ -377,16 +377,31 @@ def cmd_panes(window_title=None):
     return {"panes": sorted(out, key=lambda p: p["x"])}
 
 
-def cmd_scroll(to=None, window_title=None):
-    """Where the big text box is scrolled to: {"value", "upper", "page"} in pixels; to: "top", "end" or a number
-    of pixels first, scrolled as the user would (a moment for it to settle)."""
-    adj = field(window(window_title), "text").get_parent().get_vadjustment()
+def cmd_scroll(to=None, window_title=None, by_user=True):
+    """Where the big text box is scrolled to: {"value", "upper", "page"} in pixels, and "top": where in the text
+    the top of what's shown is (in characters); to: "top", "end" or a number
+    of pixels first, as dragging its scroll bar there would (a moment for it to settle); not by_user: as the
+    text view moving itself, or a wheel's scrolling gliding on, would."""
+    scroll = field(window(window_title), "text").get_parent()
+    adj = scroll.get_vadjustment()
     if to:
-        adj.set_value({"top": 0, "end": adj.get_upper() - adj.get_page_size()}.get(to, to))
+        target = {"top": 0, "end": adj.get_upper() - adj.get_page_size()}.get(to, to)
+        if by_user:
+            scroll.get_vscrollbar().emit("change-value", Gtk.ScrollType.JUMP, target)
+        else:
+            adj.set_value(target)
+        for _ in range(200):  # till it's there (a jump glides there), and a moment more to settle
+            pump()
+            time.sleep(0.01)
+            if abs(adj.get_value() - target) < 1:
+                break
         for _ in range(10):
             pump()
             time.sleep(0.01)
-    return {"value": adj.get_value(), "upper": adj.get_upper(), "page": adj.get_page_size()}
+    view = scroll.get_child()
+    rect = view.get_visible_rect()
+    return {"value": adj.get_value(), "upper": adj.get_upper(), "page": adj.get_page_size(),
+            "top": view.get_iter_at_location(rect.x, rect.y)[1].get_offset()}
 
 
 def cmd_click_icon():

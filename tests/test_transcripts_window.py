@@ -121,18 +121,33 @@ def test_at_the_end_of_the_transcript_being_recorded_it_follows_what_is_said(sta
     assert at_end(app)
 
 
+def test_at_the_end_it_isnt_lost_when_the_view_moves_by_itself(start):
+    """A wheel's or touchpad's scrolling glides on for a moment, to where the end was before the text grew; that
+    isn't you scrolling up."""
+    app = recording(start)
+    talk(app, 0, 29)
+    eventually(lambda: "29. A long line" in shown(app) and at_end(app))
+
+    app.send("scroll", to=600, by_user=False, window_title="Transcripts")
+    talk(app, 30, 31)
+    eventually(lambda: "31. A long line" in shown(app))
+    time.sleep(0.5)
+
+    assert at_end(app)
+
+
 def test_scrolled_up_it_stays_put_as_more_is_said_until_scrolled_back_to_the_end(start):
     """Only what's changed is written again, so the text doesn't shrink away for a moment (it flashed)."""
     app = recording(start)
     talk(app, 0, 29)
     eventually(lambda: "29. A long line" in shown(app) and at_end(app))
 
-    app.send("scroll", to=600, window_title="Transcripts")  # part way up
+    top = app.send("scroll", to=600, window_title="Transcripts")["top"]  # part way up
     talk(app, 30, 32)
     app.hear_so_far("And something still being said")
     eventually(lambda: "32. A long line" in shown(app) and "still being said" in shown(app))
     time.sleep(0.5)
-    assert app.send("scroll", window_title="Transcripts")["value"] == 600  # (not thrown to the top as it's updated)
+    assert abs(app.send("scroll", window_title="Transcripts")["top"] - top) < 100  # the same text shown (a line or so)
 
     app.send("scroll", to="end", window_title="Transcripts")
     talk(app, 33, 35)
