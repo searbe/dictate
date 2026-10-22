@@ -155,6 +155,9 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
   until it's replaced by the whole stretch transcribed. Interjections ("yeah", "no") and a quick reply in the
   middle of someone's turn go to the person who said them. With the call on speakers (no headphones), nothing
   the speakers said turns up as yours, and what you say over them does.
+- After changing `stt.py`, `voices.py`, `echo.py` or `transcript.py`, replay a recorded call (one whose
+  recordings are still kept) with `python scripts/replay_call.py "data/transcripts/<stem>"` and read who was
+  given what, and whether anything the speakers said turned up as "Me".
 - After changing `voices.py`, run `python scripts/bench_voices.py LibriSpeech/dev-clean` (download it from
   openslr.org/12) and compare with the last run: speaking time labelled right 98.6% / 94.3% (with pauses, full
   quality / phone), 89.8% / 81.5% (quick replies); the right number of people in 83% / 75% and 75% / 67% of

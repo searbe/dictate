@@ -99,7 +99,7 @@ Ubuntu: `sudo apt install bubblewrap strace`).
   `activewin.py`.
 - `scripts/`: `fetch.py` (downloads, used by setup), `test.py` (the tests: see [TESTING.md](TESTING.md)),
   `prove_local.py`, `bench.py` (compares refinement models), `bench_voices.py` (telling voices apart),
-  `bench_topics.py` (topics on saved transcripts).
+  `bench_topics.py` (topics on saved transcripts), `replay_call.py` (a recorded call through transcribe mode again).
 - `docs/make_screenshots.py`: regenerates the screenshots.
 - How the UI is designed, and the rules for changing it: [design/DESIGN.md](design/DESIGN.md).
 
