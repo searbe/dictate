@@ -66,12 +66,12 @@ def plugged(tmp_path, monkeypatch):
 
 
 def hotkey(plugged):
-    """The real hotkey, watching plugged's keyboards; returns it and the list its presses (True) and releases
-    (False) go to. (Each test's has its own folder: the hotkeys of earlier tests are still running.)"""
+    """The real hotkey, watching plugged's keyboards; returns it and the list its presses (True), releases
+    (False) and other apps' shortcuts ("other") go to. (Each test's has its own folder: the hotkeys of earlier tests are still running.)"""
     class Hotkey(osio.Hotkey):
         DIR, RESCAN = plugged.folder, 0.05
     calls = []
-    hk = Hotkey(lambda down, alt, letter: calls.append(down))
+    hk = Hotkey(lambda down, alt, letter: calls.append(down), on_other=lambda: calls.append("other"))
     hk.start()
     return hk, calls
 
@@ -143,3 +143,28 @@ def test_dictates_own_virtual_keyboard_is_not_watched(plugged):
     hk, _ = hotkey(plugged)
 
     assert hk.watching == {}
+
+
+def test_clicking_the_mouse_while_dictating_is_not_another_apps_shortcut(plugged):
+    """A mouse's buttons come as keys too (and some mice are keyboards as well): clicking around while holding
+    Ctrl+Win carries on dictating."""
+    kb = plugged(1)
+    _, calls = hotkey(plugged)
+    chord(kb, True)
+
+    for button in (e.BTN_LEFT, e.BTN_RIGHT, e.BTN_MIDDLE, e.BTN_SIDE):
+        kb.key(button, True)
+        kb.key(button, False)
+    chord(kb, False)
+
+    eventually(lambda: calls == [True, False])
+
+
+def test_another_key_while_dictating_is_still_another_apps_shortcut(plugged):
+    kb = plugged(1)
+    _, calls = hotkey(plugged)
+    chord(kb, True)
+
+    kb.key(e.KEY_RIGHT, True)
+
+    eventually(lambda: calls == [True, "other"])

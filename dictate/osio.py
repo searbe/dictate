@@ -215,8 +215,8 @@ if LINUX:
                     except OSError:  # unplugged
                         self.lost(key.fileobj)
                         continue
-                    for ev in events:
-                        if ev.type == e.EV_KEY and ev.value != 2:
+                    for ev in events:  # (not mouse buttons: clicking while dictating isn't another shortcut)
+                        if ev.type == e.EV_KEY and ev.value != 2 and ev.code not in e.BTN:
                             self.chord.key(ev.code, KINDS.get(ev.code), ev.value == 1, ev.timestamp())
                 if self.stamp() != self.changed:  # a device was added or removed
                     self.changed = self.stamp()
