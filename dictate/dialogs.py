@@ -407,7 +407,7 @@ def transcript_view():
 
 
 def topic_tags(buf, i):
-    """The tags for topic i's paragraphs (tinted its colour) and for its name above them."""
+    """The tags for paragraphs on a topic of colour number i (tinted that colour) and for its name above them."""
     table = buf.get_tag_table()
     if not table.lookup(f"topic{i}"):
         rgba = Gdk.RGBA()
@@ -429,7 +429,7 @@ def show_transcript(view, who, paragraphs, empty, previews=(), found=None, marks
         tags = ("pending",) if i >= len(paragraphs) else ()
         topic = (marks or {}).get(i) if not tags else None
         if topic is not None and topic < len(found.topics):
-            tint, label = topic_tags(buf, topic)
+            tint, label = topic_tags(buf, found.hue(topic))
             tags = (tint,)
             if topic != last:
                 buf.insert_with_tags_by_name(buf.get_end_iter(), ("\n\n" if i else "") + f"● {found.topics[topic]['title']}", label, tint)
@@ -661,7 +661,7 @@ class TranscriptsWindow:
                 find.set_margin_top(8)
                 self.topics.pack_start(find, False, False, 0)
         for i, t in enumerate(topics_):
-            card = css(Gtk.Button(), "topic", f"topic{i % len(topics.COLOURS)}", *(["now"] if i == now else []))
+            card = css(Gtk.Button(), "topic", f"topic{found.hue(i)}", *(["now"] if i == now else []))
             card.connect("clicked", lambda _, i=i: self.go_to_topic(i))
             box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
             head = Gtk.Box(spacing=6)

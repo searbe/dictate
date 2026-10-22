@@ -21,7 +21,7 @@ SIZE, R = 52, 17  # window size, icon radius (margin leaves room for the pulse r
 REMOTE_MODES = (("type", "Type the text there"), ("ignore", "Ignore the hotkey"))
 SAME = "same"  # remote default style: same as here
 QUIET = 600  # seconds with nothing added to a transcript before reminding that it's still being recorded
-QUIET_CHECK = 30  # seconds between checks
+QUIET_CHECK = 30  # seconds between checks (and updates of the tray icon's tooltip)
 OTHER_COMPUTER = {"cls": "", "title": "", "remote": True}  # where text goes when Synergy has the keyboard
 TERMINALS = ("konsole", "terminal", "kitty", "alacritty", "wezterm", "foot", "ghostty", "yakuake")  # Linux paste
 ACCENT = (0.49, 0.55, 1.0)
@@ -124,7 +124,7 @@ class App:
         self.reminder = None  # the reminder that a transcript is still being recorded, while it's shown
         self.reminded_quiet = False  # about this stretch of quiet already
         self.t0 = time.monotonic()
-        self.tray = tray.Tray(self.menu, self.render_icon, self.build_default_menu)  # same menu in the system tray
+        self.tray = tray.Tray(self.menu, self.render_icon, self.build_default_menu, self.status)  # same menu in the tray
         self.clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         self.app = activewin.snapshot()
         # the menu is an XWayland popup: a click on a Wayland app never reaches it, so it can't tell it
@@ -153,6 +153,17 @@ class App:
             self.anim = None
         self.win.queue_draw()
         self.tray.update()
+
+    def status(self):
+        """What Dictate's doing, for the tray icon's tooltip: while transcribing, for how long, and the topic."""
+        session = self.session
+        if not session:
+            return "Hold Ctrl+Win to dictate"
+        text = f"{'Transcribing, paused' if session.paused else 'Transcribing'} · {transcript.length(session.now())}"
+        found = session.topics
+        if found.now is not None and found.now < len(found.topics):
+            text += f"\nNow: {found.topics[found.now]['title']}"
+        return text
 
     def hover(self, on):
         self.hovered = on
@@ -499,6 +510,7 @@ class App:
         something is heard again)."""
         if session is not self.session:
             return False
+        self.tray.update()  # how long it's been going, in its tooltip
         quiet = session.quiet_for() >= QUIET
         if quiet and not self.reminded_quiet:
             self.remind("quiet")

@@ -100,6 +100,8 @@ def find_topics(path, on_progress=lambda: None):
         found.small = found.small or refine.mode() == "cpu"
         on_progress()
         i = j
+    if refine.mode() == "gpu":
+        found.merge()
     return found
 
 
@@ -229,6 +231,7 @@ class Session:
         self.muted = {who: [] for who, _ in SOURCES}  # [start, end] (end None: still muted)
         self.paused = self.stopped = False
         self.topics, self.asked, self.asking, self.last_topics = topics.Topics(), set(), False, self.now()
+        self.last_merge = self.now()
         self.gpu_free_for = 0.0  # seconds the GPU has been free while the smaller model is loaded on the CPU
         refine.keep(True)  # the model, loaded for the whole call (from now, so it's ready for the first topics)
         refine.warm(hold=False)
@@ -328,8 +331,9 @@ class Session:
         self.on_change()
 
     def stop(self, on_done, last_topics=True):
-        """Stop recording, transcribe what's left, save, sort what's left into topics (unless not
-        last_topics: quitting doesn't wait for the model), then on_done() on the GTK thread."""
+        """Stop recording, transcribe what's left, save, sort what's left into topics and merge any that are
+        one subject (unless not last_topics: quitting doesn't wait for the model), then on_done() on the GTK
+        thread."""
         self.stopped = True
         def finish():
             for rec in self.recorders:
@@ -340,8 +344,11 @@ class Session:
         def saved():
             self.save()
             self.on_change()
-            if not (last_topics and self.sort_topics(then=done)):
+            tidy = lambda: self.merge_topics(then=done) or done()
+            if not last_topics:
                 done()
+            elif not self.sort_topics(then=tidy):
+                tidy()
         def done():
             refine.keep(False)
             on_done()
@@ -363,6 +370,8 @@ class Session:
         lines = [l for l in self.lines() if l[0] not in self.asked]
         if not self.asking and self.topics.due(lines, self.now() - self.last_topics):
             self.sort_topics()
+        elif not self.asking and self.now() - self.last_merge >= topics.MERGE:
+            self.merge_topics()
         self.back_to_gpu()
         return True
 
@@ -404,6 +413,31 @@ class Session:
             if reply is None:
                 self.asked.difference_update(l[0] for l in new)  # try again next time
             elif self.topics.apply(new, reply):
+                self.save()
+                self.on_change()
+            if then:
+                then()
+        threading.Thread(target=ask, daemon=True).start()
+        return True
+
+    def merge_topics(self, then=None):
+        """Ask the larger model (on a thread) which topics turned out to be one subject, and merge them, then
+        then(). Returns False if it isn't asked (too few topics, or the smaller model's loaded: then() isn't
+        called)."""
+        self.last_merge = self.now()
+        if len(self.topics.topics) < topics.MERGE_FROM or refine.mode() != "gpu":
+            return False
+        self.asking = True
+        def ask():
+            try:
+                reply = self.topics.merge_ask()
+            except (OSError, ValueError, KeyError) as err:
+                print("topics: couldn't ask the model:", err, flush=True)
+                reply = None
+            GLib.idle_add(answered, reply)
+        def answered(reply):
+            self.asking = False
+            if reply is not None and self.topics.merge_apply(reply):
                 self.save()
                 self.on_change()
             if then:

@@ -226,3 +226,60 @@ def test_topics_found_by_the_less_reliable_model_say_so_once_saved(start, model)
     eventually(lambda: "These topics were found with a less reliable model, as your graphics card was busy."
                in app.read("Transcripts"))
 
+
+
+MERGING = "Reply with the groups of topics"  # in the prompt asking which topics are one subject
+SAME = "Are they one subject"  # and in the one asking again about each pair
+
+
+def four_topics(start, model, *rules):
+    """Dictate transcribing, with four topics heard: the budget, hiring, the office move, and money again
+    under another title."""
+    model.rules(*rules, answer("costs", ("Cutting costs", "Me will cut the travel costs.", [1])),  # (newest first:
+                answer("office", ("Office move", "Me says the move is in May.", [1])),  # the lines before are
+                answer("hire", ("Hiring", "Speaker 1 wants a designer.", [1])), BUDGET)  # sent too)
+    app = start(styles=[])
+    app.ctrl_win_win()
+    app.wait_window("Transcripts")
+    for said, source in (("Shall we look at the budget?", "speakers"), ("And we need to hire a designer.", "speakers"),
+                         ("The office move is in May.", "mic"), ("I'll cut the travel costs.", "mic")):
+        app.hear(said, source=source)
+        eventually(lambda: len([r for r in model.requests() if TOPICS in r["system"] and said in r["text"]]) > 0)
+    return app
+
+
+def test_topics_that_turn_out_to_be_one_subject_are_merged(start, model):
+    app = four_topics(start, model, {"prompt": MERGING, "reply": json.dumps(
+        {"groups": [{"topics": [1, 4], "title": "Budget and costs"}]})}, {"prompt": SAME, "reply": '{"same": true}'})
+
+    eventually(lambda: "Budget and costs" in app.read("Transcripts"))
+    texts = app.read("Transcripts")
+    assert "The budget" not in texts and "Cutting costs" not in texts
+    assert texts.index("Speaker 1 asked about it; Me thinks it's too high.") < texts.index("Me will cut the travel costs.")
+    assert "Hiring" in texts and "Office move" in texts  # the others stay as they were
+    assert app.transcript().count("● Budget and costs") == 2  # where the conversation turned to it, both times
+
+
+def test_topics_are_not_merged_unless_asked_again_they_are_one_subject(start, model):
+    """Asked about the whole list, a model is quick to group things only talked about together."""
+    app = four_topics(start, model, {"prompt": MERGING, "reply": json.dumps(
+        {"groups": [{"topics": [2, 3], "title": "Hiring and the office"}]})}, {"prompt": SAME, "reply": '{"same": false}'})
+
+    eventually(lambda: any(SAME in r["system"] for r in model.requests()))
+    time.sleep(0.5)
+    texts = app.read("Transcripts")
+    assert "Hiring" in texts and "Office move" in texts and "Hiring and the office" not in texts
+
+
+def test_the_less_reliable_model_does_not_merge_topics(start, model):
+    model.rules(answer("hire", ("Hiring", "Speaker 1 wants a designer.", [1])), BUDGET)
+    app = start(styles=[], env={"DICTATE_TEST_GPU": "busy"})
+    app.ctrl_win_win()
+    app.wait_window("Transcripts")
+    for said in ("Shall we look at the budget?", "And we need to hire a designer.", "Budget again.", "Hire again."):
+        app.hear(said)
+    eventually(lambda: "Hiring" in app.read("Transcripts"))
+
+    time.sleep(1)
+
+    assert not any(MERGING in r["system"] for r in model.requests())

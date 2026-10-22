@@ -12,26 +12,28 @@ SIZES = (32, 64)  # pixel sizes offered to the tray
 
 class Tray:
     """menu: the Gtk.Menu to show; render(px): a cairo ARGB32 surface of the current icon;
-    before_show(): called before the menu opens (to refresh dynamic items)."""
+    before_show(): called before the menu opens (to refresh dynamic items); status(): the tooltip's text."""
 
-    def __init__(self, menu, render, before_show):
-        self.menu, self.render, self.before_show = menu, render, before_show
+    def __init__(self, menu, render, before_show, status=lambda: "Hold Ctrl+Win to dictate"):
+        self.menu, self.render, self.before_show, self.status = menu, render, before_show, status
         if sys.platform.startswith("linux"):
             self._sni_start()
         elif sys.platform == "win32":
-            self.icon = Gtk.StatusIcon(tooltip_text="Dictate: hold Ctrl+Win to dictate")
+            self.icon = Gtk.StatusIcon()
             for signal in ("activate", "popup-menu"):  # left or right click: show the menu
                 self.icon.connect(signal, self._win_popup)
             self.update()
 
     def update(self):
-        """Redraw the tray icon (call when the dictation state changes)."""
+        """Redraw the tray icon and its tooltip (call when the dictation state changes)."""
         if sys.platform.startswith("linux") and hasattr(self, "conn"):
             self.pixmaps = None  # re-rendered when Plasma next asks for the image
-            self.conn.emit_signal(None, "/StatusNotifierItem", "org.kde.StatusNotifierItem", "NewIcon", None)
+            for signal in ("NewIcon", "NewToolTip"):
+                self.conn.emit_signal(None, "/StatusNotifierItem", "org.kde.StatusNotifierItem", signal, None)
         elif sys.platform == "win32":
             surface = self.render(SIZES[0])
             self.icon.set_from_pixbuf(Gdk.pixbuf_get_from_surface(surface, 0, 0, SIZES[0], SIZES[0]))
+            self.icon.set_tooltip_text(f"Dictate: {self.status()}")
 
     # --- Windows ---
     def _win_popup(self, icon, button=1, time=None):
@@ -88,7 +90,7 @@ class Tray:
         return {
             "Category": GLib.Variant("s", "ApplicationStatus"), "Id": GLib.Variant("s", "dictate"),
             "Title": GLib.Variant("s", "Dictate"), "Status": GLib.Variant("s", "Active"), "IconName": GLib.Variant("s", ""),
-            "ToolTip": GLib.Variant("(sa(iiay)ss)", ("", [], "Dictate", "Hold Ctrl+Win to dictate")),
+            "ToolTip": GLib.Variant("(sa(iiay)ss)", ("", [], "Dictate", self.status())),
             "ItemIsMenu": GLib.Variant("b", True),  # any click opens the menu
             "Menu": GLib.Variant("o", "/MenuBar"),
         }.get(prop)

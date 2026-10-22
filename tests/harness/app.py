@@ -138,6 +138,7 @@ voices.narrowband = lambda s=None, power=None: False if isinstance(s, tuple) els
 voices.available = lambda: not os.environ.get("DICTATE_TEST_NO_VOICES")
 refine.IDLE = float(os.environ.get("DICTATE_TEST_IDLE", refine.IDLE))
 topics.TICK, topics.EVERY, topics.MOST, topics.FREE_FOR = 0.2, 0, 0, 0.6  # topics as soon as anything is said
+topics.MERGE = 0.5
 gpu = {"state": os.environ.get("DICTATE_TEST_GPU", "free")}  # the graphics card: "free", "busy" or "none"
 refine.gpu_ok = lambda: gpu["state"] == "free"
 refine.gpu_present = lambda: gpu["state"] != "none"

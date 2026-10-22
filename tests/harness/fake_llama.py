@@ -2,7 +2,8 @@
 """Stands in for llama-server: same command line, same HTTP API, but answers by rules instead of a model.
 
 Rules (JSON list in $FAKE_LLAMA_RULES, re-read on every request) are tried in order; the first whose
-"prompt" and "text" substrings are both found in the system prompt / transcript decides the answer:
+"prompt" and "text" substrings are both found in the system prompt / transcript (or the whole user message, if
+it has no transcript) decides the answer:
   {"reply": "..."}             answer with this text
   {"op": "upper"}              answer with the transcript in capitals
   {"op": "error"}              answer HTTP 500
@@ -51,7 +52,8 @@ class Handler(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         system = next(m["content"] for m in body["messages"] if m["role"] == "system")
         user = next(m["content"] for m in body["messages"] if m["role"] == "user")
-        text = re.search(r"<transcript>\n(.*)\n</transcript>", user, re.S).group(1)
+        tagged = re.search(r"<transcript>\n(.*)\n</transcript>", user, re.S)
+        text = tagged.group(1) if tagged else user  # (e.g. topics' merging: no transcript)
         log({"system": system, "text": text, "args": ARGS})
         out = answer(system, text)
         if out is None:

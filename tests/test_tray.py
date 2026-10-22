@@ -88,3 +88,26 @@ def test_the_tray_icon_turns_red_while_recording(start, tray):
     app.send("keys", up=["meta", "ctrl"])
 
     assert idle < 0.01 and recording > 0.2
+
+
+def test_the_tray_icons_tooltip_says_how_long_it_has_been_transcribing_and_the_topic(start, tray, model):
+    import json
+    model.rules({"prompt": "live list of the topics", "text": "budget", "reply": json.dumps(
+        {"topics": [{"topic": 0, "title": "The budget", "said": "Speaker 1 asked about it.", "lines": [1]}]})})
+    app = start(styles=[])
+    service = registered(tray)
+    assert prop(service, "ToolTip")[3] == "Hold Ctrl+Win to dictate"
+
+    app.ctrl_win_win()
+    app.wait_window("Transcripts")
+    app.hear("Shall we look at the budget?")
+
+    deadline = time.monotonic() + 5
+    while prop(service, "ToolTip")[3] != "Transcribing · under a minute\nNow: The budget":
+        assert time.monotonic() < deadline, prop(service, "ToolTip")[3]
+        time.sleep(0.1)
+    app.click("Pause", "Transcripts")
+    deadline = time.monotonic() + 5
+    while not prop(service, "ToolTip")[3].startswith("Transcribing, paused · under a minute"):
+        assert time.monotonic() < deadline, prop(service, "ToolTip")[3]
+        time.sleep(0.1)
