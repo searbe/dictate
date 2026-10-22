@@ -1,0 +1,391 @@
+"""The Transcripts page of the Dictate window: every transcript in a list at left (when, how long, how it starts),
+the selected one in the middle, and its topics in a rail at right (the current one marked while it's recorded;
+click one to go to it). The one being recorded (the app's session) is always first in the list and grows as it's
+heard (kept scrolled to the end unless you've scrolled up); while it's shown, the header has its status, Pause /
+Resume and Stop. A saved one has Copy all, Open file, Open folder and Delete. Closing the window doesn't stop it."""
+import json
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango
+from . import design as d, huds, refine, transcript, voices
+
+
+def transcript_view():
+    """A read-only text view for a transcript."""
+    view = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD_CHAR,
+                        left_margin=24, right_margin=24, top_margin=8, bottom_margin=24, pixels_inside_wrap=2)
+    style_tags(view.get_buffer())
+    d.on_scheme.append(lambda: style_tags(view.get_buffer()))
+    return view
+
+
+def style_tags(buf):
+    """The text view's tags, in the design's colours (again when the scheme changes)."""
+    table = buf.get_tag_table()
+    for name, props in (("pending", {"foreground": d.tok("text-3"), "style": Pango.Style.ITALIC}),
+                        ("who", {"foreground": d.tok("text"), "weight": 600}),
+                        ("clock", {"foreground": d.tok("text-3"), "scale": 0.85})):
+        tag = table.lookup(name) or buf.create_tag(name)
+        for k, v in props.items():
+            tag.set_property(k, v)
+    for i in range(len(d.SCHEMES[d.scheme]["topics"])):
+        if table.lookup(f"topic{i}"):
+            topic_tags(buf, i, restyle=True)
+
+
+def topic_tags(buf, i, restyle=False):
+    """The tags for paragraphs on a topic of colour number i (tinted that colour) and for its name above them."""
+    table = buf.get_tag_table()
+    if restyle or not table.lookup(f"topic{i}"):
+        tint = table.lookup(f"topic{i}") or buf.create_tag(f"topic{i}")
+        tint.set_property("paragraph-background-rgba", d.rgba(d.topic_colour(i), 0.09))
+        name = table.lookup(f"name{i}") or buf.create_tag(f"name{i}")
+        for k, v in {"foreground": d.topic_colour(i), "weight": 600, "scale": 0.85, "pixels-above-lines": 8}.items():
+            name.set_property(k, v)
+    return f"topic{i}", f"name{i}"
+
+
+def show_transcript(view, paragraphs, previews=(), found=None, marks=None):
+    """paragraphs: [(clock, who, text)]; previews: what's being said and not yet transcribed whole, shown greyed
+    out after them. found: the Topics, and marks: {paragraph's place: topic index}: a paragraph on a topic is
+    tinted its colour, with the topic's name above it where the conversation turns to it. Returns {topic index: a
+    mark where it's first talked about}."""
+    buf, firsts, last = view.get_buffer(), {}, None
+    buf.set_text("")
+    for i, (clock, name, text) in enumerate([*paragraphs, *previews]):
+        tags = ("pending",) if i >= len(paragraphs) else ()
+        topic = (marks or {}).get(i) if not tags else None
+        if topic is not None and topic < len(found.topics):
+            tint, label = topic_tags(buf, found.hue(topic))
+            tags = (tint,)
+            if topic != last:
+                buf.insert_with_tags_by_name(buf.get_end_iter(), ("\n\n" if i else "") + f"● {found.topics[topic]['title']}", label, tint)
+                firsts.setdefault(topic, buf.create_mark(None, buf.get_end_iter(), True))
+                buf.insert_with_tags_by_name(buf.get_end_iter(), "\n", tint)
+            elif i:
+                buf.insert_with_tags_by_name(buf.get_end_iter(), "\n\n", tint)
+        elif i:
+            buf.insert(buf.get_end_iter(), "\n\n")
+        last = topic
+        buf.insert_with_tags_by_name(buf.get_end_iter(), f"{clock} ", "clock", *tags)
+        buf.insert_with_tags_by_name(buf.get_end_iter(), f"{name}  ", "who", *tags)
+        buf.insert_with_tags_by_name(buf.get_end_iter(), text, *tags)
+    return firsts
+
+
+def small_model(session, found):
+    """A warning, if topics are being (or were) found by the smaller, less reliable model on the CPU."""
+    why = "your graphics card {}" if refine.gpu_present() else "this computer has no graphics card it can use"
+    if session:
+        return f"Warning: using a less reliable model because {why.format('is busy')}." if refine.mode() == "cpu" else None
+    if found and found.small and found.topics:
+        return f"These topics were found with a less reliable model, as {why.format('was busy')}."
+    return None
+
+
+def open_uri(path):
+    Gio.AppInfo.launch_default_for_uri(path.as_uri(), None)
+
+
+class TranscriptsPage:
+    EMPTY = "No transcripts yet"
+    HOW = "To start one, hold Ctrl+Win, lift Win and press it again."
+    LISTENING = "Listening to this computer's speakers and microphone"
+
+    def __init__(self, hub):
+        self.hub, self.app = hub, hub.app
+        self.shown_item, self.paths, self.seen, self.firsts = None, None, None, {}
+        self.widget = d.classes(Gtk.Box(), "page")
+
+        # the list of transcripts
+        self.list = d.classes(Gtk.ListBox(), "pick")
+        self.list.connect("row-selected", lambda _, row: row and self.show(row.item))
+        left = d.classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=260), "panel", "panel-left")
+        left.pack_start(d.classes(Gtk.Label(label="Transcripts", xalign=0, margin=16, margin_bottom=8), "title"), False, False, 0)
+        left.pack_start(d.scrolled(self.list), True, True, 0)
+        folder = d.button("Open folder", lambda: (transcript.FOLDER.mkdir(parents=True, exist_ok=True),
+                                                  open_uri(transcript.FOLDER)), "quiet", icon="folder", small=True)
+        folder.set_halign(Gtk.Align.START)
+        folder.set_margin_start(12)
+        folder.set_margin_bottom(12)
+        left.pack_end(folder, False, False, 0)
+
+        # the transcript shown
+        self.heading = d.text("", "headline")
+        self.status = d.status_pill("")
+        self.meta = d.text("", "small")
+        under = Gtk.Box(spacing=8)
+        under.pack_start(self.status, False, False, 0)
+        under.pack_start(self.meta, False, False, 0)
+        self.pause_btn = d.button("Pause", self.toggle_pause, icon="pause")
+        self.live_actions = Gtk.Box(spacing=8)
+        self.live_actions.pack_start(self.pause_btn, False, False, 0)
+        self.live_actions.pack_start(d.button("Stop", lambda: self.app.stop_transcribing(), "primary", icon="stop"), False, False, 0)
+        self.saved_actions = Gtk.Box(spacing=2)
+        copy = d.icon_button("copy", "Copy all", lambda: (
+            Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(self.shown_item["path"].read_text(), -1),
+            d.flash(copy, "Copied", "Copy all", "copy")))
+        for b in (copy, d.icon_button("open", "Open file", lambda: open_uri(self.shown_item["path"])),
+                  d.icon_button("trash", "Delete", self.delete, danger=True)):
+            self.saved_actions.pack_start(b, False, False, 0)
+        header = d.classes(Gtk.Box(spacing=8), "page-header")
+        words = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        words.pack_start(self.heading, False, False, 0)
+        words.pack_start(under, False, False, 0)
+        header.pack_start(words, True, True, 0)
+        for box in (self.saved_actions, self.live_actions):
+            box.set_valign(Gtk.Align.START)
+            box.set_no_show_all(True)
+            header.pack_end(box, False, False, 0)
+        self.people = Gtk.Box(spacing=6, margin_start=24, margin_end=24, margin_bottom=8, no_show_all=True)
+        self.text = transcript_view()
+        self.scroll = d.scrolled(self.text)
+        self.empty = d.empty_state("transcript", self.EMPTY, self.HOW)
+        self.content = Gtk.Stack()
+        main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        main.pack_start(header, False, False, 0)
+        main.pack_start(self.people, False, False, 0)
+        main.pack_start(self.scroll, True, True, 0)
+        self.content.add_named(main, "transcript")
+        self.content.add_named(self.empty, "empty")
+
+        # its topics
+        self.topics = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_bottom=12)
+        self.topics.shown = None
+        self.right = d.classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=300), "panel", "panel-right")
+        self.right.pack_start(d.scrolled(self.topics), True, True, 0)
+
+        self.widget.pack_start(left, False, False, 0)
+        self.widget.pack_start(self.content, True, True, 0)
+        self.widget.pack_start(self.right, False, False, 0)
+
+    @property
+    def win(self):
+        return self.hub.win
+
+    @property
+    def closed(self):
+        return self.hub.closed
+
+    def current(self):
+        return self.app.session
+
+    def shown(self, recording=False, **_):
+        self.changed()
+        if recording:
+            self.show_recording()
+
+    def items(self):
+        """The one being recorded first, then the saved transcripts, newest first."""
+        session = self.current()
+        items = [it for it in transcript.saved() if not (session and it["path"] == session.path)]
+        if session:
+            items.insert(0, {"path": session.path, "started": session.started, "recording": True})
+        return items
+
+    def row(self, it):
+        row = Gtk.ListBoxRow()
+        row.item = it
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin=8, margin_start=10, margin_end=10)
+        top = Gtk.Box(spacing=6)
+        top.pack_start(d.text(f"{it['started']:%a %d %b · %H:%M}", "strong"), False, False, 0)
+        row.length = d.text("", "caption")
+        top.pack_end(row.length, False, False, 0)
+        box.pack_start(top, False, False, 0)
+        row.start = d.text("", "small", ellipsize=True, max_chars=30)
+        box.pack_start(row.start, False, False, 0)
+        row.add(box)
+        self.describe(row)
+        return row
+
+    def describe(self, row):
+        """Fill in a row's length and first words (the recording's change as it's heard)."""
+        it, session = row.item, self.current()
+        live = it.get("recording") and session
+        row.length.set_text(("Paused" if session.paused else "Recording now") if live else it["length"])
+        paragraphs = session.paragraphs() if live else it["paragraphs"]
+        start = " ".join(text for _, _, text in paragraphs)[:200]
+        row.start.set_text(start or ("Nothing heard yet." if live else "Nothing was heard."))
+
+    def changed(self):
+        """Something changed: a recording started, grew, paused or stopped, or a transcript was deleted.
+        The list is only rebuilt if which transcripts there are has changed, so reading one isn't disturbed."""
+        if self.closed:
+            return
+        items = self.items()
+        paths = [(it["path"], bool(it.get("recording"))) for it in items]
+        if paths != self.paths:
+            self.paths = paths
+            session = self.current()
+            if session and session.path != self.seen:  # a new recording: select it, to watch it
+                self.seen, select = session.path, session.path
+            else:
+                select = self.shown_item and self.shown_item["path"]
+            self.rebuild(items, select)
+        else:
+            for row in self.list.get_children():
+                if row.item.get("recording"):
+                    self.describe(row)
+            if self.shown_item and self.shown_item.get("recording"):
+                self.show(self.shown_item)
+            elif self.shown_item and self.shown_item.get("changed") is not None:  # e.g. its last topics, just found
+                again = transcript.read(self.shown_item["path"])
+                if again and again["changed"] != self.shown_item["changed"]:
+                    self.show(again)
+
+    def show_recording(self):
+        """Select the one being recorded (it's always first)."""
+        first = self.list.get_row_at_index(0)
+        if first and first.item.get("recording"):
+            self.list.select_row(first)
+
+    def rebuild(self, items, select=None):
+        for row in self.list.get_children():
+            self.list.remove(row)
+        for it in items:
+            self.list.add(self.row(it))
+        self.list.show_all()
+        rows = self.list.get_children()
+        if not rows:
+            self.shown_item = None
+            self.content.set_visible_child_name("empty")
+            self.right.hide()
+            return
+        self.content.set_visible_child_name("transcript")
+        self.right.show()
+        self.list.select_row(next((r for r in rows if r.item["path"] == select), rows[0]))
+
+    def show(self, item):
+        session = self.current() if item.get("recording") else None
+        if item.get("recording") and not session:  # stopped since: show it as saved
+            item = transcript.read(item["path"]) or item
+        following = item is not self.shown_item or self.at_end()
+        self.shown_item = item
+        self.heading.set_text(f"{item['started']:%A %-d %B, %H:%M}")
+        self.saved_actions.set_visible(not session)
+        self.live_actions.set_visible(bool(session))
+        for box in (self.saved_actions, self.live_actions):
+            for b in box.get_children():
+                b.show_all()
+        self.status.set_visible(bool(session))
+        if session:
+            self.pause_btn.set_label_text("Resume" if session.paused else "Pause")
+            self.pause_btn.get_child().get_children()[0].set_icon("record" if session.paused else "pause")
+            dot = self.status.get_children()[0].get_style_context()
+            (dot.add_class if session.paused else dot.remove_class)("paused")
+            self.status.text.set_text(f"{'Paused' if session.paused else 'Recording'} · {transcript.length(session.now())}")
+            self.meta.set_text("Nothing is being added" if session.paused else self.LISTENING)
+            found, marks, people = session.topic_view()
+            paragraphs = session.paragraphs()
+            self.firsts = show_transcript(self.text, paragraphs, session.previews(), found, marks)
+            if not paragraphs and not session.previews():
+                self.text.get_buffer().set_text("Nothing heard yet.")
+        else:
+            self.meta.set_text(item.get("length", ""))
+            paragraphs = item.get("paragraphs", [])
+            found = transcript.read_topics(item["path"])
+            marks, people = (found.of, found.people(transcript.numbered(paragraphs))) if found else ({}, [])
+            self.firsts = show_transcript(self.text, paragraphs, found=found, marks=marks)
+            if not paragraphs:
+                self.text.get_buffer().set_text("Nothing was heard.")
+        self.show_topics(found, people, bool(session), bool(item.get("paragraphs")), small_model(session, found))
+        nameable = not session or session.voices  # without the voice model, a recording's voices are all "Them"
+        self.show_people(transcript.labels(session.paragraphs() if session else item.get("paragraphs", [])) if nameable else [])
+        if session and following:
+            adj = self.scroll.get_vadjustment()
+            GLib.idle_add(lambda: adj.set_value(adj.get_upper() - adj.get_page_size()) and False)
+
+    def show_topics(self, found, people, live, heard, warning=None):
+        """The topics of the transcript shown: each a card edged in its colour, with who brought it up and who
+        else spoke on it; the one being talked about now marked, while it's recorded. warning: that they're found
+        by the less reliable model, or None."""
+        topics_ = found.topics if found else []
+        now = found.now if found and live else None
+        shown = (self.shown_item["path"], json.dumps(topics_, sort_keys=True), people, now, live, heard, warning, d.scheme)
+        if shown == self.topics.shown:
+            return
+        self.topics.shown = shown
+        for kid in self.topics.get_children():
+            kid.destroy()
+        self.topics.pack_start(d.classes(Gtk.Label(label="Topics", xalign=0, margin=16, margin_bottom=8), "title"), False, False, 0)
+        if warning:
+            strip = d.warning_strip(warning)
+            strip.set_margin_start(12)
+            strip.set_margin_end(12)
+            strip.set_margin_bottom(8)
+            self.topics.pack_start(strip, False, False, 0)
+        if not topics_:
+            hint = ("The topics of the conversation appear here as it goes on, about a minute in." if live else
+                    "No topics were found." if heard else "Nothing was heard.")
+            self.topics.pack_start(d.text(hint, "small", wrap=True, max_chars=34, margin_start=16, margin_end=16),
+                                   False, False, 0)
+        for i, t in enumerate(topics_):
+            card = d.classes(Gtk.Button(), "topic-card", f"topic-edge-{found.hue(i)}", "now" if i == now else None)
+            card.connect("clicked", lambda _, i=i: self.go_to_topic(i))
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+            head = Gtk.Box(spacing=6)
+            head.pack_start(d.text(t["title"], "strong", wrap=True, max_chars=26), True, True, 0)
+            if i == now:
+                head.pack_end(d.chip("Now", accent=True), False, False, 0)
+            box.pack_start(head, False, False, 0)
+            who = people[i] if i < len(people) else []
+            if who:
+                box.pack_start(d.text(f"{who[0]} brought it up" + (f" · with {', '.join(who[1:])}" if who[1:] else ""),
+                                      "caption", wrap=True, max_chars=34), False, False, 0)
+            for point in t["points"]:
+                box.pack_start(d.text(point, "small", wrap=True, max_chars=34), False, False, 0)
+            card.add(box)
+            self.topics.pack_start(card, False, False, 0)
+        self.topics.show_all()
+
+    def go_to_topic(self, i):
+        """Scroll the transcript to where topic i is first talked about."""
+        mark = self.firsts.get(i)
+        if mark and not mark.get_deleted():
+            self.text.scroll_to_mark(mark, 0.0, True, 0.0, 0.1)
+
+    def show_people(self, labels):
+        """A button per voice in the transcript shown, to name it."""
+        if labels == getattr(self.people, "labels", None):
+            return
+        self.people.labels = labels
+        for kid in self.people.get_children():
+            kid.destroy()
+        self.people.pack_start(d.text("Speakers", "caption", margin_end=4), False, False, 0)
+        for label in labels:
+            self.people.pack_start(d.button(label, lambda l=label: self.rename(l), small=True,
+                                            tooltip=f"Rename {label}"), False, False, 0)
+        for kid in self.people.get_children():
+            kid.show_all()
+        self.people.set_visible(bool(labels))
+
+    def rename(self, label):
+        it, session = self.shown_item, self.current()
+        live = it.get("recording") and session
+        remembers = voices.remembering() and (live or transcript.voiceprints(it["path"]).exists())
+        name = huds.ask_name(self.win, label, remembers)
+        if not name:
+            return
+        if live:
+            session.rename(label, name)  # its on_change shows it
+        else:
+            transcript.rename(it["path"], label, name)
+            self.shown_item = None
+            self.paths = None  # read it again
+            self.changed()
+            self.list.select_row(next(r for r in self.list.get_children() if r.item["path"] == it["path"]))
+
+    def at_end(self):
+        adj = self.scroll.get_vadjustment()
+        return adj.get_value() >= adj.get_upper() - adj.get_page_size() - 20
+
+    def toggle_pause(self):
+        session = self.current()
+        if session:
+            session.pause(not session.paused)
+
+    def delete(self):
+        it = self.shown_item
+        if it and huds.confirm(self.win, f"Delete the transcript from {it['started']:%a %d %b, %H:%M}?",
+                               "Its recordings are deleted too. This can't be undone.", "Delete"):
+            transcript.delete(it["path"])
+            self.shown_item = None
+            self.changed()

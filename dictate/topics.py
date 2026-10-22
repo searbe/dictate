@@ -1,5 +1,5 @@
-"""The topics of a conversation, kept up to date while it's transcribed (and found afterwards for one saved
-before topics), so someone in the call can glance at what's been discussed and what's being discussed now.
+"""The topics of a conversation, kept up to date while it's transcribed, so someone in the call can glance at
+what's been discussed and what's being discussed now (scripts/bench_topics.py tries them on saved transcripts).
 
 Every so often the lines heard since the last time go to the refinement model (refine.ask), numbered, with the
 topics so far and the few lines before them for context. It answers with the topics of those lines (at most
@@ -100,11 +100,11 @@ class Topics:
 
     def colour(self, i):
         """The colour of topic i."""
-        return colour(self.topics[i].get("colour", i))
+        return colour(self.topics[i]["colour"])
 
     def hue(self, i):
         """The number of topic i's colour (for the window's styles)."""
-        return self.topics[i].get("colour", i) % len(COLOURS)
+        return self.topics[i]["colour"] % len(COLOURS)
 
     def due(self, lines, since):
         """Whether to update: lines are those not sorted yet; since: seconds since the last update."""
@@ -149,7 +149,7 @@ class Topics:
             if i is None:
                 i = titles[title.lower()] = len(self.topics)
                 self.topics.append({"title": title, "points": [],
-                                    "colour": max((t.get("colour", n) for n, t in enumerate(self.topics)), default=-1) + 1})
+                                    "colour": max((t["colour"] for t in self.topics), default=-1) + 1})
             points = self.topics[i]["points"]
             if said and i not in claimed.values() and said not in points[-1:]:  # one point per topic per update
                 points.append(said)

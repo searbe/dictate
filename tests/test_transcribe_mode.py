@@ -59,7 +59,7 @@ def test_starting_it_neither_pastes_nor_keeps_a_dictation(start):
     time.sleep(1.5)  # long enough for a dictation to have been pasted
 
     assert not app.happened("pasted", after=mark) and not app.happened("typed", after=mark)
-    assert app.history() == []
+    assert app.dictations() == []
 
 
 def test_doing_it_again_stops_and_saves_it(start):
@@ -74,7 +74,7 @@ def test_doing_it_again_stops_and_saves_it(start):
     time.sleep(0.5)
     assert "After the end." not in app.transcript()
     assert "Before the end." in app.transcript_file() and "After the end." not in app.transcript_file()
-    assert app.history() == []
+    assert app.dictations() == []
 
 
 def test_the_stop_button_stops_it(start):
@@ -169,14 +169,15 @@ def test_playing_a_recording_from_history_is_not_transcribed(start, model):
     app.dictate("played back")
     app.ctrl_win_win()
     app.wait_window("Transcripts")
-    app.send("menu", path=["History"])
-    app.wait_window("History")
+    app.send("menu", path=["Dictations"])
+    app.wait_window("Dictations")
 
-    app.click("▶ Play", "History")
+    app.click("Play", "Dictations")
     app.hear("Played back.")
-    app.click("■ Stop", "History")
+    app.click("Stop", "Dictations")
     time.sleep(0.3)
     app.hear("Live again.")
+    app.send("select", row="Transcripts", window_title="Dictations")  # back to the transcript, in the sidebar
 
     text = shows(app, "Live again.")
     assert "Played back." not in text
@@ -207,7 +208,7 @@ def test_an_ordinary_dictation_is_not_mistaken_for_it(start):
     app.send("keys", down=["meta"])
     app.send("keys", up=["meta", "ctrl"])
 
-    eventually(lambda: [e["text"] for e in app.history()] == ["first", "second"])
+    eventually(lambda: [e["text"] for e in app.dictations()] == ["first", "second"])
     assert "Transcripts" not in app.send("windows")["titles"]
 
 

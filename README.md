@@ -9,9 +9,9 @@ Push-to-talk dictation that runs entirely on your own computer. Hold a hotkey an
 - **Refinement styles:** reformat for Slack, WhatsApp, email or AI agents, or your own styles. Pick one per dictation, set a default, or match styles to apps automatically.
 - **Vocabulary:** names and terms you use, spelled the way you spell them.
 - **Transcribe mode** (Linux): transcribes your computer's audio and your microphone, e.g. a call, telling the voices apart and listing the topics as they come up.
-- **History:** every dictation with what was applied, playback of the recording, copy, delete and clear. Recordings are kept for a time you choose.
+- **Dictations:** every dictation with what was applied, playback of the recording, copy, delete and clear. Recordings are kept for a time you choose.
 - **Synergy:** while your keyboard is controlling another computer, the text is typed there.
-- **Floating icon and system tray icon** with the same menu, and an optional **Run at startup**.
+- **A small capsule** that stays out of the way: a dot until you dictate, then a live level meter; a system tray icon with the same menu; one **Dictate** window for your dictations, transcripts, styles, voices and settings.
 - **Self-contained:** everything installs into this folder. Dictate sends nothing over the network; models are downloaded once, during setup. [Check it yourself](#checking-that-its-local-only).
 
 ## Using it
@@ -21,7 +21,7 @@ Hold **Ctrl+Win** to record, release to transcribe and paste into the focused te
 - **Any other key** while holding (e.g. Ctrl+Win+→ to switch desktop) makes it that app's shortcut: the recording is dropped.
 - **Default style** (menu): used for every other dictation. "None" means cleanup only.
 - **Per-app styles:** a style can be used automatically in apps whose name or window title matches (e.g. "slack").
-- **Vocabulary** (Refinement styles…): names and terms, spelled your way.
+- **Vocabulary** (Styles): names and terms, spelled your way.
 - **Refine text** (menu): off gives the raw transcript, fastest.
 - **Synergy and similar:** while your keyboard controls another computer, the text is typed there. **When another computer has the keyboard** (menu) sets its style, or ignores the hotkey.
 - On Linux, terminals get Ctrl+Shift+V instead of Ctrl+V.
@@ -29,25 +29,29 @@ Hold **Ctrl+Win** to record, release to transcribe and paste into the focused te
 **Transcribe mode** (Linux) transcribes your computer's audio and your microphone, e.g. a call.
 - **Start / stop:** hold Ctrl+Win, lift Win and press it again. Or use **Stop**, or the menu.
 - People are labelled "Speaker 1", "Speaker 2"… Click a name to rename them; naming two the same merges them.
-- The topics are listed beside the transcript, each in its colour, with who brought it up; the one being talked about now is marked. Click one to go to it. **Find topics** does the same for an older transcript. While the graphics card is busy, a smaller, less reliable model finds them (a warning says so) until it's free again.
+- The topics are listed beside the transcript, each in its colour, with who brought it up; the one being talked about now is marked. Click one to go to it. While the graphics card is busy, a smaller, less reliable model finds them (a warning says so) until it's free again.
 - You can dictate as usual while it runs; your dictations stay out of the transcript.
 - **Transcripts** (menu) lists them all; the live one is at the top. Saved as Markdown in `data/transcripts/`.
 - Closing the window doesn't stop it: the first time each day, and after 10 minutes with nothing heard, a reminder beside the icon says so and how to stop it (a desktop notification if the icon isn't on screen).
-- **Voices…** can remember the people you name, for next time (off by default; ask people first).
+- **Voices** can remember the people you name, for next time (off by default; ask people first).
 
-The floating dot is red while recording and spins while transcribing; a blue ring means transcribe mode is on (click it to see the transcript). Drag it to move it; right-click it, or the tray icon, for the menu.
+The capsule is a dot while idle; it grows to show a level meter while you dictate, three dots while the text is refined, and the elapsed time and topic while transcribing a call (click it then to see the transcript). Drag it to move it; right-click it, or the tray icon, for the menu.
 
-**History** (menu) lists every dictation: play it back, copy it or delete it. **Keep recordings** sets how long audio is kept (default 24 hours).
+**Dictations** lists every one: play it back, copy it or delete it. **Settings** has the rest, such as how long recordings are kept (default 24 hours).
 
-![Floating icon: idle, recording, transcribing](docs/icon-states.png)
+![The capsule: idle, dictating, working, transcribing a call](docs/capsule-states.png)
 
-| Style picker (tap Alt while dictating) | History |
+| Style picker (tap Alt while dictating) | Still transcribing |
 |---|---|
-| ![Style picker](docs/picker.png) | ![History](docs/history.png) |
+| ![Style picker](docs/picker.png) | ![Still transcribing](docs/reminder.png) |
 
-![Refinement styles](docs/styles.png)
+![Dictations](docs/dictations.png)
 
 ![Transcripts](docs/transcripts.png)
+
+![Settings](docs/settings.png)
+
+How it's designed, and the rules for changing it: [docs/design/DESIGN.md](docs/design/DESIGN.md).
 
 ## Checking that it's local only
 Don't take our word for it. On Linux, after setup, run:
@@ -107,19 +111,21 @@ Hold **Ctrl+Win**. The GPU model is used on NVIDIA cards with enough free memory
 2. `./setup-mac.sh` (installs Python 3.14 and GTK 3 with Homebrew).
 3. `.venv/bin/python dictate.py`
 
-Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can't make one), so use the floating icon's menu. **Run at startup** adds a LaunchAgent (`~/Library/LaunchAgents/local.dictate.plist`). macOS will ask for Microphone, Input Monitoring (hotkey) and Accessibility (paste) permissions for the app you launch it from; restart Dictate after granting them. Screen Recording is optional and lets per-app styles see window titles. Macs with 16 GB of RAM or more use the 9B model on the GPU (Metal).
+Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can't make one), so use the capsule's menu. **Run at startup** adds a LaunchAgent (`~/Library/LaunchAgents/local.dictate.plist`). macOS will ask for Microphone, Input Monitoring (hotkey) and Accessibility (paste) permissions for the app you launch it from; restart Dictate after granting them. Screen Recording is optional and lets per-app styles see window titles. Macs with 16 GB of RAM or more use the 9B model on the GPU (Metal).
 
 ## Code
 - `dictate.py` starts the app; the app is the `dictate/` package (each module explains itself at the top):
-  `app.py` (icon, menu, dictation pipeline), `osio.py` (hotkey, recording, pasting per OS), `stt.py` (speech to
-  text), `refine.py` (cleanup and styles), `dialogs.py` (windows), `transcript.py`, `voices.py`, `echo.py` and
-  `topics.py` (transcribe mode), `remote.py` (another computer has the keyboard), `tray.py`, `activewin.py`.
+  `app.py` (menu, dictation pipeline), `capsule.py`, `hub.py` and `transcripts_page.py` (the Dictate window),
+  `huds.py` (picker, reminders, dialogs), `design.py` (the design system), `osio.py` (hotkey, recording, pasting
+  per OS), `stt.py` (speech to text), `refine.py` (cleanup and styles), `transcript.py`, `voices.py`, `echo.py`
+  and `topics.py` (transcribe mode), `remote.py` (another computer has the keyboard), `tray.py`, `activewin.py`.
 - `scripts/`: `fetch.py` (downloads, used by setup), `test.py` (the tests: see [docs/TESTING.md](docs/TESTING.md)),
-  `prove_local.py`, `bench.py` (compares refinement models), `bench_voices.py` (telling voices apart).
+  `prove_local.py`, `bench.py` (compares refinement models), `bench_voices.py` (telling voices apart),
+  `bench_topics.py` (topics on saved transcripts).
 - `docs/make_screenshots.py`: regenerates the screenshots.
 
 ## Data
-`data/` (not in git; `DICTATE_DATA` moves it): `history.jsonl`, recordings in `audio/` and `transcripts/`,
+`data/` (not in git; `DICTATE_DATA` moves it): `dictations.jsonl`, recordings in `audio/` and `transcripts/`,
 `styles.json`, `vocab.txt` and `state.json`. Logs go to `journalctl --user` when started from the desktop.
 
 ## License

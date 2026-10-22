@@ -136,8 +136,9 @@ class Dictate:
     def click(self, label, window=None, nth=0):
         self.send("click", label=label, window_title=window, nth=nth)
 
-    def history(self):
-        path = self.data / "history.jsonl"
+    def dictations(self):
+        """What's been kept of each dictation (data/dictations.jsonl), oldest first."""
+        path = self.data / "dictations.jsonl"
         return [json.loads(l) for l in path.read_text().splitlines()] if path.exists() else []
 
     def focus(self, cls, title, switched=True):

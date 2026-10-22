@@ -33,7 +33,6 @@ ECHO = 0.6  # share of a stretch's words also heard through the speakers at the 
 STAMP = "%Y-%m-%d %H.%M.%S"  # a transcript's file name: when it started
 LASTED = re.compile(r"^Lasted (.+), until \d\d:\d\d\.$", re.M)
 PARAGRAPH = re.compile(r"^\*\*(\d\d:\d\d:\d\d) (.+?):\*\* (.*)$", re.M)
-TOPICS = re.compile(r"^## Topics\n.*?(?=^## Transcript\n)## Transcript\n\n?", re.M | re.S)
 
 
 def length(seconds):
@@ -74,35 +73,6 @@ def topics_markdown(found, people):
     lines = "".join(f"- **{t['title']}**" + (f" ({', '.join(who)})" if who else "") + f": {' '.join(t['points'])}\n"
                     for t, who in zip(found.topics, people))
     return f"\n## Topics\n\n{lines}\n## Transcript\n"
-
-
-def save_topics(path, found):
-    """Save topics found for an already saved transcript (one recorded before topics)."""
-    text = TOPICS.sub("", path.read_text())
-    head, sep, rest = text.partition("\n\n**")
-    people = found.people(numbered(PARAGRAPH.findall(text)))
-    path.write_text(head + "\n" + topics_markdown(found, people) + sep[1:] + rest if sep else text)
-    topics_file(path).write_text(json.dumps(found.data()))
-
-
-def find_topics(path, on_progress=lambda: None):
-    """Find the topics of a saved transcript, in the stretches they'd have been found while it was heard.
-    Slow (a model request per few minutes of it): run it off the GTK thread. Returns the Topics."""
-    paragraphs, found = PARAGRAPH.findall(path.read_text()), topics.Topics()
-    lines = numbered(paragraphs)
-    seconds = lambda clock: sum(int(x) * f for x, f in zip(clock.split(":"), (3600, 60, 1)))
-    i = 0
-    while i < len(paragraphs):
-        j, first = i, seconds(paragraphs[i][0])
-        while j < len(paragraphs) and ((seconds(paragraphs[j][0]) - first) % 86400 < topics.MOST or j == i):
-            j += 1
-        found.update(lines[i:j], lines[:i])
-        found.small = found.small or refine.mode() == "cpu"
-        on_progress()
-        i = j
-    if refine.mode() == "gpu":
-        found.merge()
-    return found
 
 
 def voiceprints(path):
@@ -146,23 +116,9 @@ def read(path):
         started, text, changed = datetime.strptime(path.stem, STAMP), path.read_text(), path.stat().st_mtime
     except (ValueError, OSError):
         return None
-    paragraphs = PARAGRAPH.findall(text)
     lasted = LASTED.search(text)
-    if lasted:
-        took = lasted[1]
-    else:  # saved before transcripts said how long they lasted: the longest recording, else the last paragraph
-        import soundfile
-        seconds = 0.0
-        for rec in recordings(path):
-            try:
-                seconds = max(seconds, soundfile.info(str(rec)).duration)
-            except RuntimeError:
-                pass
-        if not seconds and paragraphs:
-            last = datetime.combine(started.date(), datetime.strptime(paragraphs[-1][0], "%H:%M:%S").time())
-            seconds = (last - started).total_seconds() % 86400
-        took = length(seconds)
-    return {"path": path, "started": started, "length": took, "paragraphs": paragraphs, "changed": changed}
+    return {"path": path, "started": started, "length": lasted[1] if lasted else "", "paragraphs": PARAGRAPH.findall(text),
+            "changed": changed}
 
 
 def saved():

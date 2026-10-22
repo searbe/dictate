@@ -1,7 +1,6 @@
 """Topics: while a conversation is transcribed, its topics are listed beside it in the Transcripts window, each
 in its own colour, with who brought it up and who else spoke on it, the one being talked about now marked; the
-transcript shows each topic's name where the conversation turns to it. They're saved with the transcript, and
-can be found for one saved before there were topics. The model finds them (here, its stand-in: see
+transcript shows each topic's name where the conversation turns to it. They're saved with the transcript. The model finds them (here, its stand-in: see
 harness/fake_llama.py), in JSON: each topic with the numbers of the lines about it."""
 import json, time
 from conftest import needs_session
@@ -112,37 +111,6 @@ def test_what_was_said_last_is_sorted_into_topics_when_it_is_stopped(start, mode
     eventually(lambda: "**The budget**" in (app.transcript_file() or ""))
 
 
-MONDAY = """# Transcript, Monday 19 October 2026, 10:00
-
-Lasted 27 min, until 10:27.
-
-**10:00:05 Speaker 1:** Shall we start with the roadmap?
-
-**10:00:09 Me:** Yes, the roadmap first.
-"""
-
-
-def test_topics_can_be_found_for_a_transcript_saved_before_there_were_topics(start, model):
-    model.rules(answer("roadmap", ("The roadmap", "Agreed to start with it.", [1, 2])))
-    app = start(styles=[])
-    folder = app.data / "transcripts"
-    folder.mkdir()
-    (folder / "2026-10-19 10.00.00.md").write_text(MONDAY)
-    app.send("menu", path=["Transcripts"])
-    app.wait_window("Transcripts")
-    assert "Recorded before topics were found." in app.read("Transcripts")
-
-    app.click("Find topics", "Transcripts")
-
-    eventually(lambda: "Speaker 1 brought it up · with Me" in app.read("Transcripts"))
-    assert "● The roadmap" in app.transcript()
-    saved = (folder / "2026-10-19 10.00.00.md").read_text()
-    assert saved.startswith("# Transcript, Monday 19 October 2026, 10:00\n\nLasted 27 min, until 10:27.\n\n## Topics\n\n"
-                            "- **The roadmap** (Speaker 1, Me): Agreed to start with it.\n\n## Transcript\n\n"
-                            "**10:00:05 Speaker 1:** Shall we start with the roadmap?")
-    assert "Find topics" not in app.read("Transcripts")
-
-
 def test_when_the_model_fails_the_transcript_carries_on_without_topics(start, model):
     app = recording(start, model, {"prompt": TOPICS, "op": "error"})
 
@@ -189,7 +157,8 @@ def test_it_switches_to_the_better_model_once_the_graphics_card_is_free(start, m
     app.send("gpu", state="free")
 
     eventually(lambda: BUSY not in app.read("Transcripts"))
-    assert len(model.starts()) == 2 and "Vulkan0" in model.starts()[-1]["args"]  # loaded again, on the GPU
+    eventually(lambda: len(model.starts()) == 2)  # loaded again (it says so a moment after the old one stops)
+    assert "Vulkan0" in model.starts()[-1]["args"]  # on the GPU
     app.hear("Shall we look at the budget?")
     eventually(lambda: "The budget" in app.read("Transcripts"))  # and topics carry on
 

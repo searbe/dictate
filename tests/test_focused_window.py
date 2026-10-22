@@ -57,8 +57,8 @@ def test_dictating_into_a_window_uses_the_style_for_its_title(start, windows):
 
     app.dictate("dear sir")
 
-    assert app.history()[-1]["style"] == "Mail"
-    assert app.history()[-1]["title"] == "Inbox - me@gmail.com - Gmail — Mozilla Firefox"
+    assert app.dictations()[-1]["style"] == "Mail"
+    assert app.dictations()[-1]["title"] == "Inbox - me@gmail.com - Gmail — Mozilla Firefox"
 
 
 def test_switching_browser_tab_changes_the_style_without_refocusing(start, windows):
@@ -70,7 +70,7 @@ def test_switching_browser_tab_changes_the_style_without_refocusing(start, windo
     browser.retitle("WhatsApp — Mozilla Firefox")
     app.dictate("see you soon")
 
-    assert [e["style"] for e in app.history()] == ["Mail", "Chat"]
+    assert [e["style"] for e in app.dictations()] == ["Mail", "Chat"]
 
 
 def test_switching_to_another_window_switches_style(start, windows):
@@ -81,17 +81,17 @@ def test_switching_to_another_window_switches_style(start, windows):
     windows("thunderbird", "Write: Gmail draft")
     app.dictate("dear sir")
 
-    assert [e["style"] for e in app.history()] == ["Chat", "Mail"]
+    assert [e["style"] for e in app.dictations()] == ["Chat", "Mail"]
 
 
 def test_dictate_ignores_its_own_windows_when_tracking_focus(start, windows):
-    """Opening History mustn't make Dictate think the text is going into History."""
+    """Opening Dictations mustn't make Dictate think the text is going into it."""
     app = start(styles=STYLES)
     windows("firefox", "WhatsApp — Mozilla Firefox")
-    app.send("menu", path=["History"])
-    app.wait_window("History")
+    app.send("menu", path=["Dictations"])
+    app.wait_window("Dictations")
     time.sleep(0.3)
 
     app.dictate("see you soon")
 
-    assert app.history()[-1]["style"] == "Chat"
+    assert app.dictations()[-1]["style"] == "Chat"

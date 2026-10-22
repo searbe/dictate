@@ -1,7 +1,7 @@
-"""So a transcript isn't left recording by mistake: closing the Transcripts window while it's recording (the
-first time each day), or nothing being heard for a while, brings up a reminder beside the floating icon that
-it's still transcribing, with every way to stop it, Stop now and Keep going; a desktop notification if the
-icon isn't on screen."""
+"""So a transcript isn't left recording by mistake: closing the Dictate window while it's recording (the first
+time each day), or nothing being heard for a while, brings up a reminder beside the capsule that it's still
+transcribing, with every way to stop it, Stop now and Keep going; a desktop notification if the capsule isn't
+on screen."""
 import time
 from datetime import date, timedelta
 from conftest import needs_session
@@ -9,8 +9,8 @@ from harness.client import eventually
 
 pytestmark = needs_session
 REMINDER = "Still transcribing"  # the reminder's window
-WAYS = ["•  Stop, in the Transcripts window (click the icon to open it)", "•  Ctrl+Win, lift Win and press it again",
-        "•  Stop transcribing, in the icon's menu"]
+WAYS = ["•  Stop, in Transcripts (click the capsule to open it)", "•  Ctrl+Win, lift Win and press it again",
+        "•  Stop transcribing, in the capsule's menu"]
 
 
 def recording(start, **kw):
@@ -36,10 +36,10 @@ def test_closing_the_window_while_recording_says_it_carries_on_and_how_to_stop_i
 
     app.wait_window(REMINDER)
     texts = app.read(REMINDER)
-    assert "⚠  Still transcribing" in texts
+    assert "Still transcribing" in texts
     assert "Closing the window doesn't stop it: everything said through this computer's speakers and microphone " \
            "is still being written down." in texts
-    assert "The blue ring around Dictate's icon means it's transcribing. Click the icon to see the transcript." in texts
+    assert "This capsule means it's transcribing. Click it to see the transcript." in texts
     assert all(way in texts for way in WAYS)
     assert "Stop now" in texts and "Keep going" in texts
 
@@ -124,7 +124,7 @@ def test_after_a_while_with_nothing_heard_it_says_it_is_still_transcribing(start
     app.wait_window(REMINDER)
 
     texts = app.read(REMINDER)
-    assert any(t.startswith("⚠  Nothing heard for") for t in texts)
+    assert any(t.startswith("Nothing heard for") for t in texts)
     assert all(way in texts for way in WAYS)
 
 

@@ -27,7 +27,7 @@ def test_a_real_dictation_is_transcribed_and_refined_on_this_computer(start, tmp
 
     assert SAID in cleaned["text"].lower()  # heard by the speech model
     assert SAID.upper() in shouted["text"]  # rewritten by the refinement model
-    assert [e.get("style") for e in app.history()] == [None, "Shout"]
+    assert [e.get("style") for e in app.dictations()] == [None, "Shout"]
 
 
 @pytest.mark.skipif(not shutil.which("bwrap") or not shutil.which("strace"), reason="needs bubblewrap and strace")

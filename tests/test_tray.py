@@ -74,7 +74,7 @@ def test_dictate_shows_a_tray_icon_with_the_same_menu(start, tray):
 
     assert prop(service, "Title") == "Dictate"
     _rev, layout = item_call(service, "com.canonical.dbusmenu", "GetLayout", (0, -1, ["label"]), "(iias)")
-    assert {"Refine text", "Default style", "History", "Refinement styles…", "Run at startup", "Quit"} <= set(labels(layout))
+    assert {"Open Dictate", "Refine text", "Default style", "Dictations", "Styles…", "Settings…", "Run at startup", "Quit"} <= set(labels(layout))
 
 
 def test_the_tray_icon_turns_red_while_recording(start, tray):

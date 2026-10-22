@@ -1,7 +1,8 @@
 """Dictate: hold Ctrl+Win (Ctrl+Cmd on a Mac) to record, release to transcribe and paste.
 
-The floating icon and the dictation pipeline are in app.py, the hotkey, recording and paste in osio.py,
-transcription in stt.py, clean-up / restyling in refine.py, and the other windows in dialogs.py.
+The dictation pipeline is in app.py, the capsule in capsule.py, the hotkey, recording and paste in osio.py,
+transcription in stt.py, clean-up / restyling in refine.py, the Dictate window in hub.py (and
+transcripts_page.py), its HUDs in huds.py, and how all of it looks in design.py (docs/design/DESIGN.md).
 """
 import os, sys
 from pathlib import Path

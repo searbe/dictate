@@ -106,10 +106,10 @@ def inside(live, work):
         print("\n2. Your Dictate is now running in the sandbox, with every network call recorded.\n"
               "   Dictate as you normally would (several times, with and without Alt for a style).\n"
               "   When you're done, choose Quit from Dictate's menu.\n")
-        history = Path(os.environ.get("DICTATE_DATA") or ROOT / "data") / "history.jsonl"
-        before = len(history.read_text().splitlines()) if history.exists() else 0
+        kept = Path(os.environ.get("DICTATE_DATA") or ROOT / "data") / "dictations.jsonl"
+        before = len(kept.read_text().splitlines()) if kept.exists() else 0
         ran = subprocess.run([*strace, PYTHON, str(ROOT / "dictate.py")], cwd=ROOT)
-        dictations = (len(history.read_text().splitlines()) if history.exists() else 0) - before
+        dictations = (len(kept.read_text().splitlines()) if kept.exists() else 0) - before
         worked = ran.returncode == 0 and dictations > 0
         print(f"   Dictate exited ({'normally' if ran.returncode == 0 else f'code {ran.returncode}'}) "
               f"after {dictations} dictation{'s' * (dictations != 1)}.")

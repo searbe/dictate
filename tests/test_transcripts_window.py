@@ -1,7 +1,6 @@
-"""The Transcripts window: every saved transcript in a list (when, how long, how it starts), the selected one
-shown beside it, with Copy all, Open file, Delete and Open folder."""
-import numpy as np
-import soundfile
+"""Transcripts, in the Dictate window: every saved transcript in a list (when, how long, how it starts), the
+selected one shown beside it, with Copy all, Open file and Delete (icon buttons, found by their tooltips), and
+Open folder."""
 from conftest import needs_session
 from harness.client import eventually
 
@@ -114,7 +113,7 @@ def test_delete_asks_then_deletes_the_transcript_and_its_recordings(start):
     app.click("Delete")
 
     eventually(lambda: not list(folder.iterdir()))
-    assert "No transcripts yet. To start one, hold Ctrl+Win, lift Win and press it again." in shown(app)
+    assert {"No transcripts yet", "To start one, hold Ctrl+Win, lift Win and press it again."} <= set(app.read("Transcripts"))
 
 
 def test_cancelling_delete_keeps_it(start):
@@ -128,24 +127,10 @@ def test_cancelling_delete_keeps_it(start):
     assert (app.data / "transcripts/2026-10-19 10.00.00.md").exists()
 
 
-def test_older_transcripts_take_their_length_from_their_recording(start):
-    """Transcripts saved before they said how long they lasted."""
-    app = start(styles=[])
-    old = "\n".join(l for l in MONDAY.splitlines() if not l.startswith("Lasted")) + "\n"
-    path = saved(app, "2026-10-19 10.00.00", old)
-    soundfile.write(str(path.with_name("2026-10-19 10.00.00 them.ogg")), np.zeros(16000 * 125, np.int16), 16000,
-                    format="OGG", subtype="OPUS")
-
-    app.send("menu", path=["Transcripts"])
-    app.wait_window("Transcripts")
-
-    assert "2 min" in app.read("Transcripts")
-
-
 def test_with_no_transcripts_it_says_how_to_make_one(start):
     app = opened(start)
 
-    assert "No transcripts yet. To start one, hold Ctrl+Win, lift Win and press it again." in shown(app)
+    assert {"No transcripts yet", "To start one, hold Ctrl+Win, lift Win and press it again."} <= set(app.read("Transcripts"))
     assert "Open folder" in app.read("Transcripts")
     assert "Delete" not in app.read("Transcripts")
 

@@ -186,19 +186,24 @@ def shown(widget):
 
 
 def texts(root):
+    """What can be read: labels, entries' text, and icon buttons' tooltips (what hovering one says)."""
     out = []
     for w in descendants(root):
         if isinstance(w, Gtk.Label) and shown(w) and w.get_text():
             out.append(w.get_text())
         elif isinstance(w, Gtk.Entry) and shown(w) and w.get_text():
             out.append(w.get_text())
+        elif isinstance(w, Gtk.Button) and shown(w) and w.get_tooltip_text() and not any(
+                isinstance(k, Gtk.Label) for k in descendants(w)):
+            out.append(w.get_tooltip_text())
     return out
 
 
 def labelled(root, kind, label):
-    """Shown widgets of kind whose own text, or any text inside them, is label."""
+    """Shown widgets of kind whose own text, tooltip, or any text inside them, is label."""
     return [w for w in descendants(root) if isinstance(w, kind) and shown(w) and
-            ((hasattr(w, "get_label") and w.get_label() == label) or label in texts(w))]
+            ((hasattr(w, "get_label") and w.get_label() == label) or w.get_tooltip_text() == label
+             or label in texts(w))]
 
 
 def field(root, name):
@@ -209,6 +214,8 @@ def field(root, name):
     for w in descendants(root):
         if isinstance(w, Gtk.Entry) and shown(w) and w.get_placeholder_text() == name:
             return w
+        if getattr(w, "label", None) == name and shown(w):  # design.field: the label above its input
+            return next(k for k in descendants(w) if isinstance(k, (Gtk.Entry, Gtk.TextView)))
         if isinstance(w, Gtk.Grid):
             for kid in w.get_children():
                 if isinstance(kid, Gtk.Label) and kid.get_text() == name:
@@ -333,7 +340,14 @@ def cmd_click_icon():
 
 
 def cmd_click(label, window_title=None, nth=0):
-    labelled(window(window_title), Gtk.Button, label)[nth].clicked()
+    """Click the button with this label (or tooltip); or flip the switch of the setting with this title."""
+    buttons = labelled(window(window_title), Gtk.Button, label)
+    if buttons:
+        return buttons[nth].clicked()
+    rows = [w for w in descendants(window(window_title)) if isinstance(w, Gtk.Box) and shown(w)
+            and label in texts(w) and any(isinstance(k, Gtk.Switch) for k in descendants(w))]
+    switch = next(k for k in descendants(rows[-1]) if isinstance(k, Gtk.Switch))
+    switch.set_active(not switch.get_active())
 
 
 def cmd_fill(name, text, window_title=None):
@@ -354,8 +368,13 @@ def cmd_select(row, window_title=None):
     lb.select_row(labelled(lb, Gtk.ListBoxRow, row)[0])
 
 
-def cmd_choose(option, window_title=None):
-    combo = next(w for w in descendants(window(window_title)) if isinstance(w, Gtk.ComboBoxText) and shown(w))
+def cmd_choose(option, window_title=None, setting=None):
+    """Choose option in the dropdown (of the setting with this title, if there are several)."""
+    root = window(window_title)
+    if setting:
+        root = [w for w in descendants(root) if isinstance(w, Gtk.Box) and shown(w) and setting in texts(w)
+                and any(isinstance(k, Gtk.ComboBoxText) for k in descendants(w))][-1]
+    combo = next(w for w in descendants(root) if isinstance(w, Gtk.ComboBoxText) and shown(w))
     model = [r[0] for r in combo.get_model()]
     combo.set_active(model.index(option))
 

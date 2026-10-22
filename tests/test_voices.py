@@ -52,12 +52,17 @@ def again(app):
 
 
 def remember_voices(app):
-    """Tick (or untick) Remember voices I name, in the Voices window."""
+    """Turn Remember voices I name on (or off), on the Voices page."""
+    open_voices(app)
+    app.click("Remember voices I name", "Voices")
+
+
+def open_voices(app):
+    """The Voices page, from the Dictate window's sidebar."""
     app.send("menu", path=["Transcripts"])
     app.wait_window("Transcripts")
-    app.click("Voices…", "Transcripts")
+    app.send("select", row="Voices", window_title="Transcripts")
     app.wait_window("Voices")
-    app.click("Remember voices I name", "Voices")
 
 
 def test_each_voice_through_the_speakers_is_a_different_speaker(start):
@@ -177,18 +182,14 @@ def test_the_voices_window_lists_remembered_voices_and_can_forget_one(start):
     eventually(lambda: "Hello." in shown(app))
     name(app, "Speaker 1", "Sarah")
     stop(app)
-    app.send("menu", path=["Transcripts"])
-    app.wait_window("Transcripts")
-    app.click("Voices…", "Transcripts")
-    app.wait_window("Voices")
+    open_voices(app)
     assert "Sarah" in app.read("Voices")
 
     app.click("Forget", "Voices")
 
     eventually(lambda: "Sarah" not in app.read("Voices"))
-    app.send("close", window_title="Voices")
-    app.send("close", window_title="Transcripts")
-    eventually(lambda: "Transcripts" not in app.send("windows")["titles"])
+    app.send("close", window_title="Voices")  # (the Dictate window, on its Voices page)
+    eventually(lambda: "Voices" not in app.send("windows")["titles"])
     again(app)
     app.hear("Hello again.", voice="alice", length=LONG)
     eventually(lambda: "Speaker 1  Hello again." in shown(app))
@@ -222,4 +223,4 @@ def test_without_the_voice_model_everyone_through_the_speakers_is_them(start):
     app.hear("Hi.", voice="bob", length=LONG)
 
     eventually(lambda: "Them  Hello. Hi." in shown(app))
-    assert "Voices…" not in app.read("Transcripts")
+    assert "Voices" not in app.read("Transcripts")  # no page for them

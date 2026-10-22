@@ -20,7 +20,7 @@ TRICKY = [  # known-hard cases, always included
 
 
 def recent(n):
-    path = DATA / "history.jsonl"
+    path = DATA / "dictations.jsonl"
     raws = [json.loads(l).get("raw") or json.loads(l)["text"] for l in path.read_text().splitlines()] if path.exists() else []
     return list(dict.fromkeys(reversed(raws)))[:n]
 

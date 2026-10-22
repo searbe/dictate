@@ -171,11 +171,7 @@ Output: I ran the build on my laptop and it gave me something that doesn't look 
 def load_styles():
     """{"cleanup": prompt, "styles": [{"name", "key", "prompt"}, ...]}, created with defaults on first use."""
     if not STYLES.exists():
-        old = DATA / "styles/default.txt"  # earlier single-style version
-        save_styles({"cleanup": old.read_text() if old.exists() else CLEANUP, "styles": DEFAULT_STYLES})
-        if old.exists():
-            old.unlink()
-            old.parent.rmdir()
+        save_styles({"cleanup": CLEANUP, "styles": DEFAULT_STYLES})
     return json.loads(STYLES.read_text())
 
 

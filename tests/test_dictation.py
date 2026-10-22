@@ -31,7 +31,7 @@ def test_each_dictation_is_kept_in_history_with_what_was_done_to_it(start, model
 
     app.dictate("uh hello there")
 
-    [entry] = app.history()
+    [entry] = app.dictations()
     assert entry["text"] == "hello there!" and entry["raw"] == "uh hello there"
     assert entry["style"] == "Chat" and entry["cleanup"] is True
     assert entry["app"] == "Slack" and entry["title"] == "general - Acme - Slack"
@@ -42,7 +42,7 @@ def test_saying_nothing_pastes_nothing_and_leaves_no_trace(start):
     app = start(styles=[])
 
     assert app.dictate(None) is None
-    assert app.history() == []
+    assert app.dictations() == []
     assert list((app.data / "audio").glob("*.wav")) == []
 
 
@@ -52,7 +52,7 @@ def test_with_refinement_off_the_raw_transcript_is_pasted_without_asking_the_mod
 
     assert app.dictate("um raw words")["text"] == "um raw words"
     assert model.requests() == []
-    assert app.history()[0]["cleanup"] is False
+    assert app.dictations()[0]["cleanup"] is False
 
 
 def test_turning_refinement_off_from_the_menu_takes_effect_and_is_remembered(start, model):
@@ -72,7 +72,7 @@ def test_recordings_are_not_kept_when_set_to_dont_keep(start):
 
     app.dictate("hello")
 
-    assert "audio" not in app.history()[0]
+    assert "audio" not in app.dictations()[0]
     assert list((app.data / "audio").glob("*.wav")) == []
 
 
@@ -138,7 +138,7 @@ def test_another_key_with_ctrl_win_is_another_apps_shortcut_and_drops_the_record
     app.wait_for("icon", after=mark, state="idle")
     time.sleep(0.8)
     assert not app.happened("pasted", after=mark) and not app.happened("typed", after=mark)
-    assert app.history() == []
+    assert app.dictations() == []
     assert list((app.data / "audio").glob("*.wav")) == []  # the recording isn't kept either
 
 

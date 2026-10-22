@@ -1,8 +1,9 @@
-"""The floating icon (drag to move, right-click for menu), drawn with GTK3, and the dictation pipeline:
-record → transcribe → cleanup → style → paste or type. Started by dictate.py, after dictate.bootstrap().
-Ctrl+Win, lift Win, Win again starts or stops transcribe mode (transcript.py). So it isn't left running by
-mistake, closing the Transcripts window while it is (the first time each day), or nothing being heard for
-QUIET seconds, brings up a reminder beside the icon (a desktop notification if the icon isn't on screen).
+"""The capsule (capsule.py: drag to move, right-click for the menu, click while transcribing to see the
+transcript), the Dictate window (hub.py), and the dictation pipeline: record → transcribe → cleanup → style →
+paste or type. Started by dictate.py, after dictate.bootstrap(). Ctrl+Win, lift Win, Win again starts or stops
+transcribe mode (transcript.py). So it isn't left running by mistake, closing the Dictate window while it is (the
+first time each day), or nothing being heard for QUIET seconds, brings up a reminder beside the capsule (a desktop
+notification if the capsule isn't on screen). How it all looks: docs/design/DESIGN.md.
 """
 import json, math, os, signal, socket, sys, threading, time
 from datetime import datetime
@@ -10,26 +11,20 @@ from pathlib import Path
 import cairo, gi
 gi.require_version("Gtk", "3.0")
 from gi.repository import Gtk, Gdk, GLib
-from . import DATA, activewin, dialogs, osio, refine, remote, stt, transcript, tray
+from . import DATA, activewin, capsule, design, huds, hub, osio, refine, remote, stt, transcript, tray
 
-HISTORY = DATA / "history.jsonl"
+DICTATIONS = DATA / "dictations.jsonl"  # every dictation, a JSON line each
 AUDIO = DATA / "audio"  # each dictation's recording, kept for playback for "keep_audio_hours"
 KEEP_AUDIO = ((0, "Don't keep"), (1, "1 hour"), (2, "2 hours"), (3, "3 hours"), (12, "12 hours"), (24, "24 hours"),
               (None, "Forever (∞)"))  # hours; None = never delete
 STATE = DATA / "state.json"
-SIZE, R = 52, 17  # window size, icon radius (margin leaves room for the pulse ring)
 REMOTE_MODES = (("type", "Type the text there"), ("ignore", "Ignore the hotkey"))
 SAME = "same"  # remote default style: same as here
 QUIET = 600  # seconds with nothing added to a transcript before reminding that it's still being recorded
 QUIET_CHECK = 30  # seconds between checks (and updates of the tray icon's tooltip)
 OTHER_COMPUTER = {"cls": "", "title": "", "remote": True}  # where text goes when Synergy has the keyboard
 TERMINALS = ("konsole", "terminal", "kitty", "alacritty", "wezterm", "foot", "ghostty", "yakuake")  # Linux paste
-ACCENT = (0.49, 0.55, 1.0)
-BODY = {  # (top, bottom) gradient colours per state
-    "idle": ((0.20, 0.21, 0.24), (0.11, 0.12, 0.14)),
-    "rec": ((1.0, 0.39, 0.36), (0.85, 0.20, 0.22)),
-    "busy": ((0.20, 0.21, 0.24), (0.11, 0.12, 0.14)),
-}
+
 def log(msg):
     """Timestamped, flushed at once (stdout is buffered when launched from the desktop): see journalctl."""
     print(f"{datetime.now():%H:%M:%S.%f}"[:-3], msg, flush=True)
@@ -43,25 +38,21 @@ def load_json(path, default):
 
 
 class App:
-    KEEP_AUDIO = KEEP_AUDIO
+    KEEP_AUDIO, DICTATIONS, AUDIO, REMOTE_MODES, SAME = KEEP_AUDIO, DICTATIONS, AUDIO, REMOTE_MODES, SAME
     TRANSCRIBE = "Transcribe this computer"
 
     def __init__(self):
         DATA.mkdir(parents=True, exist_ok=True)
-        dialogs.install_css()
+        design.install()
 
-        w = self.win = Gtk.Window(type_hint=Gdk.WindowTypeHint.UTILITY, decorated=False,
-                                  skip_taskbar_hint=True, skip_pager_hint=True, app_paintable=True)
-        w.set_visual(w.get_screen().get_rgba_visual())  # per-pixel transparency → round icon
-        w.set_keep_above(True)
-        w.set_default_size(SIZE, SIZE)
+        self.capsule = capsule.Capsule()
+        w = self.win = self.capsule.win
         self.cfg = {"pos": [100, 100], "refine": True, "remote_mode": "type", "keep_audio_hours": 24,
                     **load_json(STATE, {})}
-        self.cfg.pop("remote_guard", None)  # setting from an older version
         w.move(*self.cfg["pos"])
+        self.capsule.anchor = self.cfg.get("anchor", "left")
         w.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK | Gdk.EventMask.POINTER_MOTION_MASK
                      | Gdk.EventMask.ENTER_NOTIFY_MASK | Gdk.EventMask.LEAVE_NOTIFY_MASK)
-        w.connect("draw", self.draw)
         w.connect("button-press-event", self.on_click)
         w.connect("motion-notify-event", self.on_motion)
         w.connect("button-release-event", self.on_release)
@@ -75,14 +66,19 @@ class App:
                 GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, lambda sig=sig: self.quit(f"got {sig.name}"))
 
         self.menu = Gtk.Menu()
-        toggle = Gtk.CheckMenuItem(label="Refine text", active=self.cfg["refine"])
-        toggle.connect("toggled", lambda t: self.save_state(refine=t.get_active()))
-        self.menu.append(toggle)
+        home = Gtk.MenuItem(label="Open Dictate")
+        home.connect("activate", lambda _: self.open_hub("dictations"))
+        self.menu.append(home)
+        self.menu.append(Gtk.SeparatorMenuItem())
+        self.refine_item = Gtk.CheckMenuItem(label="Refine text", active=self.cfg["refine"])
+        self.refine_item.connect("toggled", lambda t: self.save_state(refine=t.get_active()))
+        self.menu.append(self.refine_item)
         default = Gtk.MenuItem(label="Default style")
         self.default_menu = Gtk.Menu()
         default.set_submenu(self.default_menu)
         self.menu.append(default)
-        for label, cb in (("History", self.show_history), ("Refinement styles…", dialogs.StyleManager), (None, None)):
+        for label, cb in (("Dictations", self.show_dictations), ("Styles…", lambda: self.open_hub("styles")),
+                          ("Settings…", lambda: self.open_hub("settings")), (None, None)):
             item = Gtk.MenuItem(label=label) if label else Gtk.SeparatorMenuItem()
             if cb:
                 item.connect("activate", lambda _, cb=cb: cb())
@@ -95,10 +91,11 @@ class App:
             for item in (self.transcribe_item, browse, Gtk.SeparatorMenuItem()):
                 self.menu.append(item)
         away = Gtk.MenuItem(label="When another computer has the keyboard")  # e.g. through Synergy
-        away_menu, group = Gtk.Menu(), None
+        away_menu, group, self.remote_items = Gtk.Menu(), None, []
         for mode, label in REMOTE_MODES:
             item = Gtk.RadioMenuItem(label=label, group=group, active=mode == self.cfg["remote_mode"])
             group = group or item
+            self.remote_items.append(item)
             away_menu.append(item)
         for item, (mode, _) in zip(away_menu.get_children(), REMOTE_MODES):  # connected after ticking,
             item.connect("toggled", lambda i, m=mode: i.get_active() and self.save_state(remote_mode=m))  # so setup isn't saved
@@ -109,21 +106,20 @@ class App:
         away_menu.append(remote_style)
         away.set_submenu(away_menu)
         self.menu.append(away)
-        startup = Gtk.CheckMenuItem(label="Run at startup", active=osio.autostart_enabled())
-        startup.connect("toggled", lambda t: osio.set_autostart(t.get_active()))
-        self.menu.append(startup)
+        self.startup_item = Gtk.CheckMenuItem(label="Run at startup", active=osio.autostart_enabled())
+        self.startup_item.connect("toggled", lambda t: osio.set_autostart(t.get_active()))
+        self.menu.append(self.startup_item)
         quit_item = Gtk.MenuItem(label="Quit")
         quit_item.connect("activate", lambda _: self.quit("Quit chosen from the menu"))
         self.menu.append(quit_item)
         self.menu.show_all()
         self.build_default_menu()
 
-        self.state, self.hovered, self.rec, self.wav, self.anim, self.save_id = "idle", False, None, None, None, None
+        self.state, self.rec, self.wav, self.save_id, self.since = "idle", None, None, None, None
         self.session = self.cancelled = None  # transcribe mode; a dictation to drop
-        self.transcripts_win = None  # the Transcripts window, while open
+        self.hub = None  # the Dictate window, while open
         self.reminder = None  # the reminder that a transcript is still being recorded, while it's shown
         self.reminded_quiet = False  # about this stretch of quiet already
-        self.t0 = time.monotonic()
         self.tray = tray.Tray(self.menu, self.render_icon, self.build_default_menu, self.status)  # same menu in the tray
         self.clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         self.app = activewin.snapshot()
@@ -138,20 +134,21 @@ class App:
         self.loader = threading.Thread(target=stt.load, daemon=True)  # warm up so first dictation is fast
         self.loader.start()
         self.paster = osio.Paster()  # created after Hotkey so we don't listen to ourselves
-        # plays recordings back in the History window; not to be transcribed off the speakers
+        # plays recordings back in Dictations; not to be transcribed off the speakers
         self.player = osio.Player(lambda playing: self.session and self.session.mute("them", playing))
         self.prune_audio()
         GLib.timeout_add_seconds(600, self.prune_audio)  # and every 10 minutes
         w.show_all()
 
-    # --- icon ---
+    # --- the capsule ---
     def set_state(self, s):
         self.state = s
-        if s != "idle" and not self.anim:
-            self.anim = GLib.timeout_add(16, lambda: self.win.queue_draw() or self.state != "idle")
-        if s == "idle":
-            self.anim = None
-        self.win.queue_draw()
+        self.show_state()
+
+    def show_state(self):
+        """Tell the capsule and the tray what's happening."""
+        level = lambda: capsule.wav_level(self.wav) if self.wav and self.rec else 0.0
+        self.capsule.update(self.state, self.session, self.since, level)
         self.tray.update()
 
     def status(self):
@@ -166,78 +163,13 @@ class App:
         return text
 
     def hover(self, on):
-        self.hovered = on
-        self.win.queue_draw()
+        self.capsule.hover(on)
 
     def render_icon(self, px):
-        """The icon in its current state as a px-by-px image (for the system tray)."""
+        """The tray icon in the current state, px by px."""
         surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, px, px)
-        cr = cairo.Context(surface)
-        cr.scale(px / SIZE, px / SIZE)
-        self.draw(None, cr)
+        capsule.draw_tray(cairo.Context(surface), px, self.state, self.session)
         return surface
-
-    def draw(self, _, cr):
-        cr.set_operator(cairo.OPERATOR_SOURCE)
-        cr.set_source_rgba(0, 0, 0, 0)
-        cr.paint()
-        cr.set_operator(cairo.OPERATOR_OVER)
-        c, t = SIZE / 2, time.monotonic() - self.t0
-
-        if self.state == "rec":  # expanding pulse rings
-            for k in (0, 0.5):
-                p = (t * 0.9 + k) % 1
-                cr.arc(c, c, R + p * (SIZE / 2 - R - 1), 0, 2 * math.pi)
-                cr.set_source_rgba(1, 0.35, 0.33, 0.45 * (1 - p))
-                cr.set_line_width(2)
-                cr.stroke()
-
-        for i in range(4):  # soft drop shadow
-            cr.arc(c, c + 1.5, R + 3 - i, 0, 2 * math.pi)
-            cr.set_source_rgba(0, 0, 0, 0.07)
-            cr.fill()
-
-        top, bot = BODY[self.state]
-        lift = 0.05 if self.hovered and self.state == "idle" else 0
-        g = cairo.LinearGradient(0, c - R, 0, c + R)
-        g.add_color_stop_rgb(0, *(v + lift for v in top))
-        g.add_color_stop_rgb(1, *(v + lift for v in bot))
-        cr.arc(c, c, R, 0, 2 * math.pi)
-        cr.set_source(g)
-        cr.fill_preserve()
-        cr.set_source_rgba(1, 1, 1, 0.14)
-        cr.set_line_width(1)
-        cr.stroke()
-
-        if self.session:  # transcribe mode: a ring around the icon, grey while paused
-            cr.arc(c, c, R + 2.5, 0, 2 * math.pi)
-            cr.set_source_rgba(*((0.55, 0.57, 0.62) if self.session.paused else ACCENT), 0.95)
-            cr.set_line_width(2.2)
-            cr.stroke()
-
-        if self.state == "busy":  # spinner arc
-            a = t * 5
-            cr.arc(c, c, R - 3, a, a + 1.6 * math.pi / 2)
-            cr.set_source_rgb(*ACCENT)
-            cr.set_line_width(2.2)
-            cr.set_line_cap(cairo.LINE_CAP_ROUND)
-            cr.stroke()
-
-        # microphone glyph
-        cr.set_source_rgba(1, 1, 1, 0.95 if self.state != "idle" else 0.85)
-        cr.set_line_cap(cairo.LINE_CAP_ROUND)
-        w, h, top_y = 6, 10, c - 8
-        cr.new_sub_path()
-        cr.arc(c, top_y + w / 2, w / 2, math.pi, 0)
-        cr.arc(c, top_y + h - w / 2, w / 2, 0, math.pi)
-        cr.close_path()
-        cr.fill()
-        cr.set_line_width(1.6)
-        cr.arc(c, top_y + h - w / 2, 6, 0, math.pi)
-        cr.stroke()
-        cr.move_to(c, top_y + h + 3)
-        cr.line_to(c, top_y + h + 5.5)
-        cr.stroke()
 
     # --- move / menu ---
     def on_click(self, w, ev):
@@ -264,8 +196,12 @@ class App:
         return True
 
     def build_default_menu(self):
-        """Refresh the two "default style" radio lists (here, and on the other computer).
-        Called whenever the menu opens, as styles may have changed."""
+        """Refresh the two "default style" radio lists (here, and on the other computer), and the settings'
+        ticks (they can change in Settings too). Called whenever the menu opens, as styles may have changed."""
+        for item, on in ((self.refine_item, self.cfg["refine"]), (self.startup_item, osio.autostart_enabled()),
+                         *((i, m == self.cfg["remote_mode"]) for i, (m, _) in zip(self.remote_items, REMOTE_MODES))):
+            if item.get_active() != on:
+                item.set_active(on)
         data = refine.load_styles()
         names = [s["name"] for s in data["styles"]]
         here = refine.default_style()
@@ -298,12 +234,29 @@ class App:
     def on_moved(self, *_):
         if self.save_id:
             GLib.source_remove(self.save_id)
-        self.save_id = GLib.timeout_add(500, lambda: self.save_state(pos=list(self.win.get_position())))
+        self.save_id = GLib.timeout_add(500, self.moved)
+
+    def moved(self):
+        """Settled after a move: the capsule grows away from the nearer edge; remember where it is."""
+        self.capsule.settle()
+        self.save_state(pos=list(self.win.get_position()), anchor=self.capsule.anchor)
+        return False
 
     def save_state(self, **changes):
         self.cfg.update(changes)
         STATE.write_text(json.dumps(self.cfg))
         self.save_id = None
+
+    def set_refine(self, on):
+        self.save_state(refine=on)
+        self.refine_item.set_active(on)
+
+    def autostart(self):
+        return osio.autostart_enabled()
+
+    def set_autostart(self, on):
+        if self.startup_item.get_active() != on:
+            self.startup_item.set_active(on)  # (which sets it)
 
     # --- recording pipeline ---
     def on_hotkey(self, down, alt, letter):
@@ -322,6 +275,7 @@ class App:
             self.live = stt.Live(self.wav)  # transcribes each stretch of speech as soon as you pause
             if self.session:
                 self.session.mute("me", True)  # a dictation isn't part of the conversation
+            self.since = time.time()
             self.set_state("rec")
             log(f"recording: {(time.time() - pressed) * 1000:.0f} ms after the key was pressed" if pressed else "recording")
         if down and (self.cfg["refine"] or alt):
@@ -412,7 +366,7 @@ class App:
             Path(audio).unlink(missing_ok=True)
         elif audio:
             entry["audio"] = Path(audio).name
-        with HISTORY.open("a") as f:
+        with DICTATIONS.open("a") as f:
             f.write(json.dumps(entry) + "\n")
         self.copy(text)
         if paste and app.get("remote") and remote.on_remote_screen():
@@ -436,6 +390,8 @@ class App:
     def set_keep_audio(self, hours):
         self.save_state(keep_audio_hours=hours)
         self.prune_audio()
+        if self.hub and not self.hub.closed and "dictations" in self.hub.pages:
+            self.hub.pages["dictations"].recordings_changed()  # recordings may just have gone: no Play for them
 
     def copy(self, text):
         self.clip.set_text(text, -1)
@@ -462,7 +418,7 @@ class App:
         except OSError as err:  # e.g. pw-record missing
             return log(f"transcribe mode: can't record ({err})")
         self.session, self.reminded_quiet = session, False
-        session.on_change = lambda: (self.transcripts_changed(), self.win.queue_draw(), self.tray.update())
+        session.on_change = lambda: (self.transcripts_changed(), self.show_state())
         GLib.timeout_add(int(QUIET_CHECK * 1000), self.check_quiet, session)
         self.transcribe_item.set_label("Stop transcribing")
         self.show_transcripts(focus=False)  # started from the keyboard, mid-conversation: leave focus where it is
@@ -485,21 +441,21 @@ class App:
         session.stop(saved)
         self.transcribe_item.set_label(self.TRANSCRIBE)
         self.transcripts_changed()
-        self.win.queue_draw()
-        self.tray.update()
+        self.show_state()
+
+    def open_hub(self, page, focus=True, **kw):
+        """Open the Dictate window on page (or bring it forward), passing kw to the page."""
+        if not (self.hub and not self.hub.closed):
+            self.hub = hub.Hub(self)
+            self.hub.win.connect("delete-event", lambda *_: self.transcripts_closed())
+        return self.hub.show(page, focus, **kw)
 
     def show_transcripts(self, focus=True, recording=False):
-        """Open the Transcripts window (or bring it forward); with recording, showing the one being recorded."""
-        if not (self.transcripts_win and not self.transcripts_win.closed):
-            self.transcripts_win = dialogs.TranscriptsWindow(lambda: self.session, self.stop_transcribing, focus)
-            self.transcripts_win.win.connect("delete-event", lambda *_: self.transcripts_closed())
-        elif focus:
-            self.transcripts_win.win.present()
-        if recording:
-            self.transcripts_win.show_recording()
+        """Open Transcripts; with recording, showing the one being recorded."""
+        self.open_hub("transcripts", focus, recording=recording)
 
     def transcripts_closed(self):
-        """The Transcripts window was closed: if a transcript's being recorded, say it still is, once a day."""
+        """The Dictate window was closed: if a transcript's being recorded, say it still is, once a day."""
         today = datetime.now().date().isoformat()
         if self.session and self.cfg.get("reminded_closed") != today:
             self.save_state(reminded_closed=today)
@@ -527,39 +483,38 @@ class App:
         minutes = round(QUIET / 60)
         log(f"reminding that it's still transcribing ({why})")
         if self.icon_on_screen():
-            picture = Gdk.pixbuf_get_from_surface(self.render_icon(SIZE), 0, 0, SIZE, SIZE)
-            x, y = self.win.get_position()
-            self.reminder = dialogs.StillTranscribing(why, minutes, picture, (x, y, SIZE, SIZE), self.stop_transcribing)
+            self.reminder = huds.StillTranscribing(why, minutes, self.capsule.picture(), self.capsule.rect(),
+                                                   self.stop_transcribing)
         else:
-            heading, body = dialogs.reminder_text(why, minutes)
+            heading, body = huds.reminder_text(why, minutes)
             image = Path(GLib.get_user_cache_dir()) / "dictate" / "transcribing.png"
             image.parent.mkdir(parents=True, exist_ok=True)
             self.render_icon(128).write_to_png(str(image))
-            ways = "".join(f"\n• {w}" for w in dialogs.STOP_WAYS)
-            osio.notify(f"⚠ {heading}", f"{body}\n\nA blue ring around Dictate's icon means it's transcribing. "
+            ways = "".join(f"\n• {w}" for w in huds.STOP_WAYS)
+            osio.notify(f"⚠ {heading}", f"{body}\n\nA capsule with a red dot and a timer means it's transcribing. "
                                         f"To stop it:{ways}", [("stop", "Stop now"), ("show", "Show transcript")],
                         lambda key: self.stop_transcribing() if key == "stop" else self.show_transcripts(recording=True),
                         image)
 
     def icon_on_screen(self):
-        """Whether the floating icon is shown, on one of the screens."""
+        """Whether the capsule is shown, on one of the screens."""
         if not self.win.get_mapped():
             return False
-        x, y = self.win.get_position()
+        x, y, w, h = self.capsule.dot_rect()
         display = Gdk.Display.get_default()
         for i in range(display.get_n_monitors()):
             area = display.get_monitor(i).get_geometry()
-            if area.x <= x + SIZE // 2 < area.x + area.width and area.y <= y + SIZE // 2 < area.y + area.height:
+            if area.x <= x + w // 2 < area.x + area.width and area.y <= y + h // 2 < area.y + area.height:
                 return True
         return False
 
     def transcripts_changed(self):
-        if self.transcripts_win:
-            self.transcripts_win.changed()
+        if self.hub and not self.hub.closed and "transcripts" in self.hub.pages:
+            self.hub.pages["transcripts"].changed()
 
     # --- windows ---
-    def show_history(self):
-        dialogs.history(self, HISTORY, AUDIO)
+    def show_dictations(self):
+        self.open_hub("dictations")
 
     def pick_style(self, text, raw, app, audio):
         def chosen(style, paste):
@@ -570,7 +525,7 @@ class App:
                 styled = refine.apply(text, style, activewin.describe(app))
                 GLib.idle_add(lambda: self.paste(styled, raw, app, style["name"], True, 400, audio=audio, cleanup=True))
             threading.Thread(target=restyle, daemon=True).start()
-        dialogs.StylePicker(text, chosen)
+        huds.StylePicker(text, chosen, on_new=lambda: self.open_hub("styles", new=True))
 
     def quit(self, reason):
         """Every way out goes through here, so the log says why Dictate stopped."""

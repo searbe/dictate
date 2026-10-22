@@ -38,7 +38,7 @@ def test_on_the_other_computer_the_text_is_typed_not_pasted(start, tmp_path, mod
     out = app.dictate("run the tests on the laptop")
 
     assert out == {"type": "typed", "text": "Run the tests on the laptop."}
-    assert app.history()[-1]["app"] == "other computer"
+    assert app.dictations()[-1]["app"] == "other computer"
 
 
 def test_back_on_this_computer_it_is_pasted_again(start, tmp_path):
@@ -65,7 +65,7 @@ def test_the_other_computer_has_its_own_default_style(start, tmp_path):
 
     app.dictate("run the tests")
 
-    assert app.history()[-1]["style"] == "Agent"
+    assert app.dictations()[-1]["style"] == "Agent"
 
 
 def test_by_default_the_other_computer_uses_the_same_default_style(start, tmp_path):
@@ -73,7 +73,7 @@ def test_by_default_the_other_computer_uses_the_same_default_style(start, tmp_pa
 
     app.dictate("run the tests")
 
-    assert app.history()[-1]["style"] == "Plain"
+    assert app.dictations()[-1]["style"] == "Plain"
 
 
 def test_the_hotkey_can_be_ignored_while_the_other_computer_has_the_keyboard(start, tmp_path):
@@ -87,7 +87,7 @@ def test_the_hotkey_can_be_ignored_while_the_other_computer_has_the_keyboard(sta
     app.send("keys", up=["meta", "ctrl"])
 
     assert not app.happened("recording", after=mark)
-    assert app.history() == []
+    assert app.dictations() == []
 
 
 def test_when_the_other_computer_drops_off_the_keyboard_is_back_here(start, tmp_path):

@@ -9,7 +9,7 @@ SHOUT = [{"prompt": f"STYLE:{s['name']}", "op": "upper"} for s in STYLES]  # any
 
 
 def styled_as(app):
-    return app.history()[-1].get("style")
+    return app.dictations()[-1].get("style")
 
 
 def test_the_focused_windows_title_picks_the_style(start, model):
@@ -39,7 +39,7 @@ def test_a_new_title_in_the_same_window_is_used_without_switching_windows(start)
 
     app.dictate("second")
 
-    assert [e["style"] for e in app.history()] == ["Mail", "Chat"]
+    assert [e["style"] for e in app.dictations()] == ["Mail", "Chat"]
 
 
 def test_with_no_matching_app_the_default_style_applies(start):
@@ -105,7 +105,7 @@ def test_an_alt_letter_that_is_no_styles_is_another_apps_shortcut(start):
 
     assert app.dictate("hello", alt=True, letter="z") is None
     assert "Refine" not in app.send("windows")["titles"]
-    assert app.history() == []
+    assert app.dictations() == []
 
 
 def test_enter_in_the_picker_pastes_the_cleaned_up_text_as_is(start, model):
@@ -129,7 +129,7 @@ def test_escape_in_the_picker_keeps_the_text_but_pastes_nothing(start, model):
     app.send("press", key="Escape", window_title="Refine")
 
     assert app.result(mark) is None
-    assert app.history()[-1]["text"] == "Hello, see you at the station."
+    assert app.dictations()[-1]["text"] == "Hello, see you at the station."
     assert app.send("clipboard")["text"] == "Hello, see you at the station."
 
 
