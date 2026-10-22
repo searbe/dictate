@@ -51,6 +51,7 @@ cat > dictate.desktop <<EOD
 Type=Application
 Name=Dictate
 Exec="$PWD/.venv/bin/python" "$PWD/dictate.py"
-Icon=audio-input-microphone
+Icon=$PWD/dictate/icon.png
+StartupWMClass=dictate
 EOD
 echo "Done. Run: python dictate.py"

@@ -55,7 +55,7 @@ def notify(title, body, actions=(), on_action=lambda key: None, image=None):
         hints = {"image-path": GLib.Variant("s", str(image))} if image else {}
         reply = bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
                               "org.freedesktop.Notifications", "Notify",
-                              GLib.Variant("(susssasa{sv}i)", ("Dictate", 0, "audio-input-microphone", title, body,
+                              GLib.Variant("(susssasa{sv}i)", ("Dictate", 0, str(ROOT / "dictate/icon.png"), title, body,
                                                                [x for a in actions for x in a], hints, 0)),
                               None, Gio.DBusCallFlags.NONE, 2000, None)
         _notified[reply.unpack()[0]] = on_action
@@ -450,7 +450,8 @@ if LINUX:
         if on:
             AUTOSTART.parent.mkdir(parents=True, exist_ok=True)
             AUTOSTART.write_text(f'[Desktop Entry]\nType=Application\nName=Dictate\n'
-                                 f'Exec="{sys.executable}" "{SCRIPT}"\nIcon=audio-input-microphone\n')
+                                 f'Exec="{sys.executable}" "{SCRIPT}"\nIcon={ROOT / "dictate/icon.png"}\n'
+                                 f'StartupWMClass=dictate\n')
         else:
             AUTOSTART.unlink(missing_ok=True)
 

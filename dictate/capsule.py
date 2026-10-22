@@ -246,12 +246,15 @@ class Capsule:
 
 
 def draw_tray(cr, px, state, session):
-    """The tray icon: a dot with the mic, red while recording, ringed in the accent while transcribing a call."""
-    cr.scale(px / 32, px / 32)
+    """The tray icon: the app icon while idle; a dot with the mic, red while recording, ringed in the accent while
+    transcribing a call."""
     cr.set_operator(cairo.OPERATOR_SOURCE)
     cr.set_source_rgba(0, 0, 0, 0)
     cr.paint()
     cr.set_operator(cairo.OPERATOR_OVER)
+    if state == "idle" and not session:
+        return d.draw_app_icon(cr, px)
+    cr.scale(px / 32, px / 32)
     fill = d.rgba("record") if state == "rec" else d.rgba("surface-3") if d.scheme == "dark" else d.rgba("#2a2c33")
     cr.arc(16, 16, 13, 0, 2 * math.pi)
     cr.set_source_rgba(fill.red, fill.green, fill.blue, 1)

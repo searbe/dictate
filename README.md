@@ -1,3 +1,5 @@
+<img src="dictate/icon.png" width="72" align="right" alt="">
+
 # Dictate
 
 Push-to-talk dictation that runs entirely on your own computer. Hold a hotkey and speak; when you let go, the transcribed and cleaned-up text is pasted into the app you're typing in. Built for Linux (SteamOS / KDE Plasma), and also sets up on Ubuntu 24.04+; Windows and macOS support is included but untested.

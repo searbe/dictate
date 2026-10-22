@@ -87,7 +87,7 @@ def test_the_tray_icon_turns_red_while_recording(start, tray):
     recording = redness(prop(service, "IconPixmap"))
     app.send("keys", up=["meta", "ctrl"])
 
-    assert idle < 0.01 and recording > 0.2
+    assert idle < 0.05 and recording > 0.2  # (idle: the app icon, with its small red dot)
 
 
 def test_the_tray_icons_tooltip_says_how_long_it_has_been_transcribing_and_the_topic(start, tray, model):

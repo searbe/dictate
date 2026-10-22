@@ -84,6 +84,8 @@ def test_run_at_startup_adds_a_login_entry_that_starts_dictate_and_removes_it_ag
     exec_line = next(l for l in entry.read_text().splitlines() if l.startswith("Exec="))
     python, script = [Path(p) for p in exec_line[5:].strip('"').split('" "')]
     assert python.exists() and script == ROOT / "dictate.py"
+    icon = next(l for l in entry.read_text().splitlines() if l.startswith("Icon="))[5:]
+    assert icon == str(ROOT / "dictate/icon.png") and Path(icon).exists()  # Dictate's own icon
     assert {"label": "Run at startup", "ticked": True} in app.send("menu_items")["items"]
 
     app.send("menu", path=["Run at startup"])

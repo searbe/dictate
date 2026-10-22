@@ -207,6 +207,8 @@ def main(out):
     save(reminder.hud.card, out / "reminder.png", (-1, -1), ("hud-window",), backdrop=True)
     reminder.hud.win.destroy()
     capsule_states(out / "capsule-states.png", live)
+    if out == DOCS:
+        wrote(design.save_app_icon())
     shutil.rmtree(tmp)
 
 

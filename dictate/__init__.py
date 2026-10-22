@@ -30,3 +30,6 @@ def bootstrap(gui=True):
         import gi
         gi.require_version("Gtk", "3.0")  # before any module imports Gtk or Gdk, which would otherwise pick 4
         gi.require_version("Gdk", "3.0")
+        from gi.repository import GLib
+        GLib.set_prgname("dictate")  # its windows' class: matches dictate.desktop, for the desktop's icon and name
+        GLib.set_application_name("Dictate")

@@ -2,6 +2,7 @@
 following the desktop's preference, live), a small icon set drawn in cairo, and the components every surface is
 built from. Use these names, never raw colours or sizes; add to DESIGN.md first."""
 import math
+from pathlib import Path
 import cairo, gi
 gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango, PangoCairo
@@ -252,10 +253,12 @@ _provider = None
 
 
 def install():
-    """Apply the design to the app's windows; follow the desktop's light/dark preference from now on."""
+    """Apply the design to the app's windows (and give them its icon); follow the desktop's light/dark preference
+    from now on."""
     global _provider, scheme
     scheme = _desktop_scheme() or "dark"
     _apply()
+    Gtk.Window.set_default_icon_list([app_icon(px) for px in ICON_SIZES])  # every window's (title bar, task bar)
     try:  # live changes (the freedesktop portal; KDE and GNOME have it)
         bus = Gio.bus_get_sync(Gio.BusType.SESSION)
         bus.signal_subscribe("org.freedesktop.portal.Desktop", "org.freedesktop.portal.Settings", "SettingChanged",
@@ -392,6 +395,73 @@ def draw_icon(cr, name, x, y, size, colour):
         cr.fill_preserve()
     cr.stroke()
     cr.restore()
+
+
+ICON_TOP, ICON_BOTTOM, ICON_DOT = "#33363d", "#16171a", "#ff5a5f"  # the app icon: charcoal, like the capsule; the
+ICON_SIZES = (16, 24, 32, 48, 64, 128, 256)                        # same in light and dark
+
+
+def draw_app_icon(cr, px):
+    """Dictate's icon at px by px: a charcoal rounded square, lit along its top edge, with the white microphone
+    and a red dot (the capsule as it looks dictating)."""
+    pad = px * 0.06  # (room for the edge, as other app icons have)
+    side, r = px - 2 * pad, (px - 2 * pad) * 0.24
+    top, bottom = rgba(ICON_TOP), rgba(ICON_BOTTOM)
+    fill = cairo.LinearGradient(0, pad, 0, px - pad)
+    fill.add_color_stop_rgb(0, top.red, top.green, top.blue)
+    fill.add_color_stop_rgb(1, bottom.red, bottom.green, bottom.blue)
+    _round_rect(cr, pad, pad, side, side, r)
+    cr.set_source(fill)
+    cr.fill()
+    _round_rect(cr, pad + 0.5, pad + 0.5, side - 1, side - 1, r - 0.5)  # its edge: lit at the top, so it shows on
+    edge = cairo.LinearGradient(0, pad, 0, px - pad)                      # a dark panel too
+    edge.add_color_stop_rgba(0, 1, 1, 1, 0.30)
+    edge.add_color_stop_rgba(0.5, 1, 1, 1, 0.06)
+    edge.add_color_stop_rgba(1, 1, 1, 1, 0.10)
+    cr.set_source(edge)
+    cr.set_line_width(1)
+    cr.stroke()
+    # the microphone, filled (an app icon reads better solid than outlined), on the 16-unit icon grid
+    unit = side * 0.62 / 16
+    cr.save()
+    cr.translate((px - 16 * unit) / 2, (px - 16 * unit) / 2 + side * 0.01)
+    cr.scale(unit, unit)
+    cr.set_source_rgb(1, 1, 1)
+    cr.new_sub_path()
+    cr.arc(8, 4.5, 2.75, math.pi, 0)
+    cr.arc(8, 7.25, 2.75, 0, math.pi)
+    cr.close_path()
+    cr.fill()
+    cr.set_line_width(2.0 if px <= 24 else 1.6)  # (bolder when small, or it fades)
+    cr.set_line_cap(cairo.LINE_CAP_ROUND)
+    cr.new_sub_path()
+    cr.arc(8, 7.5, 4.75, 0, math.pi)
+    cr.move_to(8, 12.25)
+    cr.line_to(8, 14.5)
+    cr.stroke()
+    dot = rgba(ICON_DOT)
+    cr.arc(13.6, 2.6, 2.1 if px <= 24 else 1.7, 0, 2 * math.pi)  # (bigger when small, to be seen)
+    cr.set_source_rgb(dot.red, dot.green, dot.blue)
+    cr.fill()
+    cr.restore()
+
+
+ICON_FILE = Path(__file__).with_name("icon.png")  # the icon for launchers (dictate.desktop, Run at startup)
+
+
+def save_app_icon(path=ICON_FILE, px=256):
+    """Write the app icon to a PNG (docs/make_screenshots.py keeps ICON_FILE up to date)."""
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, px, px)
+    draw_app_icon(cairo.Context(surface), px)
+    surface.write_to_png(str(path))
+    return path
+
+
+def app_icon(px):
+    """The app icon as a pixbuf, px square."""
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, px, px)
+    draw_app_icon(cairo.Context(surface), px)
+    return Gdk.pixbuf_get_from_surface(surface, 0, 0, px, px)
 
 
 class Icon(Gtk.DrawingArea):
