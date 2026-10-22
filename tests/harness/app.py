@@ -36,8 +36,8 @@ ears = []  # the transcriptions following a recording as it's made (transcribe m
 class Hotkey:
     """The real Ctrl+Win state machine (osio.Chord), fed by the test instead of a keyboard."""
 
-    def __init__(self, callback, on_again=None):
-        self.chord = osio.Chord(callback, on_again)
+    def __init__(self, callback, on_again=None, on_other=lambda: None, letters=None):
+        self.chord = osio.Chord(callback, on_again, on_other, letters)
 
     def start(self):
         pass
@@ -111,7 +111,15 @@ class Player:
             event("stopped")
 
 
-osio.Hotkey, osio.Recorder, osio.Paster, osio.Player = Hotkey, Recorder, Paster, Player
+notifications = []  # on_action of each desktop notification shown, newest last
+
+
+def notify(title, body, actions=(), on_action=lambda key: None, image=None):
+    notifications.append(on_action)
+    event("notified", title=title, body=body, actions=[label for _, label in actions], image=bool(image))
+
+
+osio.Hotkey, osio.Recorder, osio.Paster, osio.Player, osio.notify = Hotkey, Recorder, Paster, Player, notify
 if not REAL_SPEECH and not REAL_SPEAKERS:
     stt.Live, stt.load = Live, lambda: None
     stt.transcribe = lambda path: heard.get(str(path)) or ""
@@ -135,6 +143,9 @@ refine.gpu_ok = lambda: gpu["state"] == "free"
 refine.gpu_present = lambda: gpu["state"] != "none"
 
 from dictate import app as dictate_app  # noqa: E402  (after the swaps, like the real launcher's order)
+
+dictate_app.QUIET = float(os.environ.get("DICTATE_TEST_QUIET", dictate_app.QUIET))
+dictate_app.QUIET_CHECK = 0.2
 
 _set_state = dictate_app.App.set_state
 dictate_app.App.set_state = lambda self, s: (_set_state(self, s), event("icon", state=s))[0]  # what the icon shows
@@ -267,6 +278,16 @@ def cmd_hear_so_far(text, source, length=1.0):
 def cmd_gpu(state):
     """The graphics card becomes "free" or "busy" (a game starts or stops)."""
     gpu["state"] = state
+
+
+def cmd_hide_icon():
+    """The floating icon isn't on screen."""
+    app.win.hide()
+
+
+def cmd_notification(button):
+    """Click a button on the newest desktop notification."""
+    notifications.pop()(button)
 
 
 def cmd_keys(down=(), up=()):

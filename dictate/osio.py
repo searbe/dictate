@@ -35,6 +35,39 @@ def plain(text):
     return "".join(c for c in text if not unicodedata.combining(c))
 
 
+_notified = {}  # notification id: on_action, for the buttons of the ones still showing
+
+
+def notify(title, body, actions=(), on_action=lambda key: None, image=None):
+    """A desktop notification that stays until it's dismissed, with buttons (actions: [(key, label)]);
+    on_action(key) runs on the GTK thread when one's clicked; image: a PNG's path. Linux only (the
+    freedesktop Notifications service); elsewhere, or if there's none, it's only logged."""
+    print("notification:", title, "-", body, flush=True)
+    if not LINUX:
+        return
+    from gi.repository import Gio
+    try:
+        bus = Gio.bus_get_sync(Gio.BusType.SESSION)
+        if not _notified:
+            bus.signal_subscribe("org.freedesktop.Notifications", "org.freedesktop.Notifications", "ActionInvoked",
+                                 "/org/freedesktop/Notifications", None, Gio.DBusSignalFlags.NONE,
+                                 lambda *a: _clicked(*a[5].unpack()))
+        hints = {"image-path": GLib.Variant("s", str(image))} if image else {}
+        reply = bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
+                              "org.freedesktop.Notifications", "Notify",
+                              GLib.Variant("(susssasa{sv}i)", ("Dictate", 0, "audio-input-microphone", title, body,
+                                                               [x for a in actions for x in a], hints, 0)),
+                              None, Gio.DBusCallFlags.NONE, 2000, None)
+        _notified[reply.unpack()[0]] = on_action
+    except GLib.Error as err:
+        print("notification: couldn't show it:", err.message, flush=True)
+
+
+def _clicked(nid, key):
+    if nid in _notified:
+        _notified.pop(nid)(key)
+
+
 def dbus_register(conn, path, interface, method_call, get_property=None):
     """Export a D-Bus object. register_object_with_closures2 needs GLib 2.84+; older GLib (e.g. Ubuntu 24.04)
     has register_object, which PyGObject gives the same arguments."""
@@ -48,14 +81,21 @@ class Chord:
     and once when Alt is first pressed mid-hold (so the app can start loading the model).
 
     Lifting Win and pressing it again within AGAIN seconds, with Ctrl held throughout, calls on_again()
-    instead of starting another hold (transcribe mode). The first hold has already been reported by then."""
-    AGAIN = 1.0
+    instead of starting another hold (transcribe mode). The first hold has already been reported by then.
 
-    def __init__(self, callback, on_again=None):
+    Any other key with Ctrl+Win (Ctrl+Win+→, Shift, Alt and a letter that's no style's: letters() gives the
+    styles' letters) makes it another app's shortcut, not a dictation: on_other() is called, if the hold has
+    been reported, and nothing more is said about it. So is Ctrl+Win pressed while another key's held."""
+    AGAIN = 1.0
+    MODIFIERS = {"ctrl", "meta", "alt"}
+
+    def __init__(self, callback, on_again=None, on_other=lambda: None, letters=None):
         self.callback, self.on_again, self.held, self.active, self.alt, self.letter = callback, on_again, {}, False, False, None
+        self.on_other, self.letters = on_other, letters  # letters None: any letter is a style's
         self.pressed_at = None  # when the chord's key was physically pressed (wall clock), for latency logs
         self.lifted = None  # when Win was let go with Ctrl still down (monotonic), until Ctrl is let go too
         self.again = False  # this hold is the "again" press: report nothing about it
+        self.other = False  # this hold is another app's shortcut: report nothing more about it
 
     def key(self, ident, kind, down, at=None):
         """ident: a stable id for the physical key; kind: "ctrl", "meta", "alt", a letter, or None;
@@ -69,11 +109,15 @@ class Chord:
         kinds = set(self.held.values())
         if "ctrl" not in kinds:
             self.lifted = None
-        if self.active and down and kind == "alt" and not self.again:
-            self.alt = True
-            GLib.idle_add(self.callback, True, True, None)
-        elif self.active and down and kind and len(kind) == 1 and "alt" in kinds:
-            self.letter = kind
+        if self.active and down and not (self.again or self.other):
+            if kind == "alt":
+                self.alt = True
+                GLib.idle_add(self.callback, True, True, None)
+            elif kind and len(kind) == 1 and "alt" in kinds and (self.letters is None or kind in self.letters()):
+                self.letter = kind
+            elif kind not in self.MODIFIERS:
+                self.other = True
+                GLib.idle_add(self.on_other)
         on = {"ctrl", "meta"} <= kinds
         if on == self.active:
             return
@@ -81,15 +125,24 @@ class Chord:
         if not on:
             if self.again:
                 self.again = False  # the next Win press is an ordinary hold again
+            elif self.other:
+                self.other, self.lifted = False, None  # (pressing Win again isn't Ctrl+Win, Win again either)
             else:
                 self.lifted = time.monotonic() if "ctrl" in kinds else None
                 GLib.idle_add(self.callback, False, self.alt, self.letter)
         elif self.on_again and self.may_go_again():
             self.again, self.lifted = True, None
             GLib.idle_add(self.on_again)
+        elif kinds - self.MODIFIERS:  # another key was already down: its shortcut, never reported
+            self.other = True
         else:
             self.alt, self.letter, self.pressed_at = "alt" in kinds, None, at or time.time()
             GLib.idle_add(self.callback, True, self.alt, self.letter)
+
+    def release_all(self):
+        """Every key counts as let go (the keyboard holding them was unplugged)."""
+        for ident, kind in list(self.held.items()):
+            self.key(ident, kind, False)
 
     def may_go_again(self):
         """Whether pressing Win now would still be "again": Win was lifted moments ago, Ctrl is still down."""
@@ -105,23 +158,69 @@ if LINUX:
              e.KEY_LEFTALT: "alt", e.KEY_RIGHTALT: "alt",
              **{getattr(e, f"KEY_{c}"): c.lower() for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
 
-    class Hotkey(threading.Thread):
-        """Watches every keyboard via evdev (global, works on Wayland). The kernel timestamps each key."""
+    VIRTUAL = "Dictate virtual keyboard"  # the one Paster types with: not one to watch
 
-        def __init__(self, callback, on_again=None):
+    class Hotkey(threading.Thread):
+        """Watches every keyboard via evdev (global, works on Wayland). The kernel timestamps each key.
+        Keyboards come and go (unplugged, a USB hub dropping out): one that goes is let go of, with any keys it
+        held; one that comes is watched from then on (looked for whenever DIR changes)."""
+        DIR = "/dev/input"
+        RESCAN = 1.0  # seconds between looks at whether DIR has changed
+
+        def __init__(self, callback, on_again=None, on_other=lambda: None, letters=None):
             super().__init__(daemon=True)
-            self.chord, self.sel = Chord(callback, on_again), selectors.DefaultSelector()
-            for path in evdev.list_devices():
-                dev = evdev.InputDevice(path)
-                if e.KEY_LEFTCTRL in dev.capabilities().get(e.EV_KEY, []):
+            self.chord, self.sel = Chord(callback, on_again, on_other, letters), selectors.DefaultSelector()
+            self.watching = {}
+            self.changed = self.stamp()
+            self.scan()
+
+        def stamp(self):
+            try:
+                return os.stat(self.DIR).st_mtime_ns
+            except OSError:
+                return None
+
+        def scan(self):
+            """Watch every keyboard not watched yet."""
+            for path in evdev.list_devices(self.DIR):
+                if path in self.watching:
+                    continue
+                try:
+                    dev = evdev.InputDevice(path)
+                    keyboard = e.KEY_LEFTCTRL in dev.capabilities().get(e.EV_KEY, []) and dev.name != VIRTUAL
+                except OSError:  # gone again already, or not ours to read
+                    continue
+                if keyboard:
                     self.sel.register(dev, selectors.EVENT_READ)
+                    self.watching[path] = dev
+                    print("hotkey: watching", dev.name, flush=True)
+                else:
+                    dev.close()
+
+        def lost(self, dev):
+            self.sel.unregister(dev)
+            self.watching.pop(dev.path, None)
+            try:
+                dev.close()
+            except OSError:
+                pass
+            print("hotkey: keyboard gone:", dev.name, flush=True)
+            self.chord.release_all()  # its keys can't be let go of now: don't leave Ctrl+Win held
 
         def run(self):
             while True:
-                for key, _ in self.sel.select():
-                    for ev in key.fileobj.read():
+                for key, _ in self.sel.select(self.RESCAN):
+                    try:
+                        events = key.fileobj.read()
+                    except OSError:  # unplugged
+                        self.lost(key.fileobj)
+                        continue
+                    for ev in events:
                         if ev.type == e.EV_KEY and ev.value != 2:
                             self.chord.key(ev.code, KINDS.get(ev.code), ev.value == 1, ev.timestamp())
+                if self.stamp() != self.changed:  # a device was added or removed
+                    self.changed = self.stamp()
+                    self.scan()
 
     _cancellers = itertools.count()
 
@@ -219,11 +318,11 @@ if LINUX:
         return keys  # Enter is Shift+Enter: a new line without sending a chat message
 
     class Paster:
-        """Types the paste shortcut (or whole text) through a virtual keyboard.
-        Create it after Hotkey, so Hotkey doesn't see it."""
+        """Types the paste shortcut (or whole text) through a virtual keyboard (named VIRTUAL, so Hotkey
+        doesn't watch it)."""
 
         def __init__(self):
-            self.kbd = evdev.UInput()
+            self.kbd = evdev.UInput(name=VIRTUAL)
             self.keys = _keymap(_layout())
 
         def type_text(self, text):
@@ -261,8 +360,8 @@ else:
     class Hotkey:
         """Global key listener via pynput (on macOS this needs Input Monitoring permission)."""
 
-        def __init__(self, callback, on_again=None):
-            self.chord = chord = Chord(callback, on_again)
+        def __init__(self, callback, on_again=None, on_other=lambda: None, letters=None):
+            self.chord = chord = Chord(callback, on_again, on_other, letters)
             self.listener = keyboard.Listener(on_press=lambda k: chord.key(*_ident_kind(k), True),
                                               on_release=lambda k: chord.key(*_ident_kind(k), False))
 

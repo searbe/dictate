@@ -1,5 +1,5 @@
-"""Dictate's windows: History, the refinement style manager, the style picker, and Transcripts (including the
-one being recorded)."""
+"""Dictate's windows: History, the refinement style manager, the style picker, Transcripts (including the
+one being recorded), and the reminder that a transcript is still being recorded."""
 import json, threading
 from datetime import datetime
 from gi.repository import Gio, Gtk, Gdk, GLib
@@ -48,6 +48,8 @@ menu separator { background: rgba(255,255,255,.07); margin: 4px 6px; min-height:
 .topic-title { color: #e6e7ea; font-weight: 600; }
 .topic-note { color: #b9bcc4; font-size: 9pt; }
 .warning { background: rgba(255,159,67,.12); color: #ffb86b; border-radius: 8px; padding: 7px 10px; margin: 0 10px 6px 10px; font-size: 9pt; }
+.reminder { border: 1px solid rgba(255,159,67,.45); }
+.warning.heading { font-size: 11pt; font-weight: 700; padding: 9px 12px; margin: 0; }
 """ + "".join(f".topic{i} {{ border-left: 4px solid {c}; }}\n.dot{i} {{ color: {c}; }}\n"
               for i, c in enumerate(topics.COLOURS)).encode()
 
@@ -820,3 +822,68 @@ class VoicesWindow:
         if not on:
             transcript.forget_voiceprints()
         self.refresh()
+
+
+# --- still transcribing ---
+STOP_WAYS = ("Stop, in the Transcripts window (click the icon to open it)", "Ctrl+Win, lift Win and press it again",
+             "Stop transcribing, in the icon's menu")
+REMINDERS = {  # why: (heading, what's happening)
+    "closed": ("Still transcribing", "Closing the window doesn't stop it: everything said through this computer's "
+                                     "speakers and microphone is still being written down."),
+    "quiet": ("Nothing heard for {minutes} minutes", "Dictate is still transcribing. If the call is over, stop it, or "
+                                                     "it will carry on recording whatever is said here."),
+}
+
+
+def reminder_text(why, minutes):
+    heading, body = REMINDERS[why]
+    return heading.format(minutes=minutes), body
+
+
+class StillTranscribing:
+    """A panel beside the floating icon saying a transcript is still being recorded, with a picture of the icon
+    as it looks while transcribing (picture: a pixbuf), every way to stop it, and Stop now / Keep going."""
+
+    def __init__(self, why, minutes, picture, beside, on_stop):
+        """beside: (x, y, width, height) of the icon on screen."""
+        heading, body = reminder_text(why, minutes)
+        self.win = css(Gtk.Window(title="Still transcribing", decorated=False, resizable=False, skip_taskbar_hint=True,
+                                  type_hint=Gdk.WindowTypeHint.DIALOG), "win", "reminder")
+        self.win.set_keep_above(True)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10, margin=16, width_request=420)
+        box.pack_start(css(Gtk.Label(label=f"⚠  {heading}", xalign=0, halign=Gtk.Align.FILL), "warning", "heading"),
+                       False, False, 0)
+        box.pack_start(css(Gtk.Label(label=body, xalign=0, wrap=True, max_width_chars=60), "text"), False, False, 0)
+        icon = Gtk.Box(spacing=12)
+        icon.pack_start(Gtk.Image.new_from_pixbuf(picture), False, False, 0)
+        icon.pack_start(css(Gtk.Label(label="The blue ring around Dictate's icon means it's transcribing. Click the "
+                                            "icon to see the transcript.", xalign=0, wrap=True, max_width_chars=50),
+                            "text"), True, True, 0)
+        box.pack_start(icon, False, False, 0)
+        box.pack_start(css(Gtk.Label(label="To stop it:", xalign=0), "field"), False, False, 0)
+        for way in STOP_WAYS:
+            box.pack_start(css(Gtk.Label(label=f"•  {way}", xalign=0, wrap=True, max_width_chars=60), "text"), False, False, 0)
+        buttons = Gtk.Box(spacing=8, margin_top=6)
+        buttons.pack_end(button("Keep going", self.close), False, False, 0)
+        buttons.pack_end(button("Stop now", lambda: (on_stop(), self.close()), "danger"), False, False, 0)
+        box.pack_start(buttons, False, False, 0)
+        self.win.add(box)
+        self.win.show_all()
+        self.place(beside)
+
+    def place(self, beside):
+        """To the right of the icon, or its left if there's no room, within its screen."""
+        x, y, w, h = beside
+        width, height = self.win.get_size()
+        display = Gdk.Display.get_default()
+        area = display.get_monitor_at_point(x + w // 2, y + h // 2).get_workarea()
+        left = x + w + 8 if x + w + 8 + width <= area.x + area.width else x - 8 - width
+        top = min(max(y, area.y), area.y + area.height - height)
+        self.win.move(max(left, area.x), top)
+
+    def close(self):
+        self.win.destroy()
+
+    @property
+    def open(self):
+        return self.win.get_mapped()

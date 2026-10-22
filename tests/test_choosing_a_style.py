@@ -99,11 +99,13 @@ def test_alt_alone_asks_which_style_and_its_letter_applies_it(start, model):
     assert "Refine" not in app.send("windows")["titles"]
 
 
-def test_an_unknown_alt_letter_asks_too(start):
+def test_an_alt_letter_that_is_no_styles_is_another_apps_shortcut(start):
+    """Ctrl+Win+Alt+Z: not a style's letter, so it's someone else's shortcut, and nothing is pasted."""
     app = start(styles=STYLES)
-    app.dictate("hello", alt=True, letter="z", wait=False)
 
-    app.wait_window("Refine")
+    assert app.dictate("hello", alt=True, letter="z") is None
+    assert "Refine" not in app.send("windows")["titles"]
+    assert app.history() == []
 
 
 def test_enter_in_the_picker_pastes_the_cleaned_up_text_as_is(start, model):

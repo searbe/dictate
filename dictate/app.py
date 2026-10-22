@@ -1,6 +1,8 @@
 """The floating icon (drag to move, right-click for menu), drawn with GTK3, and the dictation pipeline:
 record → transcribe → cleanup → style → paste or type. Started by dictate.py, after dictate.bootstrap().
-Ctrl+Win, lift Win, Win again starts or stops transcribe mode (transcript.py).
+Ctrl+Win, lift Win, Win again starts or stops transcribe mode (transcript.py). So it isn't left running by
+mistake, closing the Transcripts window while it is (the first time each day), or nothing being heard for
+QUIET seconds, brings up a reminder beside the icon (a desktop notification if the icon isn't on screen).
 """
 import json, math, os, signal, socket, sys, threading, time
 from datetime import datetime
@@ -18,6 +20,8 @@ STATE = DATA / "state.json"
 SIZE, R = 52, 17  # window size, icon radius (margin leaves room for the pulse ring)
 REMOTE_MODES = (("type", "Type the text there"), ("ignore", "Ignore the hotkey"))
 SAME = "same"  # remote default style: same as here
+QUIET = 600  # seconds with nothing added to a transcript before reminding that it's still being recorded
+QUIET_CHECK = 30  # seconds between checks
 OTHER_COMPUTER = {"cls": "", "title": "", "remote": True}  # where text goes when Synergy has the keyboard
 TERMINALS = ("konsole", "terminal", "kitty", "alacritty", "wezterm", "foot", "ghostty", "yakuake")  # Linux paste
 ACCENT = (0.49, 0.55, 1.0)
@@ -117,6 +121,8 @@ class App:
         self.state, self.hovered, self.rec, self.wav, self.anim, self.save_id = "idle", False, None, None, None, None
         self.session = self.cancelled = None  # transcribe mode; a dictation to drop
         self.transcripts_win = None  # the Transcripts window, while open
+        self.reminder = None  # the reminder that a transcript is still being recorded, while it's shown
+        self.reminded_quiet = False  # about this stretch of quiet already
         self.t0 = time.monotonic()
         self.tray = tray.Tray(self.menu, self.render_icon, self.build_default_menu)  # same menu in the system tray
         self.clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
@@ -126,7 +132,8 @@ class App:
         activewin.on_switch.append(lambda: self.menu.get_visible() and self.menu.popdown())
         activewin.start()
         remote.start()
-        self.hotkey = osio.Hotkey(self.on_hotkey, self.on_again)
+        self.hotkey = osio.Hotkey(self.on_hotkey, self.on_again, self.on_other_shortcut,
+                                  lambda: {s["key"] for s in refine.load_styles()["styles"]})
         self.hotkey.start()
         self.loader = threading.Thread(target=stt.load, daemon=True)  # warm up so first dictation is fast
         self.loader.start()
@@ -317,9 +324,30 @@ class App:
             threading.Thread(target=self.process, args=(rec, self.live, self.wav, refining, alt, letter, self.app),
                              daemon=True).start()
 
+    def on_other_shortcut(self):
+        """Another key pressed with Ctrl+Win (e.g. Ctrl+Win+→ switching desktops): another app's shortcut,
+        not a dictation. Drop the recording, so nothing said meanwhile is pasted."""
+        if not self.rec:
+            return
+        if self.session:
+            self.session.mute("me", False)
+        rec, live, wav, self.rec = self.rec, self.live, self.wav, None
+        refine.release()
+        self.set_state("idle")
+        log("recording dropped: Ctrl+Win was part of another shortcut")
+
+        def drop():
+            rec.stop()
+            try:
+                live.finish()
+            except Exception:
+                pass
+            Path(wav).unlink(missing_ok=True)
+        threading.Thread(target=drop, daemon=True).start()
+
     def process(self, rec, live, wav, refining, alt, letter, app):
-        """Stop recording → transcribe → cleanup → a style: Alt+letter's, or (Alt alone / unknown letter)
-        ask which, or (no Alt) the style matching the focused app, else the default style."""
+        """Stop recording → transcribe → cleanup → a style: Alt+letter's, or (Alt alone, or a style's letter
+        since deleted) ask which, or (no Alt) the style matching the focused app, else the default style."""
         raw = text = style = ""
         ctx = activewin.describe(app)
         try:
@@ -422,8 +450,9 @@ class App:
             session = transcript.Session()
         except OSError as err:  # e.g. pw-record missing
             return log(f"transcribe mode: can't record ({err})")
-        self.session = session
+        self.session, self.reminded_quiet = session, False
         session.on_change = lambda: (self.transcripts_changed(), self.win.queue_draw(), self.tray.update())
+        GLib.timeout_add(int(QUIET_CHECK * 1000), self.check_quiet, session)
         self.transcribe_item.set_label("Stop transcribing")
         self.show_transcripts(focus=False)  # started from the keyboard, mid-conversation: leave focus where it is
         session.on_change()
@@ -433,6 +462,8 @@ class App:
         session, self.session = self.session, None
         if not session:
             return
+        if self.reminder:
+            self.reminder.close()
 
         def saved():
             if self.cfg["keep_audio_hours"] == 0:
@@ -450,10 +481,65 @@ class App:
         """Open the Transcripts window (or bring it forward); with recording, showing the one being recorded."""
         if not (self.transcripts_win and not self.transcripts_win.closed):
             self.transcripts_win = dialogs.TranscriptsWindow(lambda: self.session, self.stop_transcribing, focus)
+            self.transcripts_win.win.connect("delete-event", lambda *_: self.transcripts_closed())
         elif focus:
             self.transcripts_win.win.present()
         if recording:
             self.transcripts_win.show_recording()
+
+    def transcripts_closed(self):
+        """The Transcripts window was closed: if a transcript's being recorded, say it still is, once a day."""
+        today = datetime.now().date().isoformat()
+        if self.session and self.cfg.get("reminded_closed") != today:
+            self.save_state(reminded_closed=today)
+            GLib.idle_add(lambda: self.remind("closed") and False)
+
+    def check_quiet(self, session):
+        """While transcribing: if nothing's been added for QUIET seconds, say it's still going (once until
+        something is heard again)."""
+        if session is not self.session:
+            return False
+        quiet = session.quiet_for() >= QUIET
+        if quiet and not self.reminded_quiet:
+            self.remind("quiet")
+        self.reminded_quiet = quiet
+        return True
+
+    def remind(self, why):
+        """Say a transcript is still being recorded, and how to stop it: beside the icon, or, if the icon isn't on
+        screen, as a desktop notification."""
+        if not self.session:
+            return
+        if self.reminder and self.reminder.open:
+            self.reminder.close()
+        minutes = round(QUIET / 60)
+        log(f"reminding that it's still transcribing ({why})")
+        if self.icon_on_screen():
+            picture = Gdk.pixbuf_get_from_surface(self.render_icon(SIZE), 0, 0, SIZE, SIZE)
+            x, y = self.win.get_position()
+            self.reminder = dialogs.StillTranscribing(why, minutes, picture, (x, y, SIZE, SIZE), self.stop_transcribing)
+        else:
+            heading, body = dialogs.reminder_text(why, minutes)
+            image = Path(GLib.get_user_cache_dir()) / "dictate" / "transcribing.png"
+            image.parent.mkdir(parents=True, exist_ok=True)
+            self.render_icon(128).write_to_png(str(image))
+            ways = "".join(f"\n• {w}" for w in dialogs.STOP_WAYS)
+            osio.notify(f"⚠ {heading}", f"{body}\n\nA blue ring around Dictate's icon means it's transcribing. "
+                                        f"To stop it:{ways}", [("stop", "Stop now"), ("show", "Show transcript")],
+                        lambda key: self.stop_transcribing() if key == "stop" else self.show_transcripts(recording=True),
+                        image)
+
+    def icon_on_screen(self):
+        """Whether the floating icon is shown, on one of the screens."""
+        if not self.win.get_mapped():
+            return False
+        x, y = self.win.get_position()
+        display = Gdk.Display.get_default()
+        for i in range(display.get_n_monitors()):
+            area = display.get_monitor(i).get_geometry()
+            if area.x <= x + SIZE // 2 < area.x + area.width and area.y <= y + SIZE // 2 < area.y + area.height:
+                return True
+        return False
 
     def transcripts_changed(self):
         if self.transcripts_win:

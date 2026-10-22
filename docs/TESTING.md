@@ -47,8 +47,8 @@ them. `tests/harness/client.py` has the vocabulary (`dictate()`, `click()`, `rea
 
 | Area | File |
 |---|---|
-| Dictating: cleanup, clipboard, Ctrl+V / Ctrl+Shift+V in terminals, history, nothing heard, refine off, recordings kept or not, the hotkey itself | `test_dictation.py` |
-| Choosing a style: by window title or app, title changes without refocusing, default style, Alt+letter, the picker (letter, Enter, Escape, click) | `test_choosing_a_style.py` |
+| Dictating: cleanup, clipboard, Ctrl+V / Ctrl+Shift+V in terminals, history, nothing heard, refine off, recordings kept or not, the hotkey itself, another key with it being another app's shortcut | `test_dictation.py` |
+| Choosing a style: by window title or app, title changes without refocusing, default style, Alt+letter (one that's no style's being another app's shortcut), the picker (letter, Enter, Escape, click) | `test_choosing_a_style.py` |
 | Real windows on a real KWin, reported by Dictate's KWin script (incl. the Gmail → WhatsApp tab bug) | `test_focused_window.py` |
 | The model: vocabulary and window context in the prompt, loading on key press, unloading when idle, never outliving Dictate, rejecting answers / placeholders / rewrites, errors and a missing llama-server | `test_refinement_model.py` |
 | History window: order, labels, search, copy, play, delete, clear (with confirmation), keep-recordings setting | `test_history_window.py` |
@@ -56,6 +56,7 @@ them. `tests/harness/client.py` has the vocabulary (`dictate()`, `click()`, `rea
 | Another computer (Synergy's log): typed not pasted, its own default style, ignoring the hotkey, switching back | `test_other_computer.py` |
 | Quit (menu and signal) with the reason logged, the microphone never left recording (quitting mid-dictation, or crashing mid-recording), run at startup, single instance, switching to `.venv` | `test_running_dictate.py` |
 | Tray icon over the StatusNotifierItem protocol: registers, same menu, turns red while recording | `test_tray.py` |
+| Keyboards coming and going (Linux): Ctrl+Win still works after one is unplugged, one plugged in later (or dropping out and coming back) works, unplugged mid-dictation counts as let go, Dictate's own virtual keyboard not watched | `test_keyboards.py` |
 | Keys typed and pasted on US and UK layouts, Shift+Enter for new lines, plain punctuation | `test_typing_and_pasting.py` |
 | Speech-to-text with the real models: English, German, silence and noise, live = whole-file | `test_speech_to_text.py` |
 | Downloads: complete, interrupted, not repeated; unpacking | `test_downloads.py` |
@@ -63,6 +64,7 @@ them. `tests/harness/client.py` has the vocabulary (`dictate()`, `click()`, `rea
 | Transcripts window: listed newest first with when and how long, the recording at the top and kept up to date while reading others, reading one, copy, delete (with confirmation) with its recordings, older transcripts' length from their recording, none yet, clicking the icon while recording | `test_transcripts_window.py` |
 | Echoes: the speakers heard again by the microphone (in made-up rooms, quieter or later) told from you speaking, alone or over them | `test_echo.py` |
 | Topics: listed beside the transcript with who brought each up and who else spoke on it, the current one marked, carried on when the conversation goes back to one, a new paragraph where the topic changes, small talk left out, saved at the top of the transcript (including what was said last, when it's stopped), found for an older transcript, the transcript carrying on when the model fails, a warning while the less reliable model is used (graphics card busy, or none) and once saved, switching to the better one once the graphics card is free but not mid-dictation | `test_topics.py` |
+| Still transcribing: closing the window while recording says it carries on and every way to stop it (once a day), Stop now, Keep going, a desktop notification when the icon isn't on screen, the reminder after a while with nothing heard (not again until something is) | `test_still_transcribing.py` |
 | Grouping voices into people on a call's worth of made-up voiceprints: one voice each, short parts never someone new, numbers kept when one is named | `test_voice_grouping.py` |
 | Voices: told apart, named live or after the call, merged by naming two the same, remembered only when turned on (live and after the call), listed and forgotten, all forgotten when turned off, "Them" without the voice model | `test_voices.py` |
 | The real thing end to end (real speech model, llama-server and refinement model), and `scripts/prove_local.py`: no network call leaves the computer | `test_local_only.py` |
@@ -149,6 +151,9 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
   right 98.6% / 94.3% (with pauses, full quality / phone), 89.8% / 81.5% (quick replies); the right number of
   people in 83% / 75% and 75% / 67% of conversations.
 - With Remember voices on: name someone, and in a later call with them they're named from their first stretch.
+- Close the Transcripts window while transcribing: the reminder appears beside the floating icon, on its screen
+  (try the icon near the right edge: it goes on the left); Stop now stops it. With the icon off screen, a desktop
+  notification says it instead, and its Stop now button works.
 - Topics, on a real call: the first is listed about a minute in, and the list reads as what was discussed, in
   order, with the one being talked about marked "Now" (which topic, and who brought it up, can slip on a short
   reply or a quick change of subject). The transcript's colours match. After changing `topics.py`'s prompt, use

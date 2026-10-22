@@ -122,3 +122,47 @@ def test_win_alone_or_ctrl_alone_does_nothing(start):
         app.send("keys", up=[key])
 
     assert not app.happened("recording", after=mark)
+
+
+def test_another_key_with_ctrl_win_is_another_apps_shortcut_and_drops_the_recording(start):
+    """e.g. Ctrl+Win+→ switches desktop: whatever you were saying meanwhile mustn't be pasted."""
+    app = start(styles=[])
+    mark = app.mark()
+    app.send("say", text="and then we talked about the budget")
+    app.send("keys", down=["ctrl", "meta"])
+    app.wait_for("recording", after=mark)
+
+    app.send("keys", down=["right"], up=["right"])
+    app.send("keys", up=["meta", "ctrl"])
+
+    app.wait_for("icon", after=mark, state="idle")
+    time.sleep(0.8)
+    assert not app.happened("pasted", after=mark) and not app.happened("typed", after=mark)
+    assert app.history() == []
+    assert list((app.data / "audio").glob("*.wav")) == []  # the recording isn't kept either
+
+
+def test_ctrl_win_pressed_while_another_key_is_held_does_not_record(start):
+    """e.g. Shift held first: Shift+Ctrl+Win+→ moves a window to another desktop."""
+    app = start(styles=[])
+    mark = app.mark()
+
+    app.send("keys", down=["shift", "ctrl", "meta"])
+    app.send("keys", up=["meta", "ctrl", "shift"])
+
+    time.sleep(0.5)
+    assert not app.happened("recording", after=mark)
+
+
+def test_after_another_apps_shortcut_win_again_is_an_ordinary_dictation(start):
+    """Ctrl+Win+→, lift Win, Win again (Ctrl held): not the gesture that starts transcribing."""
+    app = start(styles=[])
+    app.send("keys", down=["ctrl", "meta", "right"], up=["right", "meta"])
+    mark = app.mark()
+    app.send("say", text="just a note")
+
+    app.send("keys", down=["meta"])
+    app.send("keys", up=["meta", "ctrl"])
+
+    assert app.result(mark)["text"] == "just a note"
+    assert "Transcripts" not in app.send("windows")["titles"]

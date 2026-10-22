@@ -18,6 +18,7 @@ Push-to-talk dictation that runs entirely on your own computer. Hold a hotkey an
 Hold **Ctrl+Win** to record, release to transcribe and paste into the focused text box.
 - **Tap Alt** while holding: pick a refinement style when you let go (its letter; Enter pastes as is, Esc only copies).
 - **Alt+letter** while holding (e.g. Alt+S): use that style directly.
+- **Any other key** while holding (e.g. Ctrl+Win+→ to switch desktop) makes it that app's shortcut: the recording is dropped.
 - **Default style** (menu): used for every other dictation. "None" means cleanup only.
 - **Per-app styles:** a style can be used automatically in apps whose name or window title matches (e.g. "slack").
 - **Vocabulary** (Refinement styles…): names and terms, spelled your way.
@@ -31,6 +32,7 @@ Hold **Ctrl+Win** to record, release to transcribe and paste into the focused te
 - The topics are listed beside the transcript, each in its colour, with who brought it up; the one being talked about now is marked. Click one to go to it. **Find topics** does the same for an older transcript. While the graphics card is busy, a smaller, less reliable model finds them (a warning says so) until it's free again.
 - You can dictate as usual while it runs; your dictations stay out of the transcript.
 - **Transcripts** (menu) lists them all; the live one is at the top. Saved as Markdown in `data/transcripts/`.
+- Closing the window doesn't stop it: the first time each day, and after 10 minutes with nothing heard, a reminder beside the icon says so and how to stop it (a desktop notification if the icon isn't on screen).
 - **Voices…** can remember the people you name, for next time (off by default; ask people first).
 
 The floating dot is red while recording and spins while transcribing; a blue ring means transcribe mode is on (click it to see the transcript). Drag it to move it; right-click it, or the tray icon, for the menu.

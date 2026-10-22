@@ -347,6 +347,10 @@ class Session:
             on_done()
         threading.Thread(target=finish, daemon=True).start()
 
+    def quiet_for(self):
+        """Seconds since anything was last added to the transcript (or since it started)."""
+        return self.now() - max((end for _, _, end, _, _ in self.kept()), default=0.0)
+
     # --- topics ---
     def lines(self):
         """[(start, who's name, text)]: what's in the transcript, a line per stretch."""
