@@ -86,6 +86,8 @@ def css():
 window.dictate, window.dictate .page {{ background-color: {t['bg']}; color: {t['text']}; {size('body')} }}
 window.dictate headerbar {{ background-color: {t['bg']}; border: none; box-shadow: none; min-height: 40px; padding: 0 8px;
   background-image: linear-gradient(to right, {t['surface-1']} 199px, {t['line']} 199px, {t['line']} 200px, transparent 200px); }}
+window.dictate.compact headerbar {{
+  background-image: linear-gradient(to right, {t['surface-1']} 55px, {t['line']} 55px, {t['line']} 56px, transparent 56px); }}
 window.dictate headerbar .title {{ color: {t['text']}; {size('body-strong')} }}
 window.dictate headerbar button.titlebutton {{ border: none; box-shadow: none; }}
 scrollbar {{ background: transparent; border: none; box-shadow: none; }}
@@ -154,12 +156,13 @@ button.chip.on, button.chip.on:hover {{ background: {t['accent-weak']}; color: {
 
 /* rows and lists */
 .row-item {{ border-radius: {R_MD}px; padding: 8px 12px; transition: background-color 120ms ease-out; }}
-.row-item:hover {{ background: {t['surface-2']}; }}
+row:hover .row-item {{ background: {t['surface-2']}; }}
 .row-item .actions {{ opacity: 0; transition: opacity 120ms ease-out; }}
-.row-item:hover .actions, .row-item .actions.shown {{ opacity: 1; }}
+row:hover .row-item .actions, .row-item .actions.shown {{ opacity: 1; }}
 .group-header {{ {size('caption')} font-weight: 600; color: {t['text-3']}; margin: 16px 12px 4px 12px; }}
 .hairline {{ background: {t['line']}; min-height: 1px; min-width: 1px; }}
 list.nav, list.pick {{ background: transparent; }}
+flowbox flowboxchild {{ padding: 0; background: none; border: none; }}
 list.pick row {{ border-radius: {R_SM}px; margin: 1px 8px; padding: 0; transition: background-color 120ms ease-out; }}
 list.pick row:hover {{ background: {t['surface-2']}; }}
 list.pick row:selected {{ background: {t['surface-3']}; color: {t['text']}; }}
@@ -196,8 +199,19 @@ window.dictate check:checked {{ background: {t['accent']}; border-color: {t['acc
 .setting {{ padding: 12px 0; }}
 .page-header {{ margin: 20px 24px 8px 24px; }}
 .panel {{ background: {t['surface-1']}; }}
-.panel-left {{ border-right: 1px solid {t['line']}; }}
-.panel-right {{ border-left: 1px solid {t['line']}; }}
+window.dictate paned > separator {{ min-width: 5px; min-height: 5px; border: none; box-shadow: none; padding: 0; margin: 0;
+  -gtk-icon-source: none; background-color: {t['bg']}; background-size: 100% 100%;  /* (Breeze sizes it otherwise) */
+  background-image: linear-gradient(to right, transparent 2px, {t['line']} 2px, {t['line']} 3px, transparent 3px); }}
+window.dictate paned > separator:hover {{
+  background-image: linear-gradient(to right, transparent 2px, {t['line-strong']} 2px, {t['line-strong']} 3px, transparent 3px); }}
+window.dictate paned.after-panel > separator {{
+  background-image: linear-gradient(to right, {t['surface-1']} 2px, {t['line']} 2px, {t['line']} 3px, transparent 3px); }}
+window.dictate paned.after-panel > separator:hover {{
+  background-image: linear-gradient(to right, {t['surface-1']} 2px, {t['line-strong']} 2px, {t['line-strong']} 3px, transparent 3px); }}
+window.dictate paned.before-panel > separator {{
+  background-image: linear-gradient(to right, transparent 2px, {t['line']} 2px, {t['line']} 3px, {t['surface-1']} 3px); }}
+window.dictate paned.before-panel > separator:hover {{
+  background-image: linear-gradient(to right, transparent 2px, {t['line-strong']} 2px, {t['line-strong']} 3px, {t['surface-1']} 3px); }}
 .empty-state {{ margin: 48px 24px; }}
 .status-dot {{ min-width: 6px; min-height: 6px; border-radius: 3px; background: {t['record']}; }}
 .status-dot.paused {{ background: {t['text-3']}; }}
@@ -577,6 +591,36 @@ def status_pill(label, paused=False):
     box.text = classes(Gtk.Label(label=label), "tabular")
     box.pack_start(box.text, False, False, 0)
     return box
+
+
+class Clamp(Gtk.Bin):
+    """Its child at most maximum px wide, centred in whatever room there is; narrower if there's less (down to
+    what the child needs). So a page reads well in a wide window and still fits a narrow one."""
+
+    def __init__(self, child, maximum):
+        super().__init__(hexpand=True)
+        self.maximum = maximum
+        self.add(child)
+
+    def do_get_request_mode(self):
+        return Gtk.SizeRequestMode.HEIGHT_FOR_WIDTH
+
+    def do_get_preferred_width(self):
+        least, natural = self.get_child().get_preferred_width()
+        return least, max(least, min(natural, self.maximum))
+
+    def do_get_preferred_height_for_width(self, width):
+        return self.get_child().get_preferred_height_for_width(min(width, self.maximum))
+
+    def do_get_preferred_height(self):
+        return self.get_child().get_preferred_height()
+
+    def do_size_allocate(self, room):
+        self.set_allocation(room)
+        width = max(min(room.width, self.maximum), self.get_child().get_preferred_width()[0])
+        box = Gdk.Rectangle()
+        box.x, box.y, box.width, box.height = room.x + max(0, (room.width - width) // 2), room.y, min(width, room.width), room.height
+        self.get_child().size_allocate(box)
 
 
 def scrolled(child, h=False):

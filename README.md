@@ -31,13 +31,13 @@ Hold **Ctrl+Win** to record, release to transcribe and paste into the focused te
 - People are labelled "Speaker 1", "Speaker 2"… Click a name to rename them; naming two the same merges them.
 - The topics are listed beside the transcript, each in its colour, with who brought it up; the one being talked about now is marked. Click one to go to it. While the graphics card is busy, a smaller, less reliable model finds them (a warning says so) until it's free again.
 - You can dictate as usual while it runs; your dictations stay out of the transcript.
-- **Transcripts** (menu) lists them all; the live one is at the top. Saved as Markdown in `data/transcripts/`.
+- **Transcripts** (menu) lists them all; the live one is at the top. Saved as Markdown in `data/transcripts/`; one where nothing was heard isn't kept. While its recordings are kept, **Play** plays the call, and clicking a paragraph's time plays from there.
 - Closing the window doesn't stop it: the first time each day, and after 10 minutes with nothing heard, a reminder beside the icon says so and how to stop it (a desktop notification if the icon isn't on screen).
 - **Voices** can remember the people you name, for next time (off by default; ask people first).
 
 The capsule is a dot while idle; it grows to show a level meter while you dictate, three dots while the text is refined, and the elapsed time and topic while transcribing a call (click it then to see the transcript). Drag it to move it; right-click it, or the tray icon, for the menu.
 
-**Dictations** lists every one: play it back, copy it or delete it. **Settings** has the rest, such as how long recordings are kept (default 24 hours).
+**Dictations** lists every one: play it back, copy it or delete it. **Settings** has the rest, such as how long recordings are kept: dictations' and calls' separately, from not at all to forever (by default a day and a week; the text is kept until you delete it).
 
 ![The capsule: idle, dictating, working, transcribing a call](docs/capsule-states.png)
 

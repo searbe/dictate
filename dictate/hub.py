@@ -24,8 +24,9 @@ class Hub:
         self.win.connect("destroy", lambda *_: setattr(self, "closed", True))
         self.closed = False
 
-        side = d.classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=200), "sidebar")
-        side.pack_start(d.classes(Gtk.Label(label="Dictate", xalign=0), "app-name"), False, False, 0)
+        side = self.side = d.classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=200, hexpand=False), "sidebar")
+        self.wide_only = [d.classes(Gtk.Label(label="Dictate", xalign=0), "app-name")]  # hidden while compact
+        side.pack_start(self.wide_only[0], False, False, 0)
         self.nav = d.classes(Gtk.ListBox(), "nav")
         for key, title, icon in PAGES:
             if key == "voices" and not voices.available():
@@ -34,20 +35,43 @@ class Hub:
             row.key = key
             box = Gtk.Box(spacing=10)
             box.pack_start(Icon(icon), False, False, 0)
-            box.pack_start(Gtk.Label(label=title, xalign=0), True, True, 0)
+            name = Gtk.Label(label=title, xalign=0)
+            box.pack_start(name, True, True, 0)
             row.add(box)
+            row.set_tooltip_text(title)
+            self.wide_only.append(name)
             self.nav.add(row)
         self.nav.connect("row-selected", lambda _, row: row and row.key != self.page and self.show(row.key))
         side.pack_start(self.nav, False, False, 0)
         hint = d.text("Hold Ctrl+Win to dictate", "caption", wrap=True, margin=16)
         side.pack_end(hint, False, False, 0)
+        self.wide_only.append(hint)
+        self.compact = False
+        self.win.connect("size-allocate", lambda w, room: self.fit(w.get_size()[0]))  # (room has the shadow too)
 
-        self.stack = Gtk.Stack()  # pages switch at once: a frequent action, not worth animating
+        self.stack = Gtk.Stack(hhomogeneous=False)  # pages switch at once: a frequent action, not worth animating
+        # (and each has its own narrowest: Transcripts needs more room than Settings)
         body = Gtk.Box()
         body.pack_start(side, False, False, 0)
         body.pack_start(self.stack, True, True, 0)
         self.win.add(body)
         body.show_all()
+
+    COMPACT = 1120  # px: a window narrower than this has the sidebar's icons only (so Transcripts fits in ~960)
+
+    def fit(self, width):
+        """Collapse the sidebar to its icons in a narrow window, and back in a wide one."""
+        compact = width < self.COMPACT
+        if compact != self.compact:
+            self.compact = compact
+            GLib.idle_add(self.collapse, compact)  # (not while GTK's allocating sizes: it would be ignored)
+
+    def collapse(self, compact):
+        for w in self.wide_only:
+            w.set_visible(not compact)
+        self.side.set_size_request(56 if compact else 200, -1)
+        (self.win.get_style_context().add_class if compact else self.win.get_style_context().remove_class)("compact")
+        return False
 
     def show(self, key, focus=True, **kw):
         """Show page key (building it the first time), passing kw to it; bring the window forward (unless not
@@ -80,17 +104,17 @@ def page_box():
     return d.classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL), "page")
 
 
-def page_header(title, *actions, subtitle=None):
-    """The page's headline at left, its actions at right."""
+def page_header(title, *actions, subtitle=None, clamp=None):
+    """The page's headline at left, its actions at right; at most clamp px wide (the page's column), centred."""
     row = d.classes(Gtk.Box(spacing=8), "page-header")
     words = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-    words.pack_start(d.text(title, "headline"), False, False, 0)
+    words.pack_start(d.text(title, "headline", ellipsize=True), False, False, 0)
     if subtitle:
         words.pack_start(subtitle, False, False, 0)
     row.pack_start(words, True, True, 0)
     for a in reversed(actions):
         row.pack_end(a, False, False, 0)
-    return row
+    return d.Clamp(row, clamp) if clamp else row
 
 
 # --- dictations ---
@@ -122,7 +146,7 @@ class DictationsPage:
 
     def __init__(self, hub):
         self.hub, self.app = hub, hub.app
-        self.search = Gtk.SearchEntry(placeholder_text="Search", width_request=240)
+        self.search = Gtk.SearchEntry(placeholder_text="Search", width_chars=12)
         self.search.connect("search-changed", lambda *_: (self.list.invalidate_filter(), self.list.invalidate_headers()))
         self.widget = page_box()
         self.widget.pack_start(page_header("Dictations", self.search, d.button("Clear all…", self.clear, "danger")),
@@ -210,6 +234,7 @@ class DictationsPage:
 
         actions = d.classes(Gtk.Box(spacing=2, valign=Gtk.Align.START), "actions")
         play = d.icon_button("play", "Play", lambda: self.play(row, play))
+        play.icon.show()  # (no_show_all: shown only while its recording exists; its icon is shown regardless)
         play.set_no_show_all(True)
         actions.pack_start(play, False, False, 0)
         row.refresh_audio = lambda: (play.set_visible(bool(row.audio and row.audio.exists())), play.get_visible())[1]
@@ -276,9 +301,9 @@ class DictationsPage:
                                      "This can't be undone.", "Delete all"):
             return
         self.app.player.stop()
-        self.path.write_text("")
-        for wav in self.app.AUDIO.glob("*.wav"):
+        for wav in self.app.AUDIO.glob("*.wav"):  # (the recordings first: once the list is empty, they're gone)
             wav.unlink(missing_ok=True)
+        self.path.write_text("")
         self.load()
 
     def recordings_changed(self):
@@ -297,7 +322,7 @@ class StylesPage:
         self.widget = page_box()
         self.widget.pack_start(page_header("Styles"), False, False, 0)
         body = Gtk.Box(spacing=0, margin_start=12, margin_end=24, margin_bottom=24)
-        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=220, spacing=8)
+        left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=200, spacing=8)
         self.list = d.classes(Gtk.ListBox(), "pick")
         self.list.connect("row-selected", lambda _, row: row and self.show(row.get_index()))
         left.pack_start(self.list, False, False, 0)
@@ -431,9 +456,8 @@ class VoicesPage:
     def __init__(self, hub):
         self.hub = hub
         self.widget = page_box()
-        self.widget.pack_start(page_header("Voices"), False, False, 0)
-        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=24, margin_end=24, width_request=520,
-                       halign=Gtk.Align.START)
+        self.widget.pack_start(page_header("Voices", clamp=560), False, False, 0)
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=24, margin_end=24)
         self.toggle = Gtk.Switch(active=voices.remembering())
         self.toggle.connect("notify::active", lambda *_: self.toggled())
         body.pack_start(d.setting_row("Remember voices I name", self.EXPLAIN, self.toggle), False, False, 0)
@@ -442,7 +466,7 @@ class VoicesPage:
                         False, False, 0)
         self.list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         body.pack_start(self.list, False, False, 0)
-        self.widget.pack_start(body, False, False, 0)
+        self.widget.pack_start(d.Clamp(body, 560), False, False, 0)
 
     def shown(self, **_):
         self.refresh()
@@ -481,10 +505,9 @@ class SettingsPage:
     def __init__(self, hub):
         self.hub, self.app = hub, hub.app
         self.widget = page_box()
-        self.widget.pack_start(page_header("Settings"), False, False, 0)
-        self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=24, margin_end=24, width_request=560,
-                            halign=Gtk.Align.START)
-        self.widget.pack_start(d.scrolled(self.body), True, True, 0)
+        self.widget.pack_start(page_header("Settings", clamp=640), False, False, 0)
+        self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=24, margin_end=24)
+        self.widget.pack_start(d.scrolled(d.Clamp(self.body, 640)), True, True, 0)
 
     def shown(self, **_):
         for kid in self.body.get_children():
@@ -500,8 +523,13 @@ class SettingsPage:
                             "what was heard.", switch(cfg["refine"], app.set_refine)),
             ("Default style", "Applied after cleanup to every dictation that no app's style matches.",
              combo([(None, "None (cleanup only)")] + [(n, n) for n in styles], here and here["name"], refine.set_default)),
-            ("Keep recordings", "How long each dictation's audio is kept, to play back from Dictations.",
-             combo([(h, label) for h, label in app.KEEP_AUDIO], cfg["keep_audio_hours"], app.set_keep_audio)),
+            ("Recordings",),
+            ("Keep dictation recordings", "How long each dictation's audio is kept, to play back from Dictations. "
+                                          "Its text is kept until you delete it.",
+             combo(list(app.KEEP_AUDIO), cfg["keep_audio_hours"], app.set_keep_audio)),
+            ("Keep call recordings", "How long a transcribed call's audio is kept, to play back from Transcripts. "
+                                     "The transcript is kept until you delete it.",
+             combo(list(app.KEEP_AUDIO), cfg["keep_call_hours"], app.set_keep_calls)),
             ("Another computer",),
             ("When it has the keyboard", "When your keyboard controls another computer (Synergy and similar).",
              combo(list(app.REMOTE_MODES), cfg["remote_mode"], lambda m: app.save_state(remote_mode=m))),

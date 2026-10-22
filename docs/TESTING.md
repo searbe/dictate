@@ -52,7 +52,7 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 | Choosing a style: by window title or app, title changes without refocusing, default style, Alt+letter (one that's no style's being another app's shortcut), the picker (letter, Enter, Escape, click) | `test_choosing_a_style.py` |
 | Real windows on a real KWin, reported by Dictate's KWin script (incl. the Gmail → WhatsApp tab bug) | `test_focused_window.py` |
 | The model: vocabulary and window context in the prompt, loading on key press, unloading when idle, never outliving Dictate, rejecting answers / placeholders / rewrites, errors and a missing llama-server | `test_refinement_model.py` |
-| Dictations: grouped by day, labels, search, copy, play, delete, clear (with confirmation), the keep-recordings setting | `test_dictations_page.py` |
+| Dictations: grouped by day, labels, search, copy, play, delete, clear (with confirmation), the keep-dictation-recordings setting | `test_dictations_page.py` |
 | Styles: add, edit, validate, delete, rename, vocabulary, cleanup prompt and reset | `test_style_manager.py` |
 | Another computer (Synergy's log): typed not pasted, its own default style, ignoring the hotkey, switching back | `test_other_computer.py` |
 | Quit (menu and signal) with the reason logged, the microphone never left recording (quitting mid-dictation, or crashing mid-recording), run at startup, single instance, switching to `.venv` | `test_running_dictate.py` |
@@ -61,8 +61,8 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 | Keys typed and pasted on US and UK layouts, Shift+Enter for new lines, plain punctuation | `test_typing_and_pasting.py` |
 | Speech-to-text with the real models: English, German, silence and noise, live = whole-file | `test_speech_to_text.py` |
 | Downloads: complete, interrupted, not repeated; unpacking | `test_downloads.py` |
-| Transcribe mode: what's being said shown before the pause and replaced by the whole stretch (not saved; not while muted or paused), a stretch cut between voices loses no words (real models), the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / menu, closing the window carries on, pause, dictating meanwhile, echoes (the same words at once, and with the real models a made-up room's echo), playback from Dictations, recordings kept or not, the real model on speakers audio | `test_transcribe_mode.py` |
-| Transcripts: listed newest first with when and how long, the recording at the top and kept up to date while reading others, reading one, copy, delete (with confirmation) with its recordings, none yet, clicking the capsule while recording | `test_transcripts_window.py` |
+| Transcribe mode: what's being said shown before the pause and replaced by the whole stretch (not saved; not while muted or paused), a stretch cut between voices loses no words (real models), the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / menu, closing the window carries on, pause, dictating meanwhile, echoes (the same words at once, and with the real models a made-up room's echo), playback from Dictations, recordings kept or not, a transcript where nothing was heard not kept, call recordings kept for their own setting, the real model on speakers audio | `test_transcribe_mode.py` |
+| Transcripts: listed newest first with when and how long, the recording at the top and kept up to date while reading others, reading one, copy, delete (with confirmation) with its recordings, playing the call back (only while its recordings are kept; not while it's recorded), none yet, clicking the capsule while recording | `test_transcripts_window.py` |
 | Echoes: the speakers heard again by the microphone (in made-up rooms, quieter or later) told from you speaking, alone or over them | `test_echo.py` |
 | Topics: listed beside the transcript with who brought each up and who else spoke on it, the current one marked, carried on when the conversation goes back to one, a new paragraph where the topic changes, small talk left out, saved at the top of the transcript (including what was said last, when it's stopped), the transcript carrying on when the model fails, a warning while the less reliable model is used (graphics card busy, or none) and once saved, switching to the better one once the graphics card is free but not mid-dictation, topics that turn out to be one subject merged (only if the model says so again about each pair, and not by the less reliable model) | `test_topics.py` |
 | Still transcribing: closing the window while recording says it carries on and every way to stop it (once a day), Stop now, Keep going, a desktop notification when the capsule isn't on screen, the reminder after a while with nothing heard (not again until something is) | `test_still_transcribing.py` |
@@ -133,6 +133,8 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
 - With nothing running on the GPU, dictate: the log says `refine: loading … on gpu`. Start a game, dictate:
   `on cpu`. Unused for 30 s: `refine: unloaded`, and VRAM is freed.
 - Dictations → Play (hover an entry): the recording is audible; Stop stops it.
+- Transcripts → Play on a call with its recordings kept: both sides are audible, mixed. Clicking a paragraph's
+  time plays from there.
 
 ### 7. Transcribe mode (real speakers, microphone and calls)
 

@@ -1,7 +1,7 @@
 """Transcribe mode: Ctrl+Win, lift Win, Win again, and everything said through the speakers (by "Speaker 1",
 "Speaker 2", …: see test_voices.py) and into the microphone ("Me") is written into a transcript as it's heard,
 shown at the top of the Transcripts window, until it's stopped the same way, or with the Stop button."""
-import re, time
+import os, re, time
 import pytest
 from conftest import needs_models, needs_session, sample_speech
 from harness.client import eventually
@@ -212,8 +212,8 @@ def test_an_ordinary_dictation_is_not_mistaken_for_it(start):
     assert "Transcripts" not in app.send("windows")["titles"]
 
 
-def test_the_transcript_recordings_follow_the_keep_recordings_setting(start):
-    app = started(start, settings={"keep_audio_hours": 0})
+def test_a_calls_recordings_follow_their_own_keep_setting(start):
+    app = started(start, settings={"keep_call_hours": 0, "keep_audio_hours": 24})
     app.hear("Hello.")
     app.click("Stop", "Transcripts")
     eventually(lambda: app.stopped())
@@ -323,3 +323,28 @@ def test_the_speakers_echoing_into_the_microphone_are_not_you_with_the_real_mode
     said = re.findall(r"\*\*\S+ (.+?):\*\* ([^\n]*)", app.transcript_file())
     assert sum(t.lower().count("ask not") for who, t in said if who == "Speaker 1") == 1
     assert sum(t.lower().count("ask not") for who, t in said if who == "Me") == 1
+
+
+def test_a_transcript_where_nothing_was_heard_is_not_kept(start):
+    app = started(start)
+
+    app.ctrl_win_win()
+
+    eventually(lambda: not list((app.data / "transcripts").glob("*")))  # nor its recordings
+    assert "No transcripts yet" in app.read("Transcripts")
+
+
+def test_call_recordings_are_kept_longer_than_dictations_if_set_to(start, tmp_path):
+    """Dictations' recordings and calls' each go when their own setting says."""
+    data = tmp_path / "data"
+    (data / "audio").mkdir(parents=True)
+    (data / "transcripts").mkdir()
+    two_days_ago = time.time() - 48 * 3600
+    for f in (data / "audio/old.wav", data / "transcripts/2026-10-19 10.00.00 them.ogg"):
+        f.write_bytes(b"audio")
+        os.utime(f, (two_days_ago, two_days_ago))
+
+    start(styles=[], settings={"keep_audio_hours": 24, "keep_call_hours": 168})
+
+    eventually(lambda: not (data / "audio/old.wav").exists())
+    assert (data / "transcripts/2026-10-19 10.00.00 them.ogg").exists()

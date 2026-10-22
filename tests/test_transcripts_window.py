@@ -1,6 +1,10 @@
 """Transcripts, in the Dictate window: every saved transcript in a list (when, how long, how it starts), the
 selected one shown beside it, with Copy all, Open file and Delete (icon buttons, found by their tooltips), and
 Open folder."""
+import shutil, subprocess, time
+import numpy as np
+import pytest
+import soundfile
 from conftest import needs_session
 from harness.client import eventually
 
@@ -246,3 +250,75 @@ def test_clicking_the_icon_otherwise_opens_nothing(start):
     app.send("click_icon")
 
     assert app.send("windows")["titles"] == []
+
+
+def recorded(app, name, seconds=3):
+    """Recordings for a saved transcript: its microphone and this computer's audio (a tone each)."""
+    folder = app.data / "transcripts"
+    t = np.arange(16000 * seconds) / 16000
+    for who, hz in (("me", 220), ("them", 330)):
+        soundfile.write(str(folder / f"{name} {who}.ogg"), (0.2 * np.sin(2 * np.pi * hz * t)).astype(np.float32),
+                        16000, format="OGG", subtype="OPUS")
+
+
+def test_a_transcripts_recording_can_be_played_while_it_is_kept(start):
+    app = start(styles=[])
+    saved(app, "2026-10-19 10.00.00", MONDAY)
+    recorded(app, "2026-10-19 10.00.00")
+    app.send("menu", path=["Transcripts"])
+    app.wait_window("Transcripts")
+    mark = app.mark()
+
+    app.click("Play", "Transcripts")
+
+    played = app.wait_for("playing", after=mark)["path"]
+    audio, rate = soundfile.read(played)
+    assert rate == 16000 and len(audio) > 16000 * 2  # both recordings, mixed into one
+    eventually(lambda: "Stop" in app.read("Transcripts"))
+    app.click("Stop", "Transcripts")
+    app.wait_for("stopped", after=mark)
+
+
+def test_without_its_recordings_a_transcript_offers_no_play(start):
+    app = opened(start, ("2026-10-19 10.00.00", MONDAY))
+
+    assert "Play" not in app.read("Transcripts")
+
+
+def test_the_one_being_recorded_offers_no_play(start):
+    app = recording(start)
+
+    assert "Play" not in app.read("Transcripts")
+
+
+@pytest.mark.skipif(not shutil.which("xdotool"), reason="drags with xdotool")
+def test_the_list_and_the_topics_can_be_dragged_wider_while_a_call_is_recorded(start):
+    """With the mouse, on the test's own desktop. While it's recorded, the transcript changes every second: its
+    narrowest mustn't change with it (the dividers would stop wherever it is at the time)."""
+    app = recording(start)
+    for i in range(6):
+        app.hear(f"Line {i} about the roadmap, and hiring, and the other things on the list.", voice=f"v{i % 3}")
+    app.send("resize", width=1260, height=700, window_title="Transcripts")  # (the test screen's widest: room for both)
+    left, right = app.send("panes", window_title="Transcripts")["panes"]
+
+    drag(left["x"], left["y"] + left["height"] // 2, +100, lambda: app.hear_so_far("still talking"))
+    right = app.send("panes", window_title="Transcripts")["panes"][1]
+    drag(right["x"], right["y"] + right["height"] // 2, -100, lambda: app.hear_so_far("still talking"))
+
+    after = app.send("panes", window_title="Transcripts")["panes"]
+    assert after[0]["position"] >= left["position"] + 80  # the list: 100 px wider (the divider trails a step or two)
+    assert after[1]["x"] <= right["x"] - 80  # the topics: likewise
+
+
+def drag(x, y, by, meanwhile):
+    """Press the mouse at (x, y), move it by px sideways in steps (meanwhile() between them), and let go."""
+    xdo = lambda *args: subprocess.run(["xdotool", *map(str, args)], check=True)
+    xdo("mousemove", x, y)
+    time.sleep(0.2)
+    xdo("mousedown", 1)
+    for step in range(10, abs(by) + 10, 10):
+        xdo("mousemove", x + (step if by > 0 else -step), y)
+        meanwhile()
+        time.sleep(0.05)
+    xdo("mouseup", 1)
+    time.sleep(0.3)

@@ -94,8 +94,8 @@ def paint_backdrop(cr, w, h):
 def fake_app(tmp, session=None):
     return SimpleNamespace(
         DICTATIONS=tmp / "dictations.jsonl", AUDIO=tmp / "audio", KEEP_AUDIO=KEEP_AUDIO, REMOTE_MODES=REMOTE_MODES, SAME=SAME,
-        cfg={"keep_audio_hours": 24, "refine": True, "remote_mode": "type"}, player=osio.Player(),
-        copy=lambda text: None, set_keep_audio=lambda hours: None, save_state=lambda **kw: None,
+        cfg={"keep_audio_hours": 24, "keep_call_hours": 168, "refine": True, "remote_mode": "type"},
+        player=osio.Player(), copy=lambda text: None, set_keep_audio=lambda hours: None, set_keep_calls=lambda hours: None, save_state=lambda **kw: None,
         set_refine=lambda on: None, autostart=lambda: True, set_autostart=lambda on: None,
         session=session, stop_transcribing=lambda: None)
 

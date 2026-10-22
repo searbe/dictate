@@ -331,6 +331,51 @@ def cmd_read(window_title=None):
     return {"texts": texts(window(window_title))}
 
 
+def cmd_opacity(label, window_title=None, hover=None):
+    """How opaque the button with this label (or tooltip) looks, 0–1, with its list row hovered (hover=True) or
+    not (False): what CSS makes of it, as a user sees it."""
+    button = labelled(window(window_title), Gtk.Button, label)[0]
+    row = next((w for w in iter(lambda b=[button]: (b.append(b[-1].get_parent()), b[-1])[1], None)
+                if isinstance(w, Gtk.ListBoxRow)), None)
+    if row and hover is not None:
+        (row.set_state_flags if hover else row.unset_state_flags)(Gtk.StateFlags.PRELIGHT, *(() if not hover else (False,)))
+        for _ in range(30):  # (let the fade finish)
+            pump()
+            time.sleep(0.01)
+    opacity, w = 1.0, button
+    while w:
+        ctx = w.get_style_context()
+        opacity *= ctx.get_property("opacity", ctx.get_state())
+        w = w.get_parent()
+    return {"opacity": opacity}
+
+
+def cmd_has_icon(label, window_title=None):
+    """Whether the icon button with this tooltip shows its icon."""
+    button = labelled(window(window_title), Gtk.Button, label)[0]
+    return {"shown": bool(button.get_child() and button.get_child().get_mapped())}
+
+
+def cmd_resize(width, height, window_title=None):
+    """Make the window this size, as dragging its edge would."""
+    window(window_title).resize(width, height)
+    for _ in range(30):
+        pump()
+        time.sleep(0.01)
+
+
+def cmd_panes(window_title=None):
+    """Where the split panes' dividers are: [{"x", "y", "height", "position"}] on screen, left to right."""
+    out = []
+    for w in descendants(window(window_title)):
+        if isinstance(w, Gtk.Paned) and shown(w):
+            gdk = w.get_window()
+            ox, oy = gdk.get_origin()[1:]
+            a = w.get_allocation()
+            out.append({"x": ox + a.x + w.get_position(), "y": oy + a.y, "height": a.height, "position": w.get_position()})
+    return {"panes": sorted(out, key=lambda p: p["x"])}
+
+
 def cmd_click_icon():
     """Click the floating icon (press and release without moving)."""
     for kind in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.BUTTON_RELEASE):

@@ -116,7 +116,7 @@ def test_keeping_recordings_for_less_time_deletes_older_ones_and_hides_their_pla
     os.utime(app.data / "audio/monday.wav", (two_hours_ago, two_hours_ago))
 
     app.send("select", row="Settings", window_title="Dictations")
-    app.send("choose", option="1 hour", window_title="Settings", setting="Keep recordings")
+    app.send("choose", option="1 hour", window_title="Settings", setting="Keep dictation recordings")
 
     assert not (app.data / "audio/monday.wav").exists()
     app.send("select", row="Dictations", window_title="Settings")
@@ -155,3 +155,12 @@ def test_without_the_cleaned_up_text_the_steps_cannot_be_opened(start):
         app.click("Cleanup", window="Dictations")
 
     assert "What cleanup changed" not in app.read("Dictations")
+
+
+def test_a_dictations_actions_show_when_it_is_hovered(start):
+    app = open_dictations(start, MONDAY, audio=["monday.wav"])
+
+    for action in ("Play", "Copy", "Copy original", "Delete"):
+        assert app.send("has_icon", label=action, window_title="Dictations")["shown"]
+        assert app.send("opacity", label=action, window_title="Dictations", hover=False)["opacity"] == 0
+        assert app.send("opacity", label=action, window_title="Dictations", hover=True)["opacity"] == 1

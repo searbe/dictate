@@ -19,6 +19,7 @@ Its topics (topics.py) are kept up to date as it's heard, listed at the top of t
 beside it with which paragraph is on which, by their place in it (a paragraph ends where the topic changes)."""
 import json, re, threading, time
 from datetime import datetime, timedelta
+from pathlib import Path
 import numpy as np
 from gi.repository import GLib
 from . import DATA, echo, osio, refine, stt, topics, voices
@@ -73,6 +74,28 @@ def topics_markdown(found, people):
     lines = "".join(f"- **{t['title']}**" + (f" ({', '.join(who)})" if who else "") + f": {' '.join(t['points'])}\n"
                     for t, who in zip(found.topics, people))
     return f"\n## Topics\n\n{lines}\n## Transcript\n"
+
+
+def mixdown(path, start=0.0):
+    """The transcript's recordings (this computer's audio and the microphone) mixed into one WAV from start
+    seconds on, to play back; its path, or None if they're gone (they're kept for "keep recordings")."""
+    import soundfile
+    tracks, rate = [], stt.RATE
+    for rec in recordings(path):
+        try:
+            data, rate = soundfile.read(str(rec), dtype="float32")
+        except RuntimeError:
+            continue
+        tracks.append(data.mean(1) if data.ndim > 1 else data)
+    if not tracks:
+        return None
+    mix = np.zeros(max(map(len, tracks)), np.float32)
+    for track in tracks:
+        mix[:len(track)] += track
+    out = Path(GLib.get_user_cache_dir()) / "dictate" / "playback.wav"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    soundfile.write(str(out), np.clip(mix[int(start * rate):], -1, 1), rate, subtype="PCM_16")
+    return out
 
 
 def voiceprints(path):
@@ -289,7 +312,7 @@ class Session:
     def stop(self, on_done, last_topics=True):
         """Stop recording, transcribe what's left, save, sort what's left into topics and merge any that are
         one subject (unless not last_topics: quitting doesn't wait for the model), then on_done() on the GTK
-        thread."""
+        thread. If nothing was heard, nothing is kept: the transcript and its recordings are deleted."""
         self.stopped = True
         def finish():
             for rec in self.recorders:
@@ -298,6 +321,10 @@ class Session:
                 live.finish()  # its last stretches arrive through hear(), before on_done
             GLib.idle_add(saved)
         def saved():
+            if not self.kept():
+                delete(self.path)
+                self.on_change()
+                return done()
             self.save()
             self.on_change()
             tidy = lambda: self.merge_topics(then=done) or done()

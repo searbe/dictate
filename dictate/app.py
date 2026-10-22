@@ -14,9 +14,9 @@ from gi.repository import Gtk, Gdk, GLib
 from . import DATA, activewin, capsule, design, huds, hub, osio, refine, remote, stt, transcript, tray
 
 DICTATIONS = DATA / "dictations.jsonl"  # every dictation, a JSON line each
-AUDIO = DATA / "audio"  # each dictation's recording, kept for playback for "keep_audio_hours"
-KEEP_AUDIO = ((0, "Don't keep"), (1, "1 hour"), (2, "2 hours"), (3, "3 hours"), (12, "12 hours"), (24, "24 hours"),
-              (None, "Forever (∞)"))  # hours; None = never delete
+AUDIO = DATA / "audio"  # each dictation's recording, kept for playback for "keep_audio_hours" (calls': "keep_call_hours")
+KEEP_AUDIO = ((0, "Don't keep"), (1, "1 hour"), (3, "3 hours"), (12, "12 hours"), (24, "1 day"), (72, "3 days"),
+              (168, "1 week"), (None, "Forever"))  # hours, for dictations' and calls' recordings; None = never delete
 STATE = DATA / "state.json"
 REMOTE_MODES = (("type", "Type the text there"), ("ignore", "Ignore the hotkey"))
 SAME = "same"  # remote default style: same as here
@@ -47,7 +47,7 @@ class App:
 
         self.capsule = capsule.Capsule()
         w = self.win = self.capsule.win
-        self.cfg = {"pos": [100, 100], "refine": True, "remote_mode": "type", "keep_audio_hours": 24,
+        self.cfg = {"pos": [100, 100], "refine": True, "remote_mode": "type", "keep_audio_hours": 24, "keep_call_hours": 168,
                     **load_json(STATE, {})}
         w.move(*self.cfg["pos"])
         self.capsule.anchor = self.cfg.get("anchor", "left")
@@ -381,15 +381,23 @@ class App:
             GLib.timeout_add(delay, self.paster.paste, terminal)
 
     def prune_audio(self):
-        """Delete recordings older than the "keep recordings" setting (history entries stay)."""
-        hours = self.cfg["keep_audio_hours"]
-        if hours is not None:
+        """Delete recordings older than their setting: dictations' (keep_audio_hours) and calls' (keep_call_hours).
+        Their text stays, in Dictations and Transcripts."""
+        recording = {Path(self.wav or ""), *map(Path, self.session.recordings if self.session else [])}
+        for hours, files in ((self.cfg["keep_audio_hours"], AUDIO.glob("*.wav")),
+                             (self.cfg["keep_call_hours"], [*transcript.FOLDER.glob("*.ogg"), *transcript.FOLDER.glob("*.wav")])):
+            if hours is None:
+                continue
             cutoff = time.time() - hours * 3600
-            recording = {Path(self.wav or ""), *map(Path, self.session.recordings if self.session else [])}
-            for wav in [*AUDIO.glob("*.wav"), *transcript.FOLDER.glob("*.ogg"), *transcript.FOLDER.glob("*.wav")]:
+            for wav in files:
                 if wav.stat().st_mtime < cutoff and wav not in recording:  # never one being recorded
                     wav.unlink(missing_ok=True)
         return True  # keep the 10-minute timer going
+
+    def set_keep_calls(self, hours):
+        self.save_state(keep_call_hours=hours)
+        self.prune_audio()
+        self.transcripts_changed()  # (Play, for those whose recordings just went)
 
     def set_keep_audio(self, hours):
         self.save_state(keep_audio_hours=hours)
@@ -437,7 +445,7 @@ class App:
             self.reminder.close()
 
         def saved():
-            if self.cfg["keep_audio_hours"] == 0:
+            if self.cfg["keep_call_hours"] == 0:
                 for path in session.recordings:
                     Path(path).unlink(missing_ok=True)
             self.transcripts_changed()

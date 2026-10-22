@@ -114,6 +114,8 @@ Build every surface from these, in `design.py`; add a component here before usin
   a caption heading ("What cleanup changed"). Light edits are marked in place: what went struck through in
   `danger`, what came highlighted in the accent at 22 %. A rewrite (under half the words in common) shows Before
   (small, text-2) and After (body) instead. Opens with `fade`.
+- **Clickable times.** In a transcript, a paragraph's time (caption size, text-3) plays the call from that
+  moment while its recordings are kept; nothing else about it changes, so a transcript stays plain to read.
 - **Key badge.** 18×18, r-xs, surface-3, caption 600 in text, the letter upper-case.
 - **Row.** A list item: r-md, 8/12 padding, transparent; hover surface-2; actions (icon buttons) at the right,
   hidden until hover (opacity, so they keep their place). Text first, a caption meta line under or over it.
@@ -167,7 +169,19 @@ Build every surface from these, in `design.py`; add a component here before usin
   colour fringes show through translucency. Their shadow needs transparent room inside the window.
 - **The Dictate window's header bar** holds only the window buttons; the sidebar's colour runs up through it, so
   the window reads as one surface. The page names itself in its headline; the window's title follows the page.
+- **Resizing.** A wider window shows more. Lists (Dictations) and the transcript fill the width they're given;
+  side panes (the transcript list, the topics rail) are split panes the user drags to the width they want
+  (a hairline divider with 2 px to grab either side, painted the colour of the pane beside it; brighter on
+  hover; widths remembered in the settings), and keep it as the window grows. Forms read better as a
+  column: Settings (640 px) and Voices (560 px) centre in a wide window (`design.Clamp`). Narrower, everything
+  shrinks to what's still usable: long titles and status lines end in "…", text wraps, and below 1120 px the
+  sidebar shows only its icons. A pane beside a draggable divider keeps its narrowest small and steady: no
+  rows of buttons or changing text side by side that can't wrap or shorten (icon buttons, wrapping rows, short
+  status), or the divider stops wherever that narrowest is at the moment. Panes that shouldn't grow say `hexpand=False` (a scrolled list inside would
+  otherwise make them). Changes made in response to a resize (the sidebar) are applied after GTK's layout, from
+  an idle callback.
 - **Hover-revealed actions** fade with `opacity`, so they keep their place and stay clickable by keyboard and by
-  tests; a playing recording keeps its row's actions shown.
+  tests; a playing recording keeps its row's actions shown. In GTK 3 only the list row itself is hovered (not
+  the boxes in it), so hover rules start from `row:hover`.
 - **Screenshots** of every surface, light and dark, come from `docs/make_screenshots.py` (`--light`); check a
   change in both.
