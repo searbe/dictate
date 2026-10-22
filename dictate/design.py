@@ -142,6 +142,12 @@ button.btn.primary .keyhint {{ color: rgba(255,255,255,0.7); }}
 /* chips, badges, pills */
 .chip {{ {size('caption')} background: {t['surface-3']}; color: {t['text-2']}; border-radius: {R_SM}px; padding: 2px 7px; }}
 .chip.accent {{ background: {t['accent-weak']}; color: {t['accent']}; }}
+button.chip {{ min-height: 0; border: none; box-shadow: none; background-image: none; -gtk-icon-shadow: none; outline: none;
+  transition: background-color 120ms ease-out, color 120ms ease-out; }}
+button.chip label {{ color: inherit; {size('caption')} }}
+button.chip:hover {{ background: {t['surface-4']}; color: {t['text']}; }}
+button.chip.on, button.chip.on:hover {{ background: {t['accent-weak']}; color: {t['accent']}; }}
+.step {{ background: {t['surface-2']}; border: 1px solid {t['line']}; border-radius: {R_MD}px; padding: 10px 12px; }}
 .key {{ {size('caption')} font-weight: 600; background: {t['surface-3']}; color: {t['text']}; border-radius: {R_XS}px;
   min-width: 18px; min-height: 18px; padding: 0 4px; }}
 .pill {{ {size('caption')} font-weight: 600; background: {t['surface-3']}; color: {t['text']}; border-radius: {R_FULL}px; padding: 3px 10px; }}
@@ -447,6 +453,64 @@ def flash(btn, done, label, icon=None):
 
 def chip(label, accent=False):
     return classes(Gtk.Label(label=label), "chip", "accent" if accent else None)
+
+
+def step_chip(label, cb, tooltip=None):
+    """A chip that can be clicked (e.g. a dictation's step, to see what it did); on() marks it chosen."""
+    b = classes(Gtk.Button(label=label, tooltip_text=tooltip, valign=Gtk.Align.CENTER), "chip")
+    b.connect("clicked", lambda _: cb())
+    b.on = lambda yes: (b.get_style_context().add_class if yes else b.get_style_context().remove_class)("on")
+    return b
+
+
+def diff_markup(before, after):
+    """Pango markup of after, with what was taken out of before struck through in danger, and what was put in
+    highlighted in the accent: a word at a time (spaces and punctuation are words too)."""
+    import difflib, re
+    from xml.sax.saxutils import escape
+    words = lambda s: re.findall(r"\s+|[\w'’-]+|[^\w\s]", s)
+    a, b = words(before), words(after)
+    out = []
+    for op, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if op == "equal":
+            out.append(escape("".join(a[i1:i2])))
+            continue
+        gone, new = "".join(a[i1:i2]), "".join(b[j1:j2])
+        if gone.strip():
+            out.append(f'<span strikethrough="true" foreground="{tok("danger")}">{escape(gone)}</span>')
+            if new.strip():
+                out.append(" ")  # (so what replaced it doesn't run into it)
+        if new.strip():
+            out.append(f'<span background="{tok("accent")}" bgalpha="22%" foreground="{tok("text")}">{escape(new)}</span>')
+        elif new:
+            out.append(escape(new))
+    return "".join(out)
+
+
+REWRITE = 0.5  # words in common, as a share: below it, a step rewrote the text (show before and after)
+
+
+def similarity(before, after):
+    import difflib
+    return difflib.SequenceMatcher(None, before.split(), after.split(), autojunk=False).ratio()
+
+
+def step_card(title, before, after):
+    """What one step did to some text: a heading, then after marked up against before (diff_markup); or, if the
+    step rewrote it (word-by-word marks would be unreadable), before and after, one above the other."""
+    card = classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6), "step")
+    card.pack_start(classes(Gtk.Label(label=title, xalign=0), "caption", "label-strong"), False, False, 0)
+    if before == after:
+        card.pack_start(text("Nothing changed.", "small"), False, False, 0)
+    elif similarity(before, after) < REWRITE:
+        for label, words, kind in (("Before", before, "small"), ("After", after, "body")):
+            card.pack_start(classes(Gtk.Label(label=label, xalign=0, margin_top=4), "caption"), False, False, 0)
+            card.pack_start(text(words, kind, wrap=True, selectable=True), False, False, 0)
+    else:
+        words = text("", "body", wrap=True, selectable=True)
+        words.set_markup(diff_markup(before, after))
+        card.pack_start(words, False, False, 0)
+    return card
 
 
 def key_badge(key):

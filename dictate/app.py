@@ -313,7 +313,7 @@ class App:
     def process(self, rec, live, wav, refining, alt, letter, app):
         """Stop recording → transcribe → cleanup → a style: Alt+letter's, or (Alt alone, or a style's letter
         since deleted) ask which, or (no Alt) the style matching the focused app, else the default style."""
-        raw = text = style = ""
+        raw = text = cleaned = style = ""
         ctx = activewin.describe(app)
         try:
             rec.stop()  # here, not on the GTK thread: pw-record takes ~0.35 s to finish the file
@@ -324,6 +324,7 @@ class App:
                 raw = text = stt.transcribe(wav)
             if refining and raw:
                 text = refine.cleanup(raw, ctx)
+            cleaned = text
             if alt and raw:
                 style = letter and refine.style_for_key(letter)
                 if not style:
@@ -339,12 +340,14 @@ class App:
         finally:
             if refining:
                 refine.release()
-        GLib.idle_add(lambda: self.paste(text, raw, app, style and style["name"], audio=wav, cleanup=refining))
+        GLib.idle_add(lambda: self.paste(text, raw, app, style and style["name"], audio=wav, cleanup=refining,
+                                         cleaned=cleaned))
 
-    def paste(self, text, raw, app, style=None, paste=True, delay=150, audio=None, cleanup=False):
-        """Save to history (with the recording and what was applied), then paste or type the text."""
+    def paste(self, text, raw, app, style=None, paste=True, delay=150, audio=None, cleanup=False, cleaned=None):
+        """Keep it in Dictations (with the recording, and each step: what was heard, cleaned up, styled), then
+        paste or type the text. cleaned: the text after cleanup, before the style."""
         if audio and self.hotkey.chord.may_go_again():  # this hold may be the start of Ctrl+Win, Win again
-            GLib.timeout_add(50, lambda: self.paste(text, raw, app, style, paste, delay, audio, cleanup) and False)
+            GLib.timeout_add(50, lambda: self.paste(text, raw, app, style, paste, delay, audio, cleanup, cleaned) and False)
             return
         self.set_state("idle")
         if audio and audio == self.cancelled:  # it was: not a dictation
@@ -362,6 +365,7 @@ class App:
             entry["raw"] = raw
         if style:
             entry["style"] = style
+            entry["cleaned"] = cleaned  # (so what the style changed can be seen, apart from cleanup)
         if audio and self.cfg["keep_audio_hours"] == 0:  # recordings aren't being kept
             Path(audio).unlink(missing_ok=True)
         elif audio:
@@ -523,7 +527,8 @@ class App:
             self.set_state("busy")
             def restyle():
                 styled = refine.apply(text, style, activewin.describe(app))
-                GLib.idle_add(lambda: self.paste(styled, raw, app, style["name"], True, 400, audio=audio, cleanup=True))
+                GLib.idle_add(lambda: self.paste(styled, raw, app, style["name"], True, 400, audio=audio, cleanup=True,
+                                                 cleaned=text))
             threading.Thread(target=restyle, daemon=True).start()
         huds.StylePicker(text, chosen, on_new=lambda: self.open_hub("styles", new=True))
 

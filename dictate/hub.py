@@ -105,6 +105,17 @@ def applied(it):
     return ["Cleanup" if it["cleanup"] else "Raw transcript"] + ([it["style"]] if "style" in it else [])
 
 
+def steps(it):
+    """{label: (title, before, after)}: what each step of an entry did to its text, where it's known (an entry
+    with a style keeps the cleaned-up text in between since 22 Oct 2026)."""
+    out, styled, cleaned = {}, "style" in it, it.get("cleaned")
+    if it["cleanup"] and (cleaned is not None or not styled):
+        out["Cleanup"] = ("What cleanup changed", it.get("raw", it["text"]), cleaned if styled else it["text"])
+    if styled and cleaned is not None:
+        out[it["style"]] = (f"What {it['style']} changed", cleaned, it["text"])
+    return out
+
+
 class DictationsPage:
     """Every dictation, newest first, grouped by day; search; on hover: Play, Copy, Copy original, Delete."""
     EMPTY = "Nothing dictated yet"
@@ -184,8 +195,15 @@ class DictationsPage:
         words = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
         meta = Gtk.Box(spacing=6)
         meta.pack_start(d.text(" · ".join(filter(None, (f"{when:%H:%M}", it.get("app")))), "caption"), False, False, 0)
+        known = steps(it)
         for label in applied(it):
-            meta.pack_start(d.chip(label), False, False, 0)
+            if label in known:
+                chip = d.step_chip(label, lambda l=label: self.show_step(row, l), f"See what {label.lower() if label == 'Cleanup' else label} changed")
+                row.chips = getattr(row, "chips", {}) | {label: chip}
+                meta.pack_start(chip, False, False, 0)
+            else:
+                meta.pack_start(d.chip(label), False, False, 0)
+        row.steps, row.step, row.words = known, None, words
         words.pack_start(meta, False, False, 0)
         words.pack_start(d.text(it["text"], "body", wrap=True, selectable=True), False, False, 0)
         item.pack_start(words, True, True, 0)
@@ -206,6 +224,23 @@ class DictationsPage:
         item.pack_end(actions, False, False, 0)
         row.add(item)
         return row
+
+    def show_step(self, row, label):
+        """Show (or, clicked again, hide) what step label did to the row's text, under it."""
+        if not hasattr(row, "revealer"):
+            row.revealer = Gtk.Revealer(transition_type=Gtk.RevealerTransitionType.CROSSFADE,
+                                        transition_duration=int(d.FADE * 1000) if d.animations() else 0, margin_top=6)
+            row.words.pack_start(row.revealer, False, False, 0)
+        opening = row.step != label
+        for name, chip in row.chips.items():
+            chip.on(opening and name == label)
+        if opening:
+            if row.revealer.get_child():
+                row.revealer.remove(row.revealer.get_child())
+            row.revealer.add(d.step_card(*row.steps[label]))
+            row.revealer.show_all()
+        row.revealer.set_reveal_child(opening)
+        row.step = label if opening else None
 
     def play(self, row, btn):
         if btn.get_tooltip_text() == "Stop":

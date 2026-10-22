@@ -96,6 +96,7 @@ def test_alt_alone_asks_which_style_and_its_letter_applies_it(start, model):
 
     assert app.result(mark)["text"] == "FIX THE BUG."
     assert styled_as(app) == "Mail"
+    assert app.dictations()[-1]["cleaned"] == "Fix the bug."  # kept, to see what the style changed
     assert "Refine" not in app.send("windows")["titles"]
 
 

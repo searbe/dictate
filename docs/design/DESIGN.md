@@ -108,6 +108,12 @@ Build every surface from these, in `design.py`; add a component here before usin
   12 px sides, body-strong. A **key hint** (`⏎`, `Esc`) can sit inside at caption size in text-3.
 - **Icon button.** 28×28, r-sm, quiet; an icon and a tooltip.
 - **Chip.** 20 high, r-sm, caption, surface-3 with text-2; `accent` chip uses accent-weak with accent text.
+- **Step chip.** A chip that can be clicked to open what it stands for (a dictation's Cleanup or style: what
+  that step changed); hover surface-4; chosen: the accent chip. Only one open per item.
+- **Step card.** What a step did to some text, under the item: surface-2, `line` border, r-md, 10/12 padding,
+  a caption heading ("What cleanup changed"). Light edits are marked in place: what went struck through in
+  `danger`, what came highlighted in the accent at 22 %. A rewrite (under half the words in common) shows Before
+  (small, text-2) and After (body) instead. Opens with `fade`.
 - **Key badge.** 18×18, r-xs, surface-3, caption 600 in text, the letter upper-case.
 - **Row.** A list item: r-md, 8/12 padding, transparent; hover surface-2; actions (icon buttons) at the right,
   hidden until hover (opacity, so they keep their place). Text first, a caption meta line under or over it.

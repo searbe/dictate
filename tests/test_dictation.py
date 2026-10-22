@@ -33,6 +33,7 @@ def test_each_dictation_is_kept_in_history_with_what_was_done_to_it(start, model
 
     [entry] = app.dictations()
     assert entry["text"] == "hello there!" and entry["raw"] == "uh hello there"
+    assert entry["cleaned"] == "Hello there."  # each step: heard, cleaned up, styled
     assert entry["style"] == "Chat" and entry["cleanup"] is True
     assert entry["app"] == "Slack" and entry["title"] == "general - Acme - Slack"
     assert (app.data / "audio" / entry["audio"]).exists()  # the recording is kept for playback

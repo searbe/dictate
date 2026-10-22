@@ -1,6 +1,7 @@
 """Dictations, in the Dictate window: browsing, searching, copying, playing back and deleting past dictations,
 grouped by day; each one's actions (icon buttons, found by their tooltips) show on hover."""
 import json, os, time
+import pytest
 from conftest import needs_session
 from harness.client import eventually
 
@@ -122,3 +123,35 @@ def test_keeping_recordings_for_less_time_deletes_older_ones_and_hides_their_pla
     assert "Play" not in app.read("Dictations")
     assert app.dictations()[0]["text"] == "Morning all, standup in five."  # the entry itself stays
 
+
+
+STYLED = {"t": "2026-10-20T16:00:00", "text": "SO, THE MEETING IS AT THREE.", "raw": "um so the meeting is at three",
+          "cleaned": "So, the meeting is at three.", "app": "Slack", "cleanup": True, "style": "Chat"}
+
+
+def test_clicking_a_step_shows_what_it_changed(start):
+    app = open_dictations(start, STYLED)
+
+    app.click("Cleanup", window="Dictations")
+
+    eventually(lambda: "What cleanup changed" in app.read("Dictations"))
+    texts = app.read("Dictations")
+    assert "um so So, the meeting is at three." in texts  # what was taken out, then what was put in
+    app.click("Chat", window="Dictations")
+    eventually(lambda: "What Chat changed" in app.read("Dictations"))
+    texts = app.read("Dictations")
+    assert "What cleanup changed" not in texts  # one step at a time
+    assert texts.index("Before") < texts.index("So, the meeting is at three.") < texts.index("After") \
+        < texts.index("SO, THE MEETING IS AT THREE.", texts.index("After"))  # a rewrite: before, then after
+    app.click("Chat", window="Dictations")
+    eventually(lambda: "What Chat changed" not in app.read("Dictations"))  # clicked again: hidden
+
+
+def test_without_the_cleaned_up_text_the_steps_cannot_be_opened(start):
+    """Dictations with a style kept before 22 Oct 2026 didn't keep the text in between."""
+    app = open_dictations(start, {k: v for k, v in STYLED.items() if k != "cleaned"})
+
+    with pytest.raises(AssertionError):  # (a tag, not a button)
+        app.click("Cleanup", window="Dictations")
+
+    assert "What cleanup changed" not in app.read("Dictations")
