@@ -3,16 +3,32 @@
 # Dictate
 
 **Talk instead of typing, in any app, and get text that reads like you wrote it.** Hold Ctrl+Win, say what you
-mean, let go: a second later it's pasted, the ums gone, your corrections applied, and formatted for where it's
-going. Leave it running on a call and it writes the call down as it happens, who said what, with a live list of
-topics and a summary that's ready when the call ends.
+mean and let go: it's pasted with the ums gone, your corrections applied, and formatted for where it's going.
+Leave it running on a call and it writes the call down as it happens, who said what, with a live list of topics
+and a summary that's ready when the call ends.
 
 Everything runs on your own computer. Nothing you say leaves it, and you can [check that for
 yourself](docs/TECHNICAL.md#checking-that-its-local-only).
 
 ![The capsule: idle, dictating, working, transcribing a call](docs/capsule-states.png)
 
-## Say it the way you'd say it
+## Get started
+
+On Linux (SteamOS / KDE Plasma, or Ubuntu 24.04+):
+
+```sh
+git clone https://github.com/searbe/dictate.git
+cd dictate
+./setup.sh
+python dictate.py
+```
+
+Setup downloads the models (about 10 GB) into this folder, and everything stays in it: delete the folder and
+Dictate is gone. Tick **Run at startup** in its menu to have it there every time you log in. Windows and macOS
+setups are included but untested; see [the technical details](docs/TECHNICAL.md) for those, and for the
+recommended hardware.
+
+## Automatic cleanup and refinement
 
 You don't speak in finished sentences, and you don't need to. Dictate's cleanup takes out the filler, the
 repeated words and the false starts, keeps the corrections you make as you go, and fixes the words speech
@@ -24,8 +40,6 @@ Every dictation is kept, so you can see exactly what was done to it. Click **Cle
 
 That's real output from the local model: "sorry, Tuesday's stand-up, not every day" became "the Tuesday
 stand-up", where it belongs.
-
-## Right for where it's going
 
 A message to a colleague, an email, a prompt for an AI agent: each reads differently. **Refinements** reshape
 cleaned-up text for its destination, and they run on their own: the Slack refinement in Slack, the email one in
@@ -41,7 +55,7 @@ way, in **Vocabulary**.
 |---|---|
 | ![The refinement picker](docs/picker.png) | ![Refinements](docs/refinements.png) |
 
-## Your calls, written down as they happen
+## Live call transcription, with topics and a summary
 
 Hold Ctrl+Win, lift Win and press it again, and Dictate starts transcribing everything your computer plays and everything you say into
 your microphone: a Meet or Zoom call, a webinar, a podcast. It's built for the moment you're on a call and need
@@ -65,7 +79,7 @@ to keep up.
 
 Transcripts are plain Markdown files, with the summary and topics at the top. Take them anywhere.
 
-## Knows who's on the call
+## Voice recognition (opt-in)
 
 Name someone once and, if you turn it on, Dictate remembers their voice and names them in your next call
 automatically. It's off unless you switch it on, the voiceprints stay on this computer, and turning it off
@@ -73,7 +87,7 @@ forgets every one. (A voiceprint can identify someone: ask people first.)
 
 ![Voices](docs/voices.png)
 
-## Stays out of your way
+## The capsule and the Dictate window
 
 Dictate lives in a small capsule on your desktop: just a dot until you use it. While you speak it shows a live
 level meter, so you know it hears you; while it works, three quiet dots; while it's transcribing a call, the time
@@ -87,7 +101,7 @@ Everything else is in one window: your **Dictations** (each with its recording, 
 |---|---|
 | ![Dictations](docs/dictations.png) | ![Settings](docs/settings.png) |
 
-## Private, and you can prove it
+## Local only, and provably so
 
 Speech recognition, cleanup, refinements, topics, summaries, voices: all of it runs locally, on your graphics
 card if it's free and your processor if not. There's no account, no subscription and no cloud. The models are
@@ -96,29 +110,13 @@ downloaded once, during setup, and after that Dictate never touches the network.
 Don't take our word for it: `python scripts/prove_local.py` runs Dictate in a sandbox with no network, records
 every network call of every process, and only says `LOCAL ONLY` if all of them stayed on your computer.
 
-## Fast
+## Speed
 
 The text is transcribed while you speak, so it's ready about a tenth of a second after you let go. Cleanup takes
 about a second on a graphics card (1–2 seconds on a recent processor). The model loads while you're talking, and
 lets go of the graphics card after half a minute unused, so it doesn't sit on your GPU while you game.
 
-## Get started
-
-On Linux (SteamOS / KDE Plasma, or Ubuntu 24.04+):
-
-```sh
-git clone https://github.com/searbe/dictate.git
-cd dictate
-./setup.sh
-python dictate.py
-```
-
-Setup downloads the models (about 10 GB) into this folder, and everything stays in it: delete the folder and
-Dictate is gone. Tick **Run at startup** in its menu to have it there every time you log in. Windows and macOS
-setups are included but untested; see [the technical details](docs/TECHNICAL.md) for those, and for the
-recommended hardware.
-
-## At a glance
+## Keys
 
 | | |
 |---|---|
