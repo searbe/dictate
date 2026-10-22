@@ -378,11 +378,11 @@ def cmd_panes(window_title=None):
 
 
 def cmd_scroll(to=None, window_title=None):
-    """Where the big text box is scrolled to: {"value", "upper", "page"} in pixels; to: "top" or "end" first,
-    scrolled as the user would (a moment for it to settle)."""
+    """Where the big text box is scrolled to: {"value", "upper", "page"} in pixels; to: "top", "end" or a number
+    of pixels first, scrolled as the user would (a moment for it to settle)."""
     adj = field(window(window_title), "text").get_parent().get_vadjustment()
     if to:
-        adj.set_value(0 if to == "top" else adj.get_upper() - adj.get_page_size())
+        adj.set_value({"top": 0, "end": adj.get_upper() - adj.get_page_size()}.get(to, to))
         for _ in range(10):
             pump()
             time.sleep(0.01)

@@ -48,27 +48,52 @@ def show_transcript(view, paragraphs, previews=(), found=None, marks=None):
     """paragraphs: [(clock, who, text)]; previews: what's being said and not yet transcribed whole, shown greyed
     out after them. found: the Topics, and marks: {paragraph's place: topic index}: a paragraph on a topic is
     tinted its colour, with the topic's name above it where the conversation turns to it. Returns {topic index: a
-    mark where it's first talked about}."""
-    buf, firsts, last = view.get_buffer(), {}, None
-    buf.set_text("")
+    mark where it's first talked about}.
+    Only what's changed is written again, from the first paragraph that has (usually just the preview at the end):
+    emptying the whole text each time made it shrink to nothing for a moment, so it flashed and lost its place."""
+    buf, specs, last = view.get_buffer(), [], None
     for i, (clock, name, text) in enumerate([*paragraphs, *previews]):
-        tags = ("pending",) if i >= len(paragraphs) else ()
-        topic = (marks or {}).get(i) if not tags else None
-        if topic is not None and topic < len(found.topics):
-            tint, label = topic_tags(buf, found.hue(topic))
+        pending = i >= len(paragraphs)
+        topic = (marks or {}).get(i) if not pending else None
+        if topic is not None and topic >= len(found.topics):
+            topic = None
+        title, hue = (found.topics[topic]["title"], found.hue(topic)) if topic is not None else (None, None)
+        specs.append((i, topic, last, title, hue, clock, name, text, pending))
+        last = topic
+    shown = getattr(view, "shown", None)
+    if not shown or shown["chars"] != buf.get_char_count():  # (something else was written: start again)
+        shown = view.shown = {"blocks": [], "chars": -1}
+    blocks = shown["blocks"]  # [(spec, mark where it starts, its topic's first mark or None)]
+    same = next((k for k, (spec, _, _) in enumerate(blocks) if k >= len(specs) or spec != specs[k]), len(blocks))
+    if same < len(blocks):
+        buf.delete(buf.get_iter_at_mark(blocks[same][1]), buf.get_end_iter())
+        for _, at, first in blocks[same:]:
+            buf.delete_mark(at)
+            if first:
+                buf.delete_mark(first)
+        del blocks[same:]
+    firsts = {spec[1]: first for spec, _, first in blocks if first}
+    for spec in specs[same:]:
+        i, topic, last, title, hue, clock, name, text, pending = spec
+        at, first = buf.create_mark(None, buf.get_end_iter(), True), None
+        tags = ("pending",) if pending else ()
+        if topic is not None:
+            tint, label = topic_tags(buf, hue)
             tags = (tint,)
             if topic != last:
-                buf.insert_with_tags_by_name(buf.get_end_iter(), ("\n\n" if i else "") + f"● {found.topics[topic]['title']}", label, tint)
-                firsts.setdefault(topic, buf.create_mark(None, buf.get_end_iter(), True))
+                buf.insert_with_tags_by_name(buf.get_end_iter(), ("\n\n" if i else "") + f"● {title}", label, tint)
+                if topic not in firsts:
+                    first = firsts[topic] = buf.create_mark(None, buf.get_end_iter(), True)
                 buf.insert_with_tags_by_name(buf.get_end_iter(), "\n", tint)
             elif i:
                 buf.insert_with_tags_by_name(buf.get_end_iter(), "\n\n", tint)
         elif i:
             buf.insert(buf.get_end_iter(), "\n\n")
-        last = topic
         buf.insert_with_tags_by_name(buf.get_end_iter(), f"{clock} ", "clock", *tags)
         buf.insert_with_tags_by_name(buf.get_end_iter(), f"{name}  ", "who", *tags)
         buf.insert_with_tags_by_name(buf.get_end_iter(), text, *tags)
+        blocks.append((spec, at, first))
+    shown["chars"] = buf.get_char_count()
     return firsts
 
 
@@ -147,6 +172,12 @@ class TranscriptsPage:
         # (a wrapping text view says the width it's laid out at is the narrowest it can be, so with "never" the
         # transcript could only ever get a little narrower than it is: "external" lets it be any width)
         self.scroll.set_policy(Gtk.PolicyType.EXTERNAL, Gtk.PolicyType.AUTOMATIC)
+        # at the end, it stays there as more is heard: moved as the text grows, before it's drawn (moving it a
+        # moment later showed the new line below the bottom, then jumped); scrolled up, it stays put
+        self.following, self.moving = True, False
+        adj = self.scroll.get_vadjustment()
+        adj.connect("value-changed", self.scrolled)
+        adj.connect("changed", lambda _: self.follow())
         self.empty = d.empty_state("transcript", self.EMPTY, self.HOW)
         self.content = Gtk.Stack(width_request=300)  # (narrower, a transcript is unreadable)
         main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -309,7 +340,8 @@ class TranscriptsPage:
         session = self.current() if item.get("recording") else None
         if item.get("recording") and not session:  # stopped since: show it as saved
             item = transcript.read(item["path"]) or item
-        following = item is not self.shown_item or self.at_end()
+        if item is not self.shown_item:
+            self.following = bool(session)  # (one being recorded is shown at its end; a saved one, from the start)
         if self.playing and self.shown_item and item["path"] != self.shown_item["path"]:
             self.app.player.stop()  # (another transcript: its button mustn't say Stop)
         self.shown_item = item
@@ -349,9 +381,6 @@ class TranscriptsPage:
                           bool(item.get("paragraphs")))
         nameable = not session or session.voices  # without the voice model, a recording's voices are all "Them"
         self.show_people(transcript.labels(session.paragraphs() if session else item.get("paragraphs", [])) if nameable else [])
-        if session and following:
-            adj = self.scroll.get_vadjustment()
-            GLib.idle_add(lambda: adj.set_value(adj.get_upper() - adj.get_page_size()) and False)
 
     def show_topics(self, found, people, live, heard, warning=None):
         """The topics of the transcript shown: each a card edged in its colour, with who brought it up and who
@@ -512,6 +541,18 @@ class TranscriptsPage:
     def at_end(self):
         adj = self.scroll.get_vadjustment()
         return adj.get_value() >= adj.get_upper() - adj.get_page_size() - 20
+
+    def scrolled(self, _):
+        if not self.moving:  # (scrolled by you: follow on only if that's to the end)
+            self.following = self.at_end()
+
+    def follow(self):
+        """Keep it at the end, if it's following (the text has grown, or the window's changed size)."""
+        adj = self.scroll.get_vadjustment()
+        if self.following and adj.get_value() != adj.get_upper() - adj.get_page_size():
+            self.moving = True
+            adj.set_value(adj.get_upper() - adj.get_page_size())
+            self.moving = False
 
     def toggle_pause(self):
         session = self.current()

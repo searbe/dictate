@@ -122,15 +122,17 @@ def test_at_the_end_of_the_transcript_being_recorded_it_follows_what_is_said(sta
 
 
 def test_scrolled_up_it_stays_put_as_more_is_said_until_scrolled_back_to_the_end(start):
+    """Only what's changed is written again, so the text doesn't shrink away for a moment (it flashed)."""
     app = recording(start)
     talk(app, 0, 29)
     eventually(lambda: "29. A long line" in shown(app) and at_end(app))
 
-    app.send("scroll", to="top", window_title="Transcripts")
+    app.send("scroll", to=600, window_title="Transcripts")  # part way up
     talk(app, 30, 32)
-    eventually(lambda: "32. A long line" in shown(app))
+    app.hear_so_far("And something still being said")
+    eventually(lambda: "32. A long line" in shown(app) and "still being said" in shown(app))
     time.sleep(0.5)
-    assert app.send("scroll", window_title="Transcripts")["value"] == 0
+    assert app.send("scroll", window_title="Transcripts")["value"] == 600  # (not thrown to the top as it's updated)
 
     app.send("scroll", to="end", window_title="Transcripts")
     talk(app, 33, 35)
