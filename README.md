@@ -2,13 +2,11 @@
 
 # Dictate
 
-**Talk instead of typing, in any app, and get text that reads like you wrote it.** Hold Ctrl+Win, say what you
-mean and let go: it's pasted with the ums gone, your corrections applied, and formatted for where it's going.
-Leave it running on a call and it writes the call down as it happens, who said what, with a live list of topics
-and a summary that's ready when the call ends.
+Dictate is push-to-talk dictation for the desktop. Hold Ctrl+Win, speak, and let go: the text is cleaned up,
+refined for the app you're typing in, and pasted there. It can also transcribe calls as they happen, telling the
+speakers apart and keeping a live list of topics and a summary.
 
-Everything runs on your own computer. Nothing you say leaves it, and you can [check that for
-yourself](docs/TECHNICAL.md#checking-that-its-local-only).
+Everything runs on your own computer, and nothing you say leaves it ([how to check](docs/TECHNICAL.md#checking-that-its-local-only)).
 
 ![The capsule: idle, dictating, working, transcribing a call](docs/capsule-states.png)
 
@@ -30,26 +28,22 @@ recommended hardware.
 
 ## Automatic cleanup and refinement
 
-You don't speak in finished sentences, and you don't need to. Dictate's cleanup takes out the filler, the
-repeated words and the false starts, keeps the corrections you make as you go, and fixes the words speech
-recognition gets wrong. It keeps your wording: it tidies, it doesn't rewrite.
+Every dictation is cleaned up first: filler words, repeated words and false starts are removed, corrections
+you make as you speak are applied, and words the speech recognition misheard are fixed. Your wording is kept.
 
-Every dictation is kept, so you can see exactly what was done to it. Click **Cleanup**:
+Each dictation is kept in a list, where you can see what each step changed. Here, **Cleanup**:
 
 ![What cleanup changed: "so I think we should like move the the stand up to ten thirty because uh half the team is in the other time zone sorry Tuesday's stand up not every day"](docs/cleanup-step.png)
 
-That's real output from the local model: "sorry, Tuesday's stand-up, not every day" became "the Tuesday
-stand-up", where it belongs.
-
-A message to a colleague, an email, a prompt for an AI agent: each reads differently. **Refinements** reshape
-cleaned-up text for its destination, and they run on their own: the Slack refinement in Slack, the email one in
-your mail client, matched by app name or window title. Here's the same dictation after Slack's:
+We write differently in different contexts. **Refinements** take the cleaned-up text and rewrite it for the
+application you're typing in, following your own instructions: a Slack refinement for Slack, an email one for your
+mail client, matched by app name or window title. The same dictation, after the Slack refinement:
 
 ![What the Slack refinement changed: "ten thirty" became "10:30"](docs/refinement-step.png)
 
-Want a different one this time? Hold **Alt** while you speak and pick one when you let go, or press **Alt+S**,
-**Alt+E**… for one directly. Write your own in plain words. Teach it the names and terms you use, spelled your
-way, in **Vocabulary**.
+To use a different refinement for one dictation, tap **Alt** while you speak and pick one when you let go, or
+press its letter with Alt (**Alt+S**, **Alt+E**…). Refinements are written in plain language and you can add your
+own. **Vocabulary** holds names and terms, spelled the way you spell them.
 
 | Pick a refinement (tap Alt while dictating) | Your refinements |
 |---|---|
@@ -57,64 +51,61 @@ way, in **Vocabulary**.
 
 ## Live call transcription, with topics and a summary
 
-Hold Ctrl+Win, lift Win and press it again, and Dictate starts transcribing everything your computer plays and everything you say into
-your microphone: a Meet or Zoom call, a webinar, a podcast. It's built for the moment you're on a call and need
-to keep up.
+Hold Ctrl+Win, lift Win and press it again, and Dictate transcribes what your computer plays and what you say
+into your microphone: a Meet or Zoom call, a webinar, a podcast.
 
-- **Who said what.** Each voice is told apart, word by word, so even a quick "yeah" in the middle of someone
-  else's sentence goes to the right person. Click a name to rename them.
-- **Live topics.** Every 20 seconds or so the topics are brought up to date: each in its own colour, with who
-  raised it, what was said, and the one being talked about now. The transcript is tinted to match, so you can see
-  where the conversation went at a glance. Click a topic to jump to it.
-- **A live summary.** Overview, what was discussed and who thought what, what was agreed, action points and open
-  questions, kept up to date as the call goes on, and given a careful final pass when you stop. Change the prompt
-  to suit your meetings.
-- **No headphones needed.** Your microphone hears the call through your speakers too; Dictate recognises that
-  echo and leaves it out, so the other side isn't written down twice as you.
-- **Play it back.** Click any paragraph's time to hear that moment again.
+- **Speakers.** Each voice is told apart word by word, so a short "yeah" in the middle of someone else's
+  sentence is attributed to whoever said it. Click a name to rename that speaker.
+- **Topics.** Updated about every 20 seconds: each topic has its own colour, who raised it and what was said, and
+  the current one is marked. The transcript is tinted in the same colours. Click a topic to go to it.
+- **Summary.** An overview, what was discussed and by whom, what was agreed, action points and open questions,
+  updated about every 30 seconds and given a final pass when you stop. The prompt can be changed.
+- **Echo.** Without headphones, your microphone also picks up the call from your speakers. Dictate detects this
+  and leaves it out, so the other side isn't written down a second time as you.
+- **Playback.** Click a paragraph's time to play the recording from there.
 
 | Topics, as the call goes on | The live summary |
 |---|---|
 | ![Transcripts with live topics](docs/transcripts.png) | ![Transcripts with the live summary](docs/summary.png) |
 
-Transcripts are plain Markdown files, with the summary and topics at the top. Take them anywhere.
+Transcripts are saved as Markdown files, with the summary and topics at the top.
 
 ## Voice recognition (opt-in)
 
-Name someone once and, if you turn it on, Dictate remembers their voice and names them in your next call
-automatically. It's off unless you switch it on, the voiceprints stay on this computer, and turning it off
-forgets every one. (A voiceprint can identify someone: ask people first.)
+With **Remember voices** turned on, a speaker you name in a transcript is recognised and named in later calls.
+It's off by default, the voiceprints are stored only on this computer, and turning it off deletes them all. A
+voiceprint can identify someone, so ask people first.
 
 ![Voices](docs/voices.png)
 
 ## The capsule and the Dictate window
 
-Dictate lives in a small capsule on your desktop: just a dot until you use it. While you speak it shows a live
-level meter, so you know it hears you; while it works, three quiet dots; while it's transcribing a call, the time
-and the topic being discussed, and one click opens the transcript. Close the window mid-call, or go quiet for
-ten minutes, and a reminder appears beside the capsule, so you don't leave it running by accident.
+On the desktop, Dictate is a small capsule: a dot while idle, a level meter while you speak, three dots while
+the text is processed, and the elapsed time and current topic while a call is transcribed (click it to open the
+transcript). If you close the window during a call, or nothing is heard for ten minutes, a reminder appears
+beside the capsule saying it's still transcribing and how to stop it.
 
-Everything else is in one window: your **Dictations** (each with its recording, to play back), **Transcripts**,
-**Refinements**, **Voices** and **Settings**. Dark or light, following your desktop.
+Everything else is in one window: **Dictations** (with recordings to play back), **Transcripts**,
+**Refinements**, **Voices** and **Settings**. It follows your desktop's light or dark theme.
 
 | Every dictation, and what was done to it | Settings |
 |---|---|
 | ![Dictations](docs/dictations.png) | ![Settings](docs/settings.png) |
 
-## Local only, and provably so
+## Local only
 
-Speech recognition, cleanup, refinements, topics, summaries, voices: all of it runs locally, on your graphics
-card if it's free and your processor if not. There's no account, no subscription and no cloud. The models are
-downloaded once, during setup, and after that Dictate never touches the network.
+Speech recognition, cleanup, refinements, topics, summaries and voice recognition all run locally, on the
+graphics card when it's free and on the processor otherwise. There's no account and no cloud service. The models
+are downloaded once, during setup; after that Dictate makes no network connections.
 
-Don't take our word for it: `python scripts/prove_local.py` runs Dictate in a sandbox with no network, records
-every network call of every process, and only says `LOCAL ONLY` if all of them stayed on your computer.
+`python scripts/prove_local.py` checks this: it runs Dictate in a sandbox with no network, records every network
+call made by any of its processes, and reports `LOCAL ONLY` only if none left the computer.
 
 ## Speed
 
-The text is transcribed while you speak, so it's ready about a tenth of a second after you let go. Cleanup takes
-about a second on a graphics card (1–2 seconds on a recent processor). The model loads while you're talking, and
-lets go of the graphics card after half a minute unused, so it doesn't sit on your GPU while you game.
+Speech is transcribed while you talk, so the text is ready about a tenth of a second after you let go. Cleanup
+takes about a second on a graphics card, or 1–2 seconds on a recent processor. The model is loaded while you're
+speaking and unloaded after 30 seconds unused, so it doesn't hold the graphics card while you game.
 
 ## Keys
 
