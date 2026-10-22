@@ -1,7 +1,7 @@
 """Transcripts, in the Dictate window: every saved transcript in a list (when, how long, how it starts), the
 selected one shown beside it, with Copy all, Open file and Delete (icon buttons, found by their tooltips), and
 Open folder."""
-import shutil, subprocess, time
+import json, shutil, subprocess, time
 import numpy as np
 import pytest
 import soundfile
@@ -374,6 +374,8 @@ def test_the_list_and_the_topics_can_be_dragged_wider_while_a_call_is_recorded(s
     after = app.send("panes", window_title="Transcripts")["panes"]
     assert after[0]["position"] >= left["position"] + 80  # the list: 100 px wider (the divider trails a step or two)
     assert after[1]["x"] <= right["x"] - 80  # the topics: likewise
+    eventually(lambda: json.loads((app.data / "state.json").read_text()).get("transcript_panes", [0])[0]
+               >= left["position"] + 80)  # and remembered, for next time
 
 
 def drag(x, y, by, meanwhile):

@@ -2,136 +2,141 @@
 
 # Dictate
 
-Push-to-talk dictation that runs entirely on your own computer. Hold a hotkey and speak; when you let go, the transcribed and cleaned-up text is pasted into the app you're typing in. Built for Linux (SteamOS / KDE Plasma), and also sets up on Ubuntu 24.04+; Windows and macOS support is included but untested.
+**Talk instead of typing, in any app, and get text that reads like you wrote it.** Hold Ctrl+Win, say what you
+mean, let go: a second later it's pasted, the ums gone, your corrections applied, and formatted for where it's
+going. Leave it running on a call and it writes the call down as it happens, who said what, with a live list of
+topics and a summary that's ready when the call ends.
 
-## Features
-- **Hotkey dictation:** hold **Ctrl+Win** (Ctrl+Cmd on a Mac), speak, release to paste.
-- **Local speech recognition:** Parakeet TDT 0.6B on the CPU, transcribing as you speak.
-- **Clean-up:** a local language model (Qwen3.5) removes filler words, applies self-corrections and fixes punctuation and mis-heard words. It uses the GPU when one is free, otherwise the CPU.
-- **Refinements:** reformat for Slack, WhatsApp, email or AI agents, or your own refinements. Pick one per dictation, set a default, or match refinements to apps automatically.
-- **Vocabulary:** names and terms you use, spelled the way you spell them.
-- **Transcribe mode** (Linux): transcribes your computer's audio and your microphone, e.g. a call, telling the voices apart and listing the topics as they come up.
-- **Dictations:** every dictation with what was applied, playback of the recording, copy, delete and clear. Recordings are kept for a time you choose.
-- **Synergy:** while your keyboard is controlling another computer, the text is typed there.
-- **A small capsule** that stays out of the way: a dot until you dictate, then a live level meter; a system tray icon with the same menu; one **Dictate** window for your dictations, transcripts, refinements, voices and settings.
-- **Self-contained:** everything installs into this folder. Dictate sends nothing over the network; models are downloaded once, during setup. [Check it yourself](#checking-that-its-local-only).
-
-## Using it
-Hold **Ctrl+Win** to record, release to transcribe and paste into the focused text box.
-- **Tap Alt** while holding: pick a refinement when you let go (its letter; Enter pastes as is, Esc only copies).
-- **Alt+letter** while holding (e.g. Alt+S): use that refinement directly.
-- **Any other key** while holding (e.g. Ctrl+Win+→ to switch desktop) makes it that app's shortcut: the recording is dropped.
-- **Default refinement** (menu): used for every other dictation. "None" means cleanup only.
-- **Per-app refinements:** a refinement can be used automatically in apps whose name or window title matches (e.g. "slack").
-- **Vocabulary** (Refinements): names and terms, spelled your way.
-- **Refine text** (menu): off gives the raw transcript, fastest; Alt still picks a refinement.
-- **Synergy and similar:** while your keyboard controls another computer, the text is typed there. **When another computer has the keyboard** (menu) sets its refinement, or ignores the hotkey.
-- On Linux, terminals get Ctrl+Shift+V instead of Ctrl+V.
-
-**Transcribe mode** (Linux) transcribes your computer's audio and your microphone, e.g. a call.
-- **Start / stop:** hold Ctrl+Win, lift Win and press it again. Or use **Stop**, or the menu.
-- People are labelled "Speaker 1", "Speaker 2"… Click a name to rename them; naming two the same merges them.
-- The topics are listed beside the transcript, each in its colour, with who brought it up; the one being talked about now is marked. Click one to go to it. While the graphics card is busy, a smaller, less reliable model finds them (a warning says so) until it's free again.
-- **Summary**, the tab beside Topics, is a live summary of the call: what it's about, what was discussed and agreed, the action points and open questions, kept up to date about every half a minute, with a careful final pass when it's stopped (saved at the top of the transcript). Its prompt is in Refinements → Live summary.
-- You can dictate as usual while it runs; your dictations stay out of the transcript.
-- **Transcripts** (menu) lists them all; the live one is at the top. Saved as Markdown in `data/transcripts/`; one where nothing was heard isn't kept. While its recordings are kept, **Play** plays the call, and clicking a paragraph's time plays from there.
-- Closing the window doesn't stop it: the first time each day, and after 10 minutes with nothing heard, a reminder beside the icon says so and how to stop it (a desktop notification if the icon isn't on screen).
-- **Voices** can remember the people you name, for next time (off by default; ask people first).
-
-The capsule is a dot while idle; it grows to show a level meter while you dictate, three dots while the text is refined, and the elapsed time and topic while transcribing a call (click it then to see the transcript). Drag it to move it; right-click it, or the tray icon, for the menu.
-
-**Dictations** lists every one: play it back, copy it or delete it. **Settings** has the rest, such as how long recordings are kept: dictations' and calls' separately, from not at all to forever (by default a day and a week; the text is kept until you delete it).
+Everything runs on your own computer. Nothing you say leaves it, and you can [check that for
+yourself](docs/TECHNICAL.md#checking-that-its-local-only).
 
 ![The capsule: idle, dictating, working, transcribing a call](docs/capsule-states.png)
 
-| Refinement picker (tap Alt while dictating) | Still transcribing |
+## Say it the way you'd say it
+
+You don't speak in finished sentences, and you don't need to. Dictate's cleanup takes out the filler, the
+repeated words and the false starts, keeps the corrections you make as you go, and fixes the words speech
+recognition gets wrong. It keeps your wording: it tidies, it doesn't rewrite.
+
+Every dictation is kept, so you can see exactly what was done to it. Click **Cleanup**:
+
+![What cleanup changed: "so I think we should like move the the stand up to ten thirty because uh half the team is in the other time zone sorry Tuesday's stand up not every day"](docs/cleanup-step.png)
+
+That's real output from the local model: "sorry, Tuesday's stand-up, not every day" became "the Tuesday
+stand-up", where it belongs.
+
+## Right for where it's going
+
+A message to a colleague, an email, a prompt for an AI agent: each reads differently. **Refinements** reshape
+cleaned-up text for its destination, and they run on their own: the Slack refinement in Slack, the email one in
+your mail client, matched by app name or window title. Here's the same dictation after Slack's:
+
+![What the Slack refinement changed: "ten thirty" became "10:30"](docs/refinement-step.png)
+
+Want a different one this time? Hold **Alt** while you speak and pick one when you let go, or press **Alt+S**,
+**Alt+E**… for one directly. Write your own in plain words. Teach it the names and terms you use, spelled your
+way, in **Vocabulary**.
+
+| Pick a refinement (tap Alt while dictating) | Your refinements |
 |---|---|
-| ![Refinement picker](docs/picker.png) | ![Still transcribing](docs/reminder.png) |
+| ![The refinement picker](docs/picker.png) | ![Refinements](docs/refinements.png) |
 
-![Dictations](docs/dictations.png)
+## Your calls, written down as they happen
 
-| Transcripts: topics | Transcripts: live summary |
+Hold Ctrl+Win, lift Win and press it again, and Dictate starts transcribing everything your computer plays and everything you say into
+your microphone: a Meet or Zoom call, a webinar, a podcast. It's built for the moment you're on a call and need
+to keep up.
+
+- **Who said what.** Each voice is told apart, word by word, so even a quick "yeah" in the middle of someone
+  else's sentence goes to the right person. Click a name to rename them.
+- **Live topics.** Every 20 seconds or so the topics are brought up to date: each in its own colour, with who
+  raised it, what was said, and the one being talked about now. The transcript is tinted to match, so you can see
+  where the conversation went at a glance. Click a topic to jump to it.
+- **A live summary.** Overview, what was discussed and who thought what, what was agreed, action points and open
+  questions, kept up to date as the call goes on, and given a careful final pass when you stop. Change the prompt
+  to suit your meetings.
+- **No headphones needed.** Your microphone hears the call through your speakers too; Dictate recognises that
+  echo and leaves it out, so the other side isn't written down twice as you.
+- **Play it back.** Click any paragraph's time to hear that moment again.
+
+| Topics, as the call goes on | The live summary |
 |---|---|
-| ![Transcripts](docs/transcripts.png) | ![Live summary](docs/summary.png) |
+| ![Transcripts with live topics](docs/transcripts.png) | ![Transcripts with the live summary](docs/summary.png) |
 
-![Settings](docs/settings.png)
+Transcripts are plain Markdown files, with the summary and topics at the top. Take them anywhere.
 
-How it's designed, and the rules for changing it: [docs/design/DESIGN.md](docs/design/DESIGN.md).
+## Knows who's on the call
 
-## Checking that it's local only
-Don't take our word for it. On Linux, after setup, run:
+Name someone once and, if you turn it on, Dictate remembers their voice and names them in your next call
+automatically. It's off unless you switch it on, the voiceprints stay on this computer, and turning it off
+forgets every one. (A voiceprint can identify someone: ask people first.)
+
+![Voices](docs/voices.png)
+
+## Stays out of your way
+
+Dictate lives in a small capsule on your desktop: just a dot until you use it. While you speak it shows a live
+level meter, so you know it hears you; while it works, three quiet dots; while it's transcribing a call, the time
+and the topic being discussed, and one click opens the transcript. Close the window mid-call, or go quiet for
+ten minutes, and a reminder appears beside the capsule, so you don't leave it running by accident.
+
+Everything else is in one window: your **Dictations** (each with its recording, to play back), **Transcripts**,
+**Refinements**, **Voices** and **Settings**. Dark or light, following your desktop.
+
+| Every dictation, and what was done to it | Settings |
+|---|---|
+| ![Dictations](docs/dictations.png) | ![Settings](docs/settings.png) |
+
+## Private, and you can prove it
+
+Speech recognition, cleanup, refinements, topics, summaries, voices: all of it runs locally, on your graphics
+card if it's free and your processor if not. There's no account, no subscription and no cloud. The models are
+downloaded once, during setup, and after that Dictate never touches the network.
+
+Don't take our word for it: `python scripts/prove_local.py` runs Dictate in a sandbox with no network, records
+every network call of every process, and only says `LOCAL ONLY` if all of them stayed on your computer.
+
+## Fast
+
+The text is transcribed while you speak, so it's ready about a tenth of a second after you let go. Cleanup takes
+about a second on a graphics card (1–2 seconds on a recent processor). The model loads while you're talking, and
+lets go of the graphics card after half a minute unused, so it doesn't sit on your GPU while you game.
+
+## Get started
+
+On Linux (SteamOS / KDE Plasma, or Ubuntu 24.04+):
 
 ```sh
-python scripts/prove_local.py
+git clone https://github.com/searbe/dictate.git
+cd dictate
+./setup.sh
+python dictate.py
 ```
 
-It runs Dictate, with the real models, in a sandbox with no network, records every network call of every process,
-and ends with `RESULT: LOCAL ONLY` only if they all stayed on this computer. `--live` does the same with your actual
-Dictate, keyboard and microphone (quit Dictate first). It needs `bubblewrap` and `strace` (SteamOS has both; on
-Ubuntu: `sudo apt install bubblewrap strace`).
+Setup downloads the models (about 10 GB) into this folder, and everything stays in it: delete the folder and
+Dictate is gone. Tick **Run at startup** in its menu to have it there every time you log in. Windows and macOS
+setups are included but untested; see [the technical details](docs/TECHNICAL.md) for those, and for the
+recommended hardware.
 
-## Recommended hardware
-| | Minimum | Recommended |
-|---|---|---|
-| **CPU** | Any 64-bit x86 or Apple Silicon from the last ~6 years | 8 cores or more, if refining text on the CPU |
-| **RAM** | 8 GB | 16 GB or more |
-| **GPU** | None: everything can run on the CPU | 8 GB+ of free video memory (12 GB+ card), any Vulkan GPU on Linux, NVIDIA on Windows, or an Apple Silicon Mac with 16 GB+ |
-| **Disk** | ~10 GB for the models | SSD, so the models load quickly |
-| **Microphone** | Built-in | A headset or close-up mic: the biggest single help in noisy rooms |
+## At a glance
 
-Transcription takes 0.1 s or less after you let go. Refining is the slow part: about 0.5–1.5 s with a free GPU
-(tested on a Radeon RX 9070 XT), 1–2 s on a recent 8-core CPU, longer on laptops.
+| | |
+|---|---|
+| **Ctrl+Win** (hold) | Dictate; let go to paste |
+| **+ Alt** (tap, while holding) | Pick a refinement when you let go (Enter pastes as is, Esc only copies) |
+| **+ Alt+letter** | Use that refinement |
+| **+ any other key** | It's another app's shortcut (e.g. Ctrl+Win+→): nothing is pasted |
+| **Ctrl+Win, then Win again** | Start or stop transcribing a call: hold Ctrl+Win, lift Win, press it again (or **Stop**, or the menu) |
+| **Right-click the capsule** | The menu: refine text on or off, the default refinement, your dictations, transcripts and settings |
 
-## Setup (self-contained)
-Each setup script installs into this folder and nothing anywhere else, and is safe to re-run:
-- `models/`: Parakeet TDT 0.6B v3 (~640 MB, speech), Silero VAD, TitaNet small (40 MB, voices), and Qwen3.5 4B (~2.7 GB, CPU) and 9B (~5.7 GB, GPU) for refinement.
-- `bin/llama/`: a llama.cpp release (Vulkan on Linux/Windows, Metal on macOS), used for refinement.
-- `.venv/`: Python packages.
-- `data/`: your history, recordings, settings, refinements and vocabulary.
+You can dictate as usual while a call is being transcribed; your dictations stay out of the transcript. On Linux,
+terminals get Ctrl+Shift+V. While your keyboard controls another computer through Synergy or similar, the text is
+typed there instead.
 
-Delete the folder to remove the app completely.
+## More
 
-### Linux (SteamOS / KDE Plasma): the main platform
-`./setup.sh`, then `python dictate.py` (it switches to `.venv` automatically). It reuses the system's GTK and evdev bindings read-only.
-If a SteamOS update breaks the app, run `./setup.sh` again; it rebuilds `.venv` for the new system Python.
-To start it at login, tick **Run at startup** in the menu (adds `~/.config/autostart/dictate.desktop`; unticking removes it).
-### Ubuntu 24.04+ / Debian
-`./setup.sh` as above. On Ubuntu and Debian (and derivatives such as Mint and Pop!_OS) it first asks for your sudo password to:
-- install the system packages SteamOS already ships, if missing: the GTK, evdev and dbusmenu Python bindings, `python3-venv`, PipeWire's `pw-record`/`pw-play`, and the Vulkan loader;
-- add `/etc/udev/rules.d/70-dictate.rules`, if your session can't already read the keyboards and `/dev/uinput`. It gives the logged-in user access (as Steam's rules do on SteamOS); log out and back in if the hotkey doesn't work at once. This lets any program you run read your keyboard, which is how the global hotkey works.
+- [The technical details](docs/TECHNICAL.md): how it works, hardware, setup on each platform, the code, your data.
+- [Testing](docs/TESTING.md) and [the design system](docs/design/DESIGN.md), for changing it.
 
-Focused-app detection uses KWin, so per-app refinements need KDE (Kubuntu); on GNOME everything else works, and the tray icon needs Ubuntu's AppIndicator extension (on by default). Tested in an Ubuntu 24.04 container (setup and transcription), not on a desktop.
-
-Other distributions need the same pieces by hand: read access to `/dev/input/event*` and `/dev/uinput`, PyGObject with GTK 3, python-evdev, the dbusmenu GObject bindings, and PipeWire's `pw-record`/`pw-play`.
-
-### Windows 10/11 (untested)
-1. Install Python 3.14: `winget install -e --id Python.Python.3.14` (GTK's Python bindings are built for 3.14).
-2. `powershell -ExecutionPolicy Bypass -File setup-windows.ps1`. This also downloads a GTK 3 runtime into `gtk\` (~300 MB, from [gvsbuild](https://github.com/wingtk/gvsbuild)).
-3. Double-click `Dictate.lnk`. **Run at startup** in the menu adds or removes it from the login items (the per-user Run registry key).
-
-Hold **Ctrl+Win**. The GPU model is used on NVIDIA cards with enough free memory (checked with `nvidia-smi`); otherwise refinement runs on the CPU.
-
-### macOS (untested)
-1. Install [Homebrew](https://brew.sh).
-2. `./setup-mac.sh` (installs Python 3.14 and GTK 3 with Homebrew).
-3. `.venv/bin/python dictate.py`
-
-Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can't make one), so use the capsule's menu. **Run at startup** adds a LaunchAgent (`~/Library/LaunchAgents/local.dictate.plist`). macOS will ask for Microphone, Input Monitoring (hotkey) and Accessibility (paste) permissions for the app you launch it from; restart Dictate after granting them. Screen Recording is optional and lets per-app refinements see window titles. Macs with 16 GB of RAM or more use the 9B model on the GPU (Metal).
-
-## Code
-- `dictate.py` starts the app; the app is the `dictate/` package (each module explains itself at the top):
-  `app.py` (menu, dictation pipeline), `capsule.py`, `hub.py` and `transcripts_page.py` (the Dictate window),
-  `huds.py` (picker, reminders, dialogs), `design.py` (the design system), `osio.py` (hotkey, recording, pasting
-  per OS), `stt.py` (speech to text), `refine.py` (cleanup and refinements), `transcript.py`, `voices.py`, `echo.py`
-  and `topics.py` (transcribe mode), `remote.py` (another computer has the keyboard), `tray.py`, `activewin.py`.
-- `scripts/`: `fetch.py` (downloads, used by setup), `test.py` (the tests: see [docs/TESTING.md](docs/TESTING.md)),
-  `prove_local.py`, `bench.py` (compares refinement models), `bench_voices.py` (telling voices apart),
-  `bench_topics.py` (topics on saved transcripts).
-- `docs/make_screenshots.py`: regenerates the screenshots.
-
-## Data
-`data/` (not in git; `DICTATE_DATA` moves it): `dictations.jsonl`, recordings in `audio/` and `transcripts/`,
-`refinements.json`, `vocab.txt` and `state.json`. Logs go to `journalctl --user` when started from the desktop.
-
-## License
-MIT: see [LICENSE](LICENSE). The models and tools the setup scripts download come under their own licenses: [Parakeet TDT](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), [Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-9B), [Silero VAD](https://github.com/snakers4/silero-vad), [TitaNet](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/titanet_small), [llama.cpp](https://github.com/ggml-org/llama.cpp), [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) and, on Windows, [gvsbuild](https://github.com/wingtk/gvsbuild)'s GTK runtime.
+MIT licensed: see [LICENSE](LICENSE). The models it downloads have their own licenses, listed in
+[the technical details](docs/TECHNICAL.md#licenses).

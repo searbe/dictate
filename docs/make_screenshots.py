@@ -26,7 +26,13 @@ SAMPLE = [  # (time, text, raw, app, refinement, has a recording)
     ("14:05:12", "Run the tests with `pytest -k login` and tell me what fails.",
      "run the tests with pytest dash k login and tell me what fails", "other computer", "AI agent", True),
     ("15:22:47", "running about ten minutes late sorry", None, "firefox", None, False),
+    ("15:48:10", "I think we should move the Tuesday stand-up to 10:30 because half the team is in a different time zone.",
+     "so I think we should like move the the stand up to ten thirty because uh half the team is in the other time zone "
+     "sorry Tuesday's stand up not every day", "Slack", "Slack", True),
 ]
+CLEANED = {  # what cleanup made of a dictation, before its refinement (the real models' output, 22 Oct 2026)
+    "15:48:10": "So I think we should move the Tuesday stand up to ten thirty because half the team is in the other "
+                "time zone."}
 TRANSCRIPTS = {  # file name: (how long, [(clock, who, text)])
     "2026-10-20 10.00.00": ("32 min", [
         ("10:00:04", "Priya", "Morning, everyone. Shall we start with the roadmap and leave hiring for the end?"),
@@ -113,14 +119,21 @@ def fake_app(tmp, session=None):
         session=session, stop_transcribing=lambda: None)
 
 
-def hub_shot(tmp, page, path, size=(1120, 640), session=None, tab=None):
-    """A page of the Dictate window, its header bar and all (Transcripts: on its tab, if given)."""
+def hub_shot(tmp, page, path, size=(1120, 640), session=None, tab=None, step=None, row=None):
+    """A page of the Dictate window, its header bar and all (Transcripts: on its tab, if given; Dictations: with
+    step, the label of a step of the newest dictation, open to show what it changed; Refinements: row selected)."""
     h = hub.Hub(fake_app(tmp, session))
     h.win.show = h.win.present = lambda *a: None  # (never on the real screen)
     shown = h.show(page)
     if tab:
         shown.tabs.set_visible_child_name(tab)
         shown.switch.choose(tab)
+    if row is not None:
+        shown.list.select_row(shown.list.get_row_at_index(row))
+    if step:
+        animations, design.animations = design.animations, lambda: False  # (shown at once, not fading in)
+        shown.show_step(shown.list.get_children()[0], step)
+        design.animations = animations
     bar, body = h.win.get_titlebar(), h.win.get_child()
     h.win.set_titlebar(None)
     h.win.remove(body)
@@ -177,6 +190,8 @@ def main(out):
             entry["raw"] = raw
         if refinement:
             entry["refinement"] = refinement
+        if when in CLEANED:
+            entry["cleaned"] = CLEANED[when]
         if has_audio:
             entry["audio"] = f"{when}.wav"
             with wave.open(str(tmp / "audio" / entry["audio"]), "wb") as w:  # a silent placeholder recording
@@ -186,8 +201,11 @@ def main(out):
     voices.remembered = lambda: [("Priya", None), ("Sam", None)]
     voices.remembering = voices.available = lambda: True
 
-    for page in ("dictations", "refinements", "settings", "voices"):
+    for page in ("dictations", "settings", "voices"):
         hub_shot(tmp, page, out / f"{page}.png")
+    hub_shot(tmp, "refinements", out / "refinements.png", row=hub.RefinementsPage.FIXED)  # (the first of yours: Slack)
+    hub_shot(tmp, "dictations", out / "cleanup-step.png", (1120, 420), step="Cleanup")
+    hub_shot(tmp, "dictations", out / "refinement-step.png", (1120, 420), step="Slack")
 
     transcript.FOLDER = tmp / "transcripts"
     transcript.FOLDER.mkdir()

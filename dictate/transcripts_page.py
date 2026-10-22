@@ -182,7 +182,7 @@ class TranscriptsPage:
         adj.connect("changed", lambda _: self.follow())
         self.text.connect("scroll-event", self.wheel)
         self.text.connect("key-press-event", self.key)
-        self.scroll.get_vscrollbar().connect("change-value", self.dragged)
+        self.scroll.get_vscrollbar().connect("change-value", self.scroll_dragged)
         self.empty = d.empty_state("transcript", self.EMPTY, self.HOW)
         self.content = Gtk.Stack(width_request=300)  # (narrower, a transcript is unreadable)
         main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -567,7 +567,7 @@ class TranscriptsPage:
             self.following = False
         return False
 
-    def dragged(self, bar, _, value):
+    def scroll_dragged(self, bar, _, value):
         adj = bar.get_adjustment()
         self.following = value >= adj.get_upper() - adj.get_page_size() - 20
         return False
