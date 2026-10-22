@@ -16,13 +16,14 @@ back for the Transcripts window. While remembering voices is on, each transcript
 beside it too, so a voice can be named (and remembered) after the call.
 
 Its topics (topics.py) are kept up to date as it's heard, listed at the top of the transcript, and saved
-beside it with which paragraph is on which, by their place in it (a paragraph ends where the topic changes)."""
+beside it with which paragraph is on which, by their place in it (a paragraph ends where the topic changes). So
+is a live summary (summary.py), with a final pass when it's stopped; above the topics."""
 import json, re, threading, time
 from datetime import datetime, timedelta
 from pathlib import Path
 import numpy as np
 from gi.repository import GLib
-from . import DATA, echo, osio, refine, stt, topics, voices
+from . import DATA, echo, osio, refine, stt, summary, topics, voices
 
 FOLDER = DATA / "transcripts"
 SOURCES = (("me", False), ("them", True))  # who, recorded from the speakers
@@ -49,6 +50,20 @@ def recordings(path):
     return [f for f in path.parent.glob(f"{path.stem} *") if f.suffix in (".ogg", ".wav")]
 
 
+def summary_file(path):
+    """Where the summary of the transcript at path is kept."""
+    return path.with_name(f"{path.stem} summary.json")
+
+
+def read_summary(path):
+    """The summary of the saved transcript at path, or None."""
+    try:
+        data = json.loads(summary_file(path).read_text())
+        return summary.Summary(data["text"], data.get("final", False))
+    except (OSError, ValueError, KeyError):
+        return None
+
+
 def topics_file(path):
     """Where the topics of the transcript at path are kept, with which paragraph is on which."""
     return path.with_name(f"{path.stem} topics.json")
@@ -73,7 +88,7 @@ def topics_markdown(found, people):
         return ""
     lines = "".join(f"- **{t['title']}**" + (f" ({', '.join(who)})" if who else "") + f": {' '.join(t['points'])}\n"
                     for t, who in zip(found.topics, people))
-    return f"\n## Topics\n\n{lines}\n## Transcript\n"
+    return f"\n## Topics\n\n{lines}"
 
 
 def mixdown(path, start=0.0):
@@ -150,8 +165,8 @@ def saved():
 
 
 def delete(path):
-    """Delete a saved transcript, its recordings, voiceprints and topics."""
-    for f in [path, *recordings(path), voiceprints(path), topics_file(path)]:
+    """Delete a saved transcript, its recordings, voiceprints, topics and summary."""
+    for f in [path, *recordings(path), voiceprints(path), topics_file(path), summary_file(path)]:
         f.unlink(missing_ok=True)
 
 
@@ -211,6 +226,7 @@ class Session:
         self.paused = self.stopped = False
         self.topics, self.asked, self.asking, self.last_topics = topics.Topics(), set(), False, self.now()
         self.last_merge = self.now()
+        self.summary, self.last_summary = summary.Summary(), self.now()
         self.gpu_free_for = 0.0  # seconds the GPU has been free while the smaller model is loaded on the CPU
         refine.keep(True)  # the model, loaded for the whole call (from now, so it's ready for the first topics)
         refine.warm(hold=False)
@@ -310,9 +326,9 @@ class Session:
         self.on_change()
 
     def stop(self, on_done, last_topics=True):
-        """Stop recording, transcribe what's left, save, sort what's left into topics and merge any that are
-        one subject (unless not last_topics: quitting doesn't wait for the model), then on_done() on the GTK
-        thread. If nothing was heard, nothing is kept: the transcript and its recordings are deleted."""
+        """Stop recording, transcribe what's left, save, sort what's left into topics, merge any that are one
+        subject and write the final summary (unless not last_topics: quitting doesn't wait for the model), then
+        on_done() on the GTK thread. If nothing was heard, nothing is kept: the transcript and its recordings are deleted."""
         self.stopped = True
         def finish():
             for rec in self.recorders:
@@ -327,7 +343,8 @@ class Session:
                 return done()
             self.save()
             self.on_change()
-            tidy = lambda: self.merge_topics(then=done) or done()
+            final = lambda: self.summarise(final=True, then=done) or done()
+            tidy = lambda: self.merge_topics(then=final) or final()
             if not last_topics:
                 done()
             elif not self.sort_topics(then=tidy):
@@ -355,6 +372,8 @@ class Session:
             self.sort_topics()
         elif not self.asking and self.now() - self.last_merge >= topics.MERGE:
             self.merge_topics()
+        elif not self.asking and self.summary.due(self.lines(), self.now() - self.last_summary):
+            self.summarise()
         self.back_to_gpu()
         return True
 
@@ -396,6 +415,33 @@ class Session:
             if reply is None:
                 self.asked.difference_update(l[0] for l in new)  # try again next time
             elif self.topics.apply(new, reply):
+                self.save()
+                self.on_change()
+            if then:
+                then()
+        threading.Thread(target=ask, daemon=True).start()
+        return True
+
+    def summarise(self, final=False, then=None):
+        """Ask the model (on a thread) for the summary, updated with what's been said since (or, final, the final
+        pass), then save and show it, then then(). Returns False if there's nothing to summarise (then() isn't
+        called)."""
+        lines = self.lines()
+        if not lines or (not final and not self.summary.new(lines)):
+            return False
+        self.asking, self.last_summary = True, self.now()
+
+        def ask():
+            try:
+                reply = self.summary.ask_final(lines, self.topics) if final else self.summary.ask(lines, self.topics)
+            except (OSError, ValueError, KeyError) as err:
+                print("summary: couldn't ask the model:", err, flush=True)
+                reply = None
+            GLib.idle_add(answered, reply)
+
+        def answered(reply):
+            self.asking = False
+            if reply is not None and self.summary.take(reply, lines, final):
                 self.save()
                 self.on_change()
             if then:
@@ -476,7 +522,8 @@ class Session:
 
     def markdown(self):
         head = f"# Transcript, {self.started:%A %-d %B %Y, %H:%M}\n\nLasted {length(self.now())}, until {datetime.now():%H:%M}.\n"
-        head += topics_markdown(self.topics, self.topics.people(self.lines()))
+        above = summary.markdown(self.summary.text) + topics_markdown(self.topics, self.topics.people(self.lines()))
+        head += above + ("\n## Transcript\n" if above else "")
         return head + "".join(f"\n**{clock} {who}:** {text}\n" for clock, who, text in self.paragraphs())
 
     def save(self):
@@ -484,5 +531,7 @@ class Session:
         if self.topics.topics:
             marks = self.topic_view()[1]  # saved by paragraph: a saved transcript has no stretches
             topics_file(self.path).write_text(json.dumps({**self.topics.data(), "of": list(marks.items())}))
+        if self.summary.text:
+            summary_file(self.path).write_text(json.dumps(self.summary.data()))
         if self.voices and voices.remembering():  # so its voices can be named, and remembered, later
             voiceprints(self.path).write_text(json.dumps(self.voices.labelled()))

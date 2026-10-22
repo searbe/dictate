@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import dictate  # noqa: E402
 dictate.bootstrap()
-from dictate import osio, refine, stt, topics, voices  # noqa: E402
+from dictate import osio, refine, stt, summary, topics, voices  # noqa: E402
 import numpy as np  # noqa: E402
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
@@ -139,6 +139,7 @@ voices.available = lambda: not os.environ.get("DICTATE_TEST_NO_VOICES")
 refine.IDLE = float(os.environ.get("DICTATE_TEST_IDLE", refine.IDLE))
 topics.TICK, topics.EVERY, topics.MOST, topics.FREE_FOR = 0.2, 0, 0, 0.6  # topics as soon as anything is said
 topics.MERGE = 0.5
+summary.EVERY, summary.WORDS = 0.5, 1  # a summary as soon as anything's said
 gpu = {"state": os.environ.get("DICTATE_TEST_GPU", "free")}  # the graphics card: "free", "busy" or "none"
 refine.gpu_ok = lambda: gpu["state"] == "free"
 refine.gpu_present = lambda: gpu["state"] != "none"

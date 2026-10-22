@@ -11,6 +11,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk, Pango, PangoCairo
 SCHEMES = {
     "dark": {
         "bg": "#111214", "surface-1": "#17181b", "surface-2": "#1d1f23", "surface-3": "#25272c", "surface-4": "#2e3137",
+        "raised": "#3a3d45",
         "line": "rgba(255,255,255,0.07)", "line-strong": "rgba(255,255,255,0.14)",
         "text": "#ececef", "text-2": "#a4a7b0", "text-3": "#6f727b",
         "accent": "#7c8cff", "accent-hover": "#96a3ff", "accent-weak": "rgba(124,140,255,0.16)", "on-accent": "#ffffff",
@@ -21,6 +22,7 @@ SCHEMES = {
     },
     "light": {
         "bg": "#f6f6f7", "surface-1": "#efeff1", "surface-2": "#ffffff", "surface-3": "#e9e9ec", "surface-4": "#dfdfe4",
+        "raised": "#ffffff",
         "line": "rgba(0,0,0,0.08)", "line-strong": "rgba(0,0,0,0.16)",
         "text": "#1b1c1f", "text-2": "#5d6068", "text-3": "#8b8e96",
         "accent": "#5b6cff", "accent-hover": "#4a5bf0", "accent-weak": "rgba(91,108,255,0.14)", "on-accent": "#ffffff",
@@ -141,6 +143,15 @@ button.btn.icon.danger:hover {{ background: {t['danger-weak']}; color: {t['dange
 button.btn.icon.on {{ color: {t['accent']}; }}
 button.btn .keyhint {{ {size('caption')} color: {t['text-3']}; margin-left: 6px; }}
 button.btn.primary .keyhint {{ color: rgba(255,255,255,0.7); }}
+
+/* a segmented control */
+.segmented {{ background: {t['surface-3']}; border-radius: {R_SM}px; padding: 2px; }}
+.segmented button.segment {{ min-height: 24px; padding: 0 12px; border-radius: 4px; background: transparent; border: none;
+  box-shadow: none; background-image: none; color: {t['text-2']}; outline: none;
+  transition: background-color 120ms ease-out, color 120ms ease-out; }}
+.segmented button.segment label {{ color: inherit; {size('small')} font-weight: 600; }}
+.segmented button.segment:hover {{ color: {t['text']}; }}
+.segmented button.segment.on {{ background: {t['raised']}; color: {t['text']}; box-shadow: 0 1px 2px rgba(0,0,0,0.25); }}
 
 /* chips, badges, pills */
 .chip {{ {size('caption')} background: {t['surface-3']}; color: {t['text-2']}; border-radius: {R_SM}px; padding: 2px 7px; }}
@@ -537,6 +548,24 @@ def flash(btn, done, label, icon=None):
 
 def chip(label, accent=False):
     return classes(Gtk.Label(label=label), "chip", "accent" if accent else None)
+
+
+def segmented(options, chosen, on_choose):
+    """A segmented control: one button per option (label), chosen marked; on_choose(label) when another is
+    clicked. .choose(label) marks another."""
+    box = classes(Gtk.Box(spacing=2, homogeneous=True), "segmented")
+    buttons = {}
+
+    def choose(label):
+        for name, b in buttons.items():
+            (b.get_style_context().add_class if name == label else b.get_style_context().remove_class)("on")
+    for label in options:
+        b = buttons[label] = classes(Gtk.Button(label=label), "segment")
+        b.connect("clicked", lambda _, l=label: (choose(l), on_choose(l)))
+        box.pack_start(b, True, True, 0)
+    choose(chosen)
+    box.choose = choose
+    return box
 
 
 def step_chip(label, cb, tooltip=None):

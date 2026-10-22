@@ -14,7 +14,7 @@ dictate.bootstrap()
 import cairo, gi  # noqa: E402
 gi.require_version("PangoCairo", "1.0")
 from gi.repository import Gdk, GLib, Gtk, PangoCairo  # noqa: E402
-from dictate import capsule, design, huds, hub, osio, refine, topics, transcript, voices  # noqa: E402
+from dictate import capsule, design, huds, hub, osio, refine, summary, topics, transcript, voices  # noqa: E402
 from dictate.app import KEEP_AUDIO, REMOTE_MODES, SAME  # noqa: E402
 
 DOCS = ROOT / "docs"
@@ -45,6 +45,19 @@ SAID = [  # the call being transcribed: (clock, who, text, topic)
     ("14:03:02", "Me", "Then the release has to wait. Can we move it to the tenth?", 1),
     ("14:03:09", "Priya", "The tenth works, QA gets the whole week.", 1),
     ("14:03:31", "Priya", "Back to the codes: Sam, can you check the email provider today?", 0)]
+
+
+SUMMARY = """## Overview
+Priya is walking through last week's dashboard: sign-ups fell on Thursday, and the release date depends on why.
+## Discussed
+- **Sign-ups:** Priya thought the new form; Speaker 2 says it's the email check, as half the codes never arrive.
+- **Release date:** Me would rather move it than ship the login work half done.
+## Agreed
+- The release moves to the tenth, so QA gets the whole week.
+## Action points
+- **Sam:** check the email provider today.
+## Open questions
+- Whether rolling back the new form is still needed."""
 
 
 def pump():
@@ -100,11 +113,14 @@ def fake_app(tmp, session=None):
         session=session, stop_transcribing=lambda: None)
 
 
-def hub_shot(tmp, page, path, size=(1120, 640), session=None):
-    """A page of the Dictate window, its header bar and all."""
+def hub_shot(tmp, page, path, size=(1120, 640), session=None, tab=None):
+    """A page of the Dictate window, its header bar and all (Transcripts: on its tab, if given)."""
     h = hub.Hub(fake_app(tmp, session))
     h.win.show = h.win.present = lambda *a: None  # (never on the real screen)
-    h.show(page)
+    shown = h.show(page)
+    if tab:
+        shown.tabs.set_visible_child_name(tab)
+        shown.switch.choose(tab)
     bar, body = h.win.get_titlebar(), h.win.get_child()
     h.win.set_titlebar(None)
     h.win.remove(body)
@@ -189,12 +205,13 @@ def main(out):
             "Me wants to move the release to the tenth; Priya agrees, so QA gets the week."]}], "now": 0})
     t0 = time.monotonic() - 754
     live = SimpleNamespace(path=now, started=transcript.datetime(2026, 10, 21, 14, 2), paused=False, voices=True,
-                           now=lambda: time.monotonic() - t0, topics=found,
+                           now=lambda: time.monotonic() - t0, topics=found, summary=summary.Summary(SUMMARY),
                            previews=lambda: [("14:03:40", "…", "And if it's the provider, we")],
                            paragraphs=lambda: [p[:3] for p in SAID],
                            topic_view=lambda: (found, {i: p[3] for i, p in enumerate(SAID) if p[3] is not None},
                                                [["Priya", "Me", "Speaker 2"], ["Me", "Priya"]]))
     hub_shot(tmp, "transcripts", out / "transcripts.png", (1180, 600), session=live)
+    hub_shot(tmp, "transcripts", out / "summary.png", (1180, 600), session=live, tab="Summary")
 
     picker = huds.StylePicker("So for the release, we need to fix the login bug, write the release notes, and then "
                               "tell marketing.", lambda *a: None)

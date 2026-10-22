@@ -339,7 +339,7 @@ def warm(mode=None, hold=True):
         gpu = ["-ngl", "99"] if sys.platform == "darwin" else ["--device", "Vulkan0", "-ngl", "99"]  # Metal / Vulkan
         dev = gpu if _mode == "gpu" else ["--device", "none", "-ngl", "0"]
         try:
-            _proc = _launch([SERVER, "-m", MODELS[_mode], "--host", "127.0.0.1", "--port", str(PORT), "-c", "4096",
+            _proc = _launch([SERVER, "-m", MODELS[_mode], "--host", "127.0.0.1", "--port", str(PORT), "-c", "8192",
                              "--no-webui", "--reasoning", "off", "-t", str(min(8, os.cpu_count() or 4)), *dev])
         except OSError as err:  # refining is skipped (the transcript is used as it is) until this is fixed
             _proc = None
@@ -443,6 +443,15 @@ def ask(system, user, schema, max_tokens=500):
         "temperature": 0, "max_tokens": max_tokens, "chat_template_kwargs": {"enable_thinking": False},
         "response_format": {"type": "json_schema", "json_schema": {"schema": schema}},
     }, timeout=120)["choices"][0]["message"]["content"].strip()
+
+
+def write(system, user, max_tokens=900):
+    """The model's answer to user under system, as text (used for the live summary, not refining)."""
+    _ready(hold=False)
+    return _post("/v1/chat/completions", {
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "temperature": 0.2, "max_tokens": max_tokens, "chat_template_kwargs": {"enable_thinking": False},
+    }, timeout=180)["choices"][0]["message"]["content"].strip()
 
 
 def complete(text, prompt, app=""):

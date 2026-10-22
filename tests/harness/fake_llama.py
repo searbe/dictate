@@ -2,8 +2,8 @@
 """Stands in for llama-server: same command line, same HTTP API, but answers by rules instead of a model.
 
 Rules (JSON list in $FAKE_LLAMA_RULES, re-read on every request) are tried in order; the first whose
-"prompt" and "text" substrings are both found in the system prompt / transcript (or the whole user message, if
-it has no transcript) decides the answer:
+"prompt", "text" and "user" substrings are all found in the system prompt, the transcript (or the whole user
+message, if it has no transcript) and the whole user message decides the answer:
   {"reply": "..."}             answer with this text
   {"op": "upper"}              answer with the transcript in capitals
   {"op": "error"}              answer HTTP 500
@@ -21,10 +21,10 @@ def log(entry):
         f.write(json.dumps(entry) + "\n")
 
 
-def answer(system, text):
+def answer(system, text, user=""):
     rules = json.loads(open(os.environ["FAKE_LLAMA_RULES"]).read()) if os.path.exists(os.environ["FAKE_LLAMA_RULES"]) else []
     for rule in rules:
-        if rule.get("prompt", "") in system and rule.get("text", "") in text:
+        if rule.get("prompt", "") in system and rule.get("text", "") in text and rule.get("user", "") in user:
             if rule.get("op") == "upper":
                 return text.upper()
             if rule.get("op") == "error":
@@ -55,7 +55,7 @@ class Handler(BaseHTTPRequestHandler):
         tagged = re.search(r"<transcript>\n(.*)\n</transcript>", user, re.S)
         text = tagged.group(1) if tagged else user  # (e.g. topics' merging: no transcript)
         log({"system": system, "text": text, "args": ARGS})
-        out = answer(system, text)
+        out = answer(system, text, user)
         if out is None:
             return self.reply(500, {"error": "fake failure"})
         self.reply(200, {"choices": [{"message": {"content": out}}]})

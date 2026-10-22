@@ -29,6 +29,7 @@ Tokens, by role. Dark is the default; light mirrors every role.
 | `surface-2` | Cards, inputs, rows on hover | `#1d1f23` | `#ffffff` |
 | `surface-3` | Controls at rest, selected nav item | `#25272c` | `#e9e9ec` |
 | `surface-4` | Controls hovered or pressed | `#2e3137` | `#dfdfe4` |
+| `raised` | The chosen part of a segmented control | `#3a3d45` | `#ffffff` |
 | `line` | Hairlines and borders | white 7 % | black 8 % |
 | `line-strong` | Focused or emphasised borders | white 14 % | black 16 % |
 | `text` | Primary text | `#ececef` | `#1b1c1f` |
@@ -118,6 +119,9 @@ Build every surface from these, in `design.py`; add a component here before usin
   12 px sides, body-strong. A **key hint** (`⏎`, `Esc`) can sit inside at caption size in text-3.
 - **Icon button.** 28×28, r-sm, quiet; an icon and a tooltip.
 - **Chip.** 20 high, r-sm, caption, surface-3 with text-2; `accent` chip uses accent-weak with accent text.
+- **Segmented control.** Two to four views of one thing (a rail's Topics and Summary): equal buttons on a
+  surface-3 track (r-sm, 2 px in), small 600 text-2; the chosen one on `raised` with a 1 px shadow, in text.
+  Switches at once; remembers its choice for the window's life.
 - **Step chip.** A chip that can be clicked to open what it stands for (a dictation's Cleanup or style: what
   that step changed); hover surface-4; chosen: the accent chip. Only one open per item.
 - **Step card.** What a step did to some text, under the item: surface-2, `line` border, r-md, 10/12 padding,

@@ -6,7 +6,7 @@ heard (kept scrolled to the end unless you've scrolled up); while it's shown, th
 Resume and Stop. A saved one has Copy all, Open file, Open folder and Delete. Closing the window doesn't stop it."""
 import json, threading
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango
-from . import design as d, huds, refine, transcript, voices
+from . import design as d, huds, refine, summary, transcript, voices
 
 
 def transcript_view():
@@ -156,11 +156,22 @@ class TranscriptsPage:
         self.content.add_named(main, "transcript")
         self.content.add_named(self.empty, "empty")
 
-        # its topics
+        # its topics and its summary, a tab each
         self.topics = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_bottom=12)
         self.topics.shown = None
+        self.summary = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6, margin=16, margin_top=4)
+        self.summary.shown = None
+        self.tabs = Gtk.Stack()
+        self.tabs.add_named(d.scrolled(self.topics), "Topics")
+        self.tabs.add_named(d.scrolled(self.summary), "Summary")
+        self.switch = d.segmented(("Topics", "Summary"), "Topics", self.tabs.set_visible_child_name)
+        self.switch.set_margin_start(12)
+        self.switch.set_margin_end(12)
+        self.switch.set_margin_top(12)
+        self.warning = Gtk.Box(margin_start=12, margin_end=12, margin_top=8, no_show_all=True)
         self.right = d.classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=200), "panel")
-        self.right.pack_start(d.scrolled(self.topics), True, True, 0)
+        for w, grow in ((self.switch, False), (self.warning, False), (self.tabs, True)):
+            self.right.pack_start(w, grow, grow, 4 if w is self.tabs else 0)
 
         # list | transcript | topics: the list and the rail keep the width they're dragged to (resize=False),
         # the transcript takes the rest
@@ -334,6 +345,8 @@ class TranscriptsPage:
             if not paragraphs:
                 self.text.get_buffer().set_text("Nothing was heard.")
         self.show_topics(found, people, bool(session), bool(item.get("paragraphs")), small_model(session, found))
+        self.show_summary(session.summary if session else transcript.read_summary(item["path"]), bool(session),
+                          bool(item.get("paragraphs")))
         nameable = not session or session.voices  # without the voice model, a recording's voices are all "Them"
         self.show_people(transcript.labels(session.paragraphs() if session else item.get("paragraphs", [])) if nameable else [])
         if session and following:
@@ -352,13 +365,13 @@ class TranscriptsPage:
         self.topics.shown = shown
         for kid in self.topics.get_children():
             kid.destroy()
-        self.topics.pack_start(d.classes(Gtk.Label(label="Topics", xalign=0, margin=16, margin_bottom=8), "title"), False, False, 0)
+        for kid in self.warning.get_children():
+            kid.destroy()
         if warning:
             strip = d.warning_strip(warning)
-            strip.set_margin_start(12)
-            strip.set_margin_end(12)
-            strip.set_margin_bottom(8)
-            self.topics.pack_start(strip, False, False, 0)
+            strip.show_all()  # (its box is no_show_all, so it isn't shown with the window: only when there's one)
+            self.warning.pack_start(strip, True, True, 0)
+        self.warning.set_visible(bool(warning))
         if not topics_:
             hint = ("The topics of the conversation appear here as it goes on, about a minute in." if live else
                     "No topics were found." if heard else "Nothing was heard.")
@@ -421,6 +434,44 @@ class TranscriptsPage:
             self.play_btn.icon.set_icon("play")
             self.play_btn.set_tooltip_text("Play")
         threading.Thread(target=mix, daemon=True).start()
+
+    def show_summary(self, found, live, heard):
+        """The summary of the transcript shown: its sections and bullets, and whether it's still being written."""
+        text, final = (found.text, found.final) if found else ("", False)
+        shown = (self.shown_item["path"], text, final, live, heard, d.scheme)
+        if shown == self.summary.shown:
+            return
+        self.summary.shown = shown
+        for kid in self.summary.get_children():
+            kid.destroy()
+        if not text:
+            hint = ("A summary of the conversation appears here a few minutes in, and is kept up to date as it goes on."
+                    if live else "No summary for this one." if heard else "Nothing was heard.")
+            self.summary.pack_start(d.text(hint, "small", wrap=True, max_chars=34), False, False, 0)
+        else:
+            top = Gtk.Box(spacing=6)
+            status = ("Kept up to date as it goes on" if live else "The final summary" if final else
+                      "As it was when it stopped")
+            top.pack_start(d.text(status, "caption", wrap=True), True, True, 0)
+            copy = d.icon_button("copy", "Copy summary", lambda: (
+                Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(text, -1), d.flash(copy, "Copied", "Copy summary", "copy")))
+            top.pack_end(copy, False, False, 0)
+            self.summary.pack_start(top, False, False, 0)
+            first = True
+            for kind, markup in summary.markup_lines(text):
+                if kind == "heading":
+                    lab = d.text("", "strong", wrap=True, max_chars=34, margin_top=0 if first else 10)
+                elif kind == "bullet":
+                    lab = d.text("", "small", wrap=True, max_chars=34, margin_start=4)
+                    markup = f"•  {markup}"
+                else:
+                    lab = d.text("", "small", wrap=True, max_chars=34)
+                lab.set_markup(markup)
+                lab.set_selectable(True)
+                lab.set_can_focus(False)
+                self.summary.pack_start(lab, False, False, 0)
+                first = False
+        self.summary.show_all()
 
     def go_to_topic(self, i):
         """Scroll the transcript to where topic i is first talked about."""

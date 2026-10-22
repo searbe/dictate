@@ -4,7 +4,7 @@ are built when first shown, and told each time they're shown again (so Dictation
 import json
 from datetime import datetime, timedelta
 from gi.repository import Gdk, GLib, Gtk
-from . import design as d, huds, refine, transcript, voices
+from . import design as d, huds, refine, summary, transcript, voices
 from .transcripts_page import TranscriptsPage
 
 PAGES = (("dictations", "Dictations", "history"), ("transcripts", "Transcripts", "transcript"),
@@ -315,7 +315,8 @@ class DictationsPage:
 class StylesPage:
     """The cleanup every dictation gets, the vocabulary, and the refinement styles: a list, and an editor for the
     one selected."""
-    FIXED = 2  # list rows before the styles
+    FIXED = 3  # list rows before the styles: Cleanup, Vocabulary, Live summary
+    DEFAULTS = {0: lambda: refine.CLEANUP, 2: lambda: summary.PROMPT}  # what Reset to default puts back
 
     def __init__(self, hub):
         self.hub, self.data, self.i = hub, refine.load_styles(), 0
@@ -334,7 +335,8 @@ class StylesPage:
 
         self.title = d.text("", "title")
         self.delete_btn = d.button("Delete", self.remove, "danger")
-        self.reset_btn = d.button("Reset to default", lambda: self.prompt.get_buffer().set_text(refine.CLEANUP), "quiet")
+        self.reset_btn = d.button("Reset to default", lambda: self.prompt.get_buffer().set_text(self.DEFAULTS[self.i]()),
+                                  "quiet")
         self.saved = d.text("", "small")
         top = Gtk.Box(spacing=8)
         top.pack_start(self.title, True, True, 0)
@@ -373,7 +375,8 @@ class StylesPage:
     def rebuild(self, select):
         for row in self.list.get_children():
             self.list.remove(row)
-        rows = [("Cleanup", None), ("Vocabulary", None)] + [(s["name"], s["key"]) for s in self.data["styles"]]
+        rows = [("Cleanup", None), ("Vocabulary", None), ("Live summary", None)] + \
+            [(s["name"], s["key"]) for s in self.data["styles"]]
         for name, key in rows:
             box = Gtk.Box(spacing=8, margin=8)
             box.pack_start(Gtk.Label(label=name, xalign=0), True, True, 0)
@@ -386,11 +389,11 @@ class StylesPage:
     def show(self, i):
         self.i = i
         style = self.data["styles"][i - self.FIXED] if i >= self.FIXED else {}
-        self.title.set_text(["Cleanup", "Vocabulary"][i] if i < self.FIXED else style.get("name") or "New style")
-        text = self.data["cleanup"] if i == 0 else refine.load_vocab() if i == 1 else style["prompt"]
+        self.title.set_text(["Cleanup", "Vocabulary", "Live summary"][i] if i < self.FIXED else style.get("name") or "New style")
+        text = [lambda: self.data["cleanup"], refine.load_vocab, summary.prompt][i]() if i < self.FIXED else style["prompt"]
         self.fields.set_visible(i >= self.FIXED)
         self.delete_btn.set_visible(i >= self.FIXED)
-        self.reset_btn.set_visible(i == 0)
+        self.reset_btn.set_visible(i in self.DEFAULTS)
         self.name.set_text(style.get("name", ""))
         self.key.set_text(style.get("key", "").upper())
         self.apps.set_text(style.get("apps", ""))
@@ -401,6 +404,8 @@ class StylesPage:
             "Always applied first, to every dictation. Keep it to light clean-up.",
             "Names and terms you use, one per line (people, products, jargon). Cleanup prefers these spellings "
             "and fixes similar-sounding mis-hearings of them.",
+            "How the live summary of a transcribed call is written: kept up to date every few minutes, with a final "
+            "pass when it's stopped. Say what it should cover and how.",
         ][i] if i < self.FIXED else
             "Applied after cleanup: hold Ctrl+Win and press Alt and its letter, or tap Alt to choose afterwards. "
             "Also used automatically when you dictate into a matching app. Describe the style and give an example "
@@ -417,6 +422,8 @@ class StylesPage:
             self.data["cleanup"] = text
         elif self.i == 1:
             refine.save_vocab(text)
+        elif self.i == 2:
+            summary.save_prompt(text)
         else:
             j = self.i - self.FIXED
             name, key = self.name.get_text().strip(), self.key.get_text().lower()

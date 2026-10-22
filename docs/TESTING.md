@@ -66,6 +66,7 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 | Echoes: the speakers heard again by the microphone (in made-up rooms, quieter or later) told from you speaking, alone or over them | `test_echo.py` |
 | Topics: listed beside the transcript with who brought each up and who else spoke on it, the current one marked, carried on when the conversation goes back to one, a new paragraph where the topic changes, small talk left out, saved at the top of the transcript (including what was said last, when it's stopped), the transcript carrying on when the model fails, a warning while the less reliable model is used (graphics card busy, or none) and once saved, switching to the better one once the graphics card is free but not mid-dictation, topics that turn out to be one subject merged (only if the model says so again about each pair, and not by the less reliable model) | `test_topics.py` |
 | Still transcribing: closing the window while recording says it carries on and every way to stop it (once a day), Stop now, Keep going, a desktop notification when the capsule isn't on screen, the reminder after a while with nothing heard (not again until something is) | `test_still_transcribing.py` |
+| Live summary: the Summary tab beside Topics, kept up to date with only what's new sent each time, the final pass when it's stopped saved at the top of the transcript, a saved transcript's summary, its prompt changed and reset in Styles | `test_summary.py` |
 | Grouping voices into people on a call's worth of made-up voiceprints: one voice each, short parts never someone new, numbers kept when one is named | `test_voice_grouping.py` |
 | Voices: told apart, named live or after the call, merged by naming two the same, remembered only when turned on (live and after the call), listed and forgotten, all forgotten when turned off, "Them" without the voice model | `test_voices.py` |
 | The real thing end to end (real speech model, llama-server and refinement model), and `scripts/prove_local.py`: no network call leaves the computer | `test_local_only.py` |
@@ -158,6 +159,8 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
 - Close the Dictate window while transcribing: the reminder appears beside the capsule, on its screen
   (try the capsule near the right edge: it goes on the left); Stop now stops it. With it off screen, a desktop
   notification says it instead, and its Stop now button works.
+- The live summary, on a real call: it appears a few minutes in and keeps every subject as it grows; Agreed and
+  Action points hold only what was said; the final pass after Stop reads well and is marked final.
 - Topics, on a real call: the first is listed about a minute in, and the list reads as what was discussed, in
   order, with the one being talked about marked "Now" (which topic, and who brought it up, can slip on a short
   reply or a quick change of subject). The transcript's colours match. After changing `topics.py`'s prompt, use
