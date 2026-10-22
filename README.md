@@ -32,7 +32,7 @@ Hold **Ctrl+Win** to record, release to transcribe and paste into the focused te
 - **Start / stop:** hold Ctrl+Win, lift Win and press it again. Or use **Stop**, or the menu.
 - People are labelled "Speaker 1", "Speaker 2"… Click a name to rename them; naming two the same merges them.
 - The topics are listed beside the transcript, each in its colour, with who brought it up; the one being talked about now is marked. Click one to go to it. While the graphics card is busy, a smaller, less reliable model finds them (a warning says so) until it's free again.
-- **Summary**, the tab beside Topics, is a live summary of the call: what it's about, what was discussed and agreed, the action points and open questions, kept up to date every few minutes, with a final pass when it's stopped (saved at the top of the transcript). Its prompt is in Styles → Live summary.
+- **Summary**, the tab beside Topics, is a live summary of the call: what it's about, what was discussed and agreed, the action points and open questions, kept up to date about every half a minute, with a careful final pass when it's stopped (saved at the top of the transcript). Its prompt is in Styles → Live summary.
 - You can dictate as usual while it runs; your dictations stay out of the transcript.
 - **Transcripts** (menu) lists them all; the live one is at the top. Saved as Markdown in `data/transcripts/`; one where nothing was heard isn't kept. While its recordings are kept, **Play** plays the call, and clicking a paragraph's time plays from there.
 - Closing the window doesn't stop it: the first time each day, and after 10 minutes with nothing heard, a reminder beside the icon says so and how to stop it (a desktop notification if the icon isn't on screen).

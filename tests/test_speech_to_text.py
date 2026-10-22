@@ -76,3 +76,21 @@ def test_transcribing_while_recording_gives_the_same_text_as_afterwards(stt, tmp
 
     assert live.finish() == f"{ASK_NOT} {ASK_NOT}"
     assert stt.transcribe(save(tmp_path / "whole.wav", audio)) == f"{ASK_NOT} {ASK_NOT}"
+
+
+def test_what_is_being_said_is_previewed_growing_from_the_start(stt, monkeypatch):
+    """Two sentences with a short pause between, in a call (pause 1.2 s: one stretch): once the first is said,
+    every preview starts with it, rather than showing only the last few seconds."""
+    monkeypatch.setattr(stt, "PREVIEW", 0.2)
+    previews = []
+    live = stt.Live(on_preview=lambda start, text, *_: previews.append(text), pause=1.2)
+    audio = np.concatenate([silence(0.3), sample("en"), silence(0.4), sample("en")])
+    for i in range(0, len(audio), RATE // 10):  # as the recorder passes it on, 2x faster than real time
+        live.push(audio[i:i + RATE // 10].tobytes())
+        time.sleep(0.05)
+    time.sleep(0.5)
+
+    assert live.finish() == f"{ASK_NOT} {ASK_NOT}"
+    later = previews[next(i for i, p in enumerate(previews) if p.startswith(ASK_NOT)):]
+    assert all(p.startswith(ASK_NOT) for p in later)
+    assert any(len(p) > len(ASK_NOT) + 10 for p in later)  # the second, growing behind it

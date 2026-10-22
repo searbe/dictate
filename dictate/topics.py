@@ -24,9 +24,11 @@ from . import refine
 
 TICK = 5  # seconds between checks for whether an update is due (and whether the GPU has come free)
 FREE_FOR = 15  # seconds the GPU must be free, while the smaller model's on the CPU, to switch to the larger
-EVERY = 60  # seconds between updates, once 20 words have been said since the last
-MOST = 120  # or after this many seconds, if anything has; or as soon as WORDS have
-WORDS = 150
+EVERY = 20  # seconds between updates, once SOME words have been said since the last (so the topic now keeps up)
+SOME = 10
+MOST = 45  # or after this many seconds, if anything has; or as soon as WORDS have
+WORDS = 80
+SLOWER = 3  # times as long between updates on the smaller model on the CPU (it's slow, and the CPU's transcribing)
 BEFORE = 6  # lines already sorted shown before the new ones, for context
 RECENT = 8  # the latest topics are given with their last points; earlier ones by title only (a short prompt)
 MERGE = 600  # seconds between asking which topics are the same subject
@@ -106,10 +108,11 @@ class Topics:
         """The number of topic i's colour (for the window's styles)."""
         return self.topics[i]["colour"] % len(COLOURS)
 
-    def due(self, lines, since):
-        """Whether to update: lines are those not sorted yet; since: seconds since the last update."""
-        words = sum(len(text.split()) for _, _, text in lines)
-        return bool(lines) and (since >= MOST or (since >= EVERY and words >= 20) or words >= WORDS)
+    def due(self, lines, since, slow=False):
+        """Whether to update: lines are those not sorted yet; since: seconds since the last update; slow: on the
+        smaller model, on the CPU (SLOWER)."""
+        words, f = sum(len(text.split()) for _, _, text in lines), SLOWER if slow else 1
+        return bool(lines) and (since >= MOST * f or (since >= EVERY * f and words >= SOME) or words >= WORDS * f)
 
     def update(self, lines, before=()):
         """Sort lines (not sorted yet) into topics; before: the lines just before them. Returns whether

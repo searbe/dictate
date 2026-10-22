@@ -151,18 +151,25 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
 - A call or podcast with 2–4 people (a long one too, 15 min or more): as many "Speaker N" as there are people, each
   mostly keeping theirs, including in quick back-and-forth; note where it slips (talking over each other, one-word
   answers). Sentences aren't broken up at short pauses. The greyed-out preview keeps up within about a second
-  of someone speaking. After changing `voices.py`, run `python scripts/bench_voices.py
+  of someone speaking, and grows from the start of what they're saying (it doesn't jump to its last few words),
+  until it's replaced by the whole stretch transcribed. Interjections ("yeah", "no") and a quick reply in the
+  middle of someone's turn go to the person who said them. With the call on speakers (no headphones), nothing
+  the speakers said turns up as yours, and what you say over them does. After changing `voices.py`, run `python scripts/bench_voices.py
   LibriSpeech/dev-clean` (download it from openslr.org/12) and compare with the last run: speaking time labelled
   right 98.6% / 94.3% (with pauses, full quality / phone), 89.8% / 81.5% (quick replies); the right number of
-  people in 83% / 75% and 75% / 67% of conversations.
+  people in 83% / 75% and 75% / 67% of conversations. With `--by-word` (as transcripts do, once two voices are
+  known; slower, as it transcribes too): 97.5% / 93.8%, 89.3% / 80.3%; 83% / 79% and 75% / 62%. (A little lower
+  on these made-up conversations of read-out books, but it's what gets a "yeah" or a quick answer in the middle
+  of someone's turn right on a real call, which they don't have.)
 - With Remember voices on: name someone, and in a later call with them they're named from their first stretch.
 - Close the Dictate window while transcribing: the reminder appears beside the capsule, on its screen
   (try the capsule near the right edge: it goes on the left); Stop now stops it. With it off screen, a desktop
   notification says it instead, and its Stop now button works.
-- The live summary, on a real call: it appears a few minutes in and keeps every subject as it grows; Agreed and
+- The live summary, on a real call: it appears within a minute, changes about every half a minute, and keeps
+  every subject as it grows; Agreed and
   Action points hold only what was said; the final pass after Stop reads well and is marked final.
-- Topics, on a real call: the first is listed about a minute in, and the list reads as what was discussed, in
-  order, with the one being talked about marked "Now" (which topic, and who brought it up, can slip on a short
+- Topics, on a real call: the first is listed within half a minute, and the list reads as what was discussed,
+  in order, with the one being talked about marked "Now" (it keeps up within about half a minute) (which topic, and who brought it up, can slip on a short
   reply or a quick change of subject). The transcript's colours match. After changing `topics.py`'s prompt, use
   `python scripts/bench_topics.py` on a few saved transcripts and read the results.
 

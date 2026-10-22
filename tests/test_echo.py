@@ -71,3 +71,34 @@ def test_only_the_last_two_minutes_of_the_speakers_are_kept(tmp_path):
     e = played(np.concatenate([them, np.zeros(150 * RATE, np.float32)]))
 
     assert not e.echo(0.0, room(them))  # forgotten
+
+
+def cancelled(sound):
+    """What an echo canceller leaves of the speakers' sound across a room: louder and quieter by turns, with a
+    hiss of its own; so much of it isn't quite the speakers' sound (a real one, through PipeWire's, left 40-70%)."""
+    rng = np.random.default_rng(0)
+    echoed = room(sound)
+    wobble = np.repeat(rng.uniform(0.1, 1.0, len(echoed) // 1600 + 1), 1600)[:len(echoed)]
+    return (echoed * wobble + 0.3 * rng.normal(0, 1, len(echoed)) * np.abs(echoed)).astype(np.float32)
+
+
+def test_an_echo_left_by_an_echo_canceller_is_an_echo_once_echoes_have_been_heard(tmp_path):
+    them = np.concatenate([speech(tmp_path)] * 3)
+    e = played(np.concatenate([them, np.zeros(RATE)]))
+    left = cancelled(them)[5 * RATE:int(6.5 * RATE)]
+
+    assert not e.echo(5.0, left)  # unsure, till it knows how loud an echo is
+    for at in (0, 2, 4):
+        assert e.echo(at, room(them)[at * RATE:(at + 2) * RATE])
+    assert e.echo(5.0, left)
+
+
+def test_you_speaking_over_what_an_echo_canceller_left_is_not(tmp_path):
+    them = np.concatenate([speech(tmp_path)] * 3)
+    you = np.interp(np.arange(0, len(them), 1.25), np.arange(len(them)), them).astype(np.float32)  # another voice
+    e = played(np.concatenate([them, np.zeros(RATE)]))
+    for at in (0, 2, 4):
+        e.echo(at, room(them)[at * RATE:(at + 2) * RATE])
+    mic = cancelled(them)[5 * RATE:int(6.5 * RATE)] + you[5 * RATE:int(6.5 * RATE)]
+
+    assert not e.echo(5.0, mic)

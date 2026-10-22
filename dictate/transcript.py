@@ -187,6 +187,22 @@ def parts_of(samples, words, narrow):
     return out
 
 
+def voiced_parts(samples, words, narrow, known):
+    """[(start, end, voiceprint, voice or None)]: the parts of a stretch said by one voice each (as parts_of), with
+    their voiceprints. Once two voices or more are known ({voice: unit vector}: Voices.told_apart), a piece
+    between short pauses that has words is told apart word by word (voices.by_word), giving each part the voice
+    it is; else, and before then, by where the voice changes (voices.turns), leaving which voice to Voices."""
+    if len(known) < 2 or not words:
+        parts = parts_of(samples, words, narrow)
+        return [(a, b, voices.voiceprint(samples[int(a * stt.RATE):int(b * stt.RATE)]), None) for a, b in parts]
+    out = []
+    for at, piece in stt.stretches(samples, PIECE) or [(0, samples)]:
+        a, b = at / stt.RATE, (at + len(piece)) / stt.RATE
+        inside = [(t - a, w) for t, w in words if a - 0.1 <= t < b]  # (a word can start just before its audio)
+        out += [(a + s, a + e, v, who) for s, e, v, who in voices.by_word(piece, inside, known, narrow)]
+    return out
+
+
 def said_in(parts, words, text):
     """The words of each part: from its start to the next one's (so a word in a pause between them is kept)."""
     if len(parts) == 1:
@@ -219,6 +235,7 @@ class Session:
         self.path = FOLDER / f"{stamp}.md"
         self.heard = []  # (who, start, end, text, voice id or None), in seconds since the start
         self.voices = voices.Voices(voices.remembered()) if voices.available() else None
+        self.known = {}  # the voices heard long enough to tell words apart by, as of the latest stretch
         self.band = (0.0, 0.0)  # the speakers' power above 4 kHz, and in all: is it a phone line?
         self.previewing = {}  # who: (start, text) of what they're saying, before it's transcribed whole
         self.echo = echo.Echo()  # what the speakers played, to tell the microphone's echoes of it
@@ -261,9 +278,10 @@ class Session:
             high, total = voices.band(samples)
             self.band = (self.band[0] + high, self.band[1] + total)
             narrow = voices.narrowband(power=self.band)
-            parts = parts_of(samples, words, narrow)
-            heard = [((who, start + a, start + b, said), (voices.voiceprint(samples[int(a * stt.RATE):int(b * stt.RATE)]), b - a, narrow))
-                     for (a, b), said in zip(parts, said_in(parts, words, text)) if said]
+            found = voiced_parts(samples, words, narrow, self.known)  # (self.known: the GTK thread's latest, see _add)
+            parts = [(a, b) for a, b, _, _ in found]
+            heard = [((who, start + a, start + b, said), (v, b - a, narrow, w))
+                     for (_, _, v, w), (a, b), said in zip(found, parts, said_in(parts, words, text)) if said]
         elif who == "them" and self.voices:
             heard = [((who, start, end, text), (voices.voiceprint(samples), end - start, False))]
         GLib.idle_add(self._add, who, heard)
@@ -271,6 +289,8 @@ class Session:
     def _add(self, who, heard):
         for stretch, voice in heard:
             self.heard.append((*stretch, self.voices.voice(*voice) if voice else None))
+        if self.voices:
+            self.known = self.voices.told_apart()  # (for hear(), on Live's thread: a new dict, never changed)
         self.previewing.pop(who, None)  # now transcribed whole
         self.save()
         self.on_change()
@@ -367,12 +387,12 @@ class Session:
         """Every few seconds: sort what's been said into topics, when it's due."""
         if self.stopped:
             return False
-        lines = [l for l in self.lines() if l[0] not in self.asked]
-        if not self.asking and self.topics.due(lines, self.now() - self.last_topics):
+        lines, slow = [l for l in self.lines() if l[0] not in self.asked], refine.mode() == "cpu"
+        if not self.asking and self.topics.due(lines, self.now() - self.last_topics, slow):
             self.sort_topics()
         elif not self.asking and self.now() - self.last_merge >= topics.MERGE:
             self.merge_topics()
-        elif not self.asking and self.summary.due(self.lines(), self.now() - self.last_summary):
+        elif not self.asking and self.summary.due(self.lines(), self.now() - self.last_summary, slow):
             self.summarise()
         self.back_to_gpu()
         return True

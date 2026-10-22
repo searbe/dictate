@@ -10,7 +10,7 @@ from . import ROOT
 MODELS = ROOT / "models"
 RATE = 16000
 PREVIEW = 1.0  # seconds between previews of the stretch still being spoken (transcribe mode)
-PREVIEW_TAIL = 6  # seconds: a preview shows (and costs) only the latest of a long stretch
+PREVIEW_PAUSE = 0.25  # seconds: a preview is built from the stretch's pieces between pauses this short
 THREADS = min(4, os.cpu_count() or 4)  # more only spin: 8 cost twice the CPU of 4 for the same speed
 _rec = _vad_cfg = None
 
@@ -109,6 +109,7 @@ class Live:
         self.pause = pause  # seconds of silence that end a stretch (default: 0.4, for dictation)
         self.path, self.data, self.leftover, self.texts, self.done = wav_path, None, b"", [], False
         self.on_text, self.on_preview, self.previewed, self.pushed = on_text, on_preview, 0.0, collections.deque()
+        self.pieces = {}  # the stretch being spoken: its pieces' text so far, by where they start (see _preview)
         self.thread = threading.Thread(target=self._follow, daemon=True)
         self.thread.start()
 
@@ -171,18 +172,33 @@ class Live:
             self.vad.pop()
 
     def _preview(self):
-        """What the stretch still being spoken says so far, about every PREVIEW seconds."""
+        """What the stretch still being spoken says so far, about every PREVIEW seconds. It grows as it's said:
+        the stretch is cut at its short pauses (PREVIEW_PAUSE), each piece before the last is transcribed once
+        and kept, and only the last, still being said, again each time; so what's shown doesn't jump about.
+        (The whole stretch is transcribed again once it ends, with all of it to go on: that's what's kept.)"""
         if not self.on_preview or not self.vad.is_speech_detected() or time.monotonic() - self.previewed < PREVIEW:
             return
         self.previewed = time.monotonic()
         seg = self.vad.current_segment
         samples = np.array(seg.samples, dtype=np.float32)
-        if len(samples) > RATE // 2:
-            tail = samples[-PREVIEW_TAIL * RATE:]
-            text = _decode(tail)
-            if text:
-                self.on_preview(seg.start / RATE, ("… " if len(samples) > len(tail) else "") + text,
-                                tail, (seg.start + len(samples) - len(tail)) / RATE)
+        if len(samples) <= RATE // 2:
+            return
+        if self.pieces.get("stretch") != seg.start:  # a new stretch
+            self.pieces = {"stretch": seg.start}
+        pieces = stretches(samples, PREVIEW_PAUSE) or [(0, samples)]
+        texts = []
+        for k, (at, piece) in enumerate(pieces):
+            last = k == len(pieces) - 1
+            done = self.pieces.get(at)
+            if last or done is None or done[0] != len(piece):  # (a finished piece's text is kept)
+                done = (len(piece), _decode(piece))
+                if not last:
+                    self.pieces[at] = done
+            texts.append(done[1])
+        text = " ".join(t for t in texts if t)
+        at, tail = pieces[-1]
+        if text:
+            self.on_preview(seg.start / RATE, text, tail, (seg.start + at) / RATE)
 
     def finish(self):
         """Call once recording has stopped and the file is complete. Returns the whole transcript."""

@@ -4,16 +4,17 @@ everyone leaves with the same understanding.
 
 Every EVERY seconds (once enough has been said since) the refinement model gets the summary so far, the topics so
 far (topics.py) and what was said since, and writes the whole summary again, updated: so it changes as the
-conversation does, without the model having to read all of it each time. When it's stopped there's a final pass:
-from the whole transcript if it fits the model's context, else from the summary, the topics and the end of it.
+conversation does, without the model having to read all of it each time: quick, and a little rough (it hasn't
+heard where things went). When it's stopped there's a final pass, careful: from the whole transcript if it fits
+the model's context, else from the summary, the topics and the end of it.
 The prompt is the user's to change (Styles → Live summary; kept in data/summary.txt)."""
 import re
 from xml.sax.saxutils import escape
-from . import DATA, refine
+from . import DATA, refine, topics
 
 PROMPT_FILE = DATA / "summary.txt"
-EVERY = 180  # seconds between updates
-WORDS = 60  # said since the last update, for another to be worth it
+EVERY = 30  # seconds between updates, so it keeps up (3-7 s each on the larger model), and a final pass at the end
+WORDS = 30  # said since the last update, for another to be worth it
 WHOLE = 3500  # words: a transcript this long or shorter is read whole for the final pass (within the model's context)
 LAST = 400  # words: otherwise the end of it, with the summary and the topics
 PROMPT = """You keep a running summary of a meeting or call while it happens, so that everyone in it leaves with the same understanding of what was discussed and what was agreed. It's read by people who were there: a little more than an executive summary, much less than minutes.
@@ -59,9 +60,10 @@ class Summary:
     def new(self, lines):
         return [l for l in lines if l[0] not in self.read]
 
-    def due(self, lines, since):
-        """Whether to update: lines are all the lines so far; since: seconds since the last update."""
-        return since >= EVERY and sum(len(t.split()) for _, _, t in self.new(lines)) >= WORDS
+    def due(self, lines, since, slow=False):
+        """Whether to update: lines are all the lines so far; since: seconds since the last update; slow: on the
+        smaller model, on the CPU (topics.SLOWER times as long between)."""
+        return since >= EVERY * (topics.SLOWER if slow else 1) and sum(len(t.split()) for _, _, t in self.new(lines)) >= WORDS
 
     def ask(self, lines, found):
         """The model's updated summary, from what was said since the last (slow: not on the GTK thread)."""

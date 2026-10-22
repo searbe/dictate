@@ -90,6 +90,55 @@ def test_a_transcript_just_recorded_is_listed_with_how_long_it_lasted(start):
     assert "Speaker 1  A short one." in shown(app)
 
 
+def recording(start):
+    app = start(styles=[])
+    app.ctrl_win_win()
+    app.wait_window("Transcripts")
+    app.send("menu", path=["Transcripts"])
+    app.wait_window("Transcripts")
+    return app
+
+
+def at_end(app):
+    s = app.send("scroll", window_title="Transcripts")
+    return s["value"] >= s["upper"] - s["page"] - 2 and s["upper"] > s["page"]
+
+
+def talk(app, first, last, said="A long line that goes on for a while, so the transcript fills the window soon. " * 3):
+    for i in range(first, last + 1):
+        app.hear(f"{i}. {said}", voice=("a", "b")[i % 2])
+
+
+def test_at_the_end_of_the_transcript_being_recorded_it_follows_what_is_said(start):
+    app = recording(start)
+    talk(app, 0, 29)
+    eventually(lambda: "29. A long line" in shown(app))
+
+    eventually(lambda: at_end(app))
+    talk(app, 30, 34)
+    eventually(lambda: "34. A long line" in shown(app))
+    time.sleep(0.5)
+    assert at_end(app)
+
+
+def test_scrolled_up_it_stays_put_as_more_is_said_until_scrolled_back_to_the_end(start):
+    app = recording(start)
+    talk(app, 0, 29)
+    eventually(lambda: "29. A long line" in shown(app) and at_end(app))
+
+    app.send("scroll", to="top", window_title="Transcripts")
+    talk(app, 30, 32)
+    eventually(lambda: "32. A long line" in shown(app))
+    time.sleep(0.5)
+    assert app.send("scroll", window_title="Transcripts")["value"] == 0
+
+    app.send("scroll", to="end", window_title="Transcripts")
+    talk(app, 33, 35)
+    eventually(lambda: "35. A long line" in shown(app))
+    time.sleep(0.5)
+    assert at_end(app)
+
+
 def test_the_transcript_being_recorded_is_listed_and_kept_up_to_date(start):
     app = start(styles=[])
     app.ctrl_win_win()

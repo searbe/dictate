@@ -2,7 +2,10 @@
 matched against the voices heard so far in the transcript. A close enough match is the same person;
 otherwise it's someone new. When people reply without pausing, one stretch holds both of them: turns()
 finds where the voice changes within it, from voiceprints of short overlapping slices, so each part gets its
-own voice. scripts/bench_voices.py measures how well this works.
+own voice. Once two voices have been heard for a while, by_word() does better: it asks which of them each word
+sounds like, so a "yeah" or a quick answer in the middle of someone's turn goes to whoever said it. A voice
+found from a few words that turns out to sound like another becomes it (merge()). scripts/bench_voices.py
+measures how well this works.
 
 Remembering voices is opt-in (data/voices.json): once on, a voice you name in a transcript is remembered,
 on this computer only, and named automatically in later transcripts. Turning it off forgets them all."""
@@ -19,6 +22,10 @@ REMEMBERED = 0.55  # a remembered voice: a closer match, as a wrong name is wors
 SHORT = 2.0  # seconds: a part this short is too little to tell a new voice by; it goes to the closest one
 SLICE, STEP = 1.5, 0.5  # seconds: the slices turns() compares, and how far apart they start
 CHANGE = {"wide": 0.45, "narrow": 0.6}  # the voice changes where before and after are less similar than this
+KNOWN = 15.0  # seconds of a voice heard, for words to be told apart by it (by_word)
+WINDOW, HOP = 0.8, 0.2  # seconds: by_word's windows, and how far apart they start
+BRIEF = 0.7  # seconds: a run of a word or two shorter than this is another voice only if it's a sentence of its own
+MERGE = {"wide": 0.5, "narrow": 0.7}  # a voice heard less than KNOWN seconds this like another (all their parts) is it
 SHORT_COUNTS = 0.3  # how much a short part counts towards its voice's sound, for each second of it
 REGROUP = 2  # times every part is given again to the voice it's closest to, after each new one
 _ex, _lock = None, threading.Lock()
@@ -40,6 +47,8 @@ def voiceprint(samples):
         stream.accept_waveform(16000, samples)
         stream.input_finished()
         v = np.array(_ex.compute(stream), np.float32)
+    if not v.size:  # too short to tell (a few ms): like nobody
+        return np.zeros(_ex.dim, np.float32)
     return v / (np.linalg.norm(v) or 1)
 
 
@@ -76,6 +85,76 @@ def turns(samples, narrow):
     return list(zip(edges, edges[1:]))
 
 
+def by_word(samples, words, known, narrow=False):
+    """[(start, end, voiceprint, voice)] in seconds: the parts of a stretch spoken by one voice each, told apart a word at
+    a time by which of the known voices ({voice: unit vector}, two or more, each heard KNOWN seconds or more) it
+    sounds most like, in short windows around it; voice is None if it's long enough to tell (SHORT) and like none
+    of them (SAME): someone new, for Voices to find. Catches a "yeah" or a quick reply between someone's sentences,
+    which turns() (comparing 1.5 s slices, with no idea who's who) can't. A run of a word or two that isn't a
+    sentence of its own (BRIEF) stays with the voice around it: one word's window often hears its neighbours."""
+    seconds = len(samples) / 16000
+    if not words or seconds < WINDOW:  # (it's whoever it sounds like as a whole)
+        return [(0.0, seconds, voiceprint(samples), None)]
+    ids = list(known)
+    centres = np.stack([known[v] for v in ids])
+    whole = voiceprint(samples)
+    if seconds >= SHORT and float((centres @ whole).max()) < SAME["narrow" if narrow else "wide"]:
+        return [(0.0, seconds, whole, None)]
+    mids = np.arange(WINDOW / 2, max(seconds - WINDOW / 2, WINDOW / 2) + 1e-6, HOP)
+    prints = np.array([voiceprint(samples[int((m - WINDOW / 2) * 16000):int((m + WINDOW / 2) * 16000)]) for m in mids])
+    similar = prints @ centres.T
+    starts = [t for t, _ in words]
+    ends = starts[1:] + [seconds]
+    who = []
+    for t, e in zip(starts, ends):
+        mid = (t + min(e, t + 0.6)) / 2  # (a word's end isn't given: the next one's start, or 0.6 s on at most)
+        near = np.abs(mids - mid) <= max(WINDOW / 2, HOP)
+        who.append(int((similar[near].mean(0) if near.any() else similar[np.argmin(np.abs(mids - mid))]).argmax()))
+
+    ends_sentence = lambda w: w.rstrip().endswith((".", "?", "!"))
+    changed = True
+    while changed:  # a brief run that isn't a sentence of its own joins the voice before it (or after, first)
+        changed = False
+        runs = [[who[0], 0, 1]]
+        for i in range(1, len(who)):
+            if who[i] == runs[-1][0]:
+                runs[-1][2] = i + 1
+            else:
+                runs.append([who[i], i, i + 1])
+        for k, (v, a, b) in enumerate(runs):
+            if len(runs) == 1:
+                break
+            brief = b - a <= 2 or ends[b - 1] - starts[a] < BRIEF
+            sentence = (a == 0 or ends_sentence(words[a - 1][1])) and (b == len(words) or ends_sentence(words[b - 1][1]))
+            if brief and not sentence:
+                other = runs[k - 1][0] if k > 0 else runs[k + 1][0]
+                for i in range(a, b):
+                    who[i] = other
+                changed = True
+                break
+
+    edges, out = [0], []
+    for i in range(1, len(who)):
+        if who[i] != who[i - 1]:  # a change of voice: at the end of a sentence, if one's within two words of it
+            ends = [j for j in range(max(edges[-1] + 1, i - 2), min(len(who), i + 3)) if ends_sentence(words[j - 1][1])]
+            edges.append(min(ends, key=lambda j: abs(j - i), default=i))
+    edges = sorted(set(edges))
+    voice = []  # each part's: most of its words'
+    for k, i in enumerate(edges):
+        theirs = who[i:edges[k + 1] if k + 1 < len(edges) else len(who)]
+        voice.append(max(set(theirs), key=theirs.count))
+    edges = [i for k, i in enumerate(edges) if k == 0 or voice[k] != voice[k - 1]]  # (two the same now: one)
+    voice = [v for k, v in enumerate(voice) if k == 0 or v != voice[k - 1]]
+    for k, i in enumerate(edges):
+        a = 0.0 if k == 0 else starts[i] - 0.01  # just before the word that starts the part
+        b = seconds if k == len(edges) - 1 else starts[edges[k + 1]] - 0.01
+        inside = (mids >= a) & (mids <= b)
+        vector = whole if len(edges) == 1 else voiceprint(samples[int(a * 16000):int(b * 16000)]) if b - a >= SHORT else \
+            (prints[inside].mean(0) if inside.any() else prints[np.argmin(np.abs(mids - (a + b) / 2))])
+        out.append((a, b, vector / (float(np.linalg.norm(vector)) or 1), ids[voice[k]]))
+    return out
+
+
 def band(samples):
     """(power above 4 kHz, all the power) of samples."""
     power = np.abs(np.fft.rfft(samples)) ** 2
@@ -100,13 +179,19 @@ class Voices:
 
     def __init__(self, remembered=()):
         self.prints, self.seconds, self.of = [], [], []  # each part's voiceprint, length and voice
+        self.told = []  # whether each part's voice was told word by word (by_word), so stays (see regroup)
         self.names, self.next_id, self.narrow, self.recognised = {}, 0, False, set()
         self.known = [(name, np.asarray(v, np.float32)) for name, v in remembered]
 
-    def voice(self, vector, seconds, narrow):
-        """Add a part heard; returns its id (its voice can change as more is heard: see label())."""
+    def voice(self, vector, seconds, narrow, likely=None):
+        """Add a part heard; returns its id (its voice can change as more is heard: see label()). likely: the voice
+        by_word told it was, word by word: a short part's is (too short to tell by its voiceprint as a whole)."""
         centres = self.centres()
         best, similar = max(((v, float(vector @ c)) for v, c in centres.items()), key=lambda t: t[1], default=(None, -1.0))
+        told = likely in centres and seconds < SHORT
+        if told:
+            best, similar = likely, 1.0
+        self.told.append(told)
         self.narrow = narrow
         self.prints.append(np.asarray(vector, np.float32))
         self.seconds.append(seconds)
@@ -145,6 +230,8 @@ class Voices:
             of = np.array([ids.index(v) for v in self.of])
             totals = np.array([(prints[of == k] * seconds[of == k, None]).sum(0) for k in range(len(ids))])
             for i in range(len(prints)):
+                if self.told[i]:  # by_word compared its words with the voices: better than its voiceprint as a whole
+                    continue
                 own = totals[of[i]] - prints[i] * seconds[i]  # its voice, without it
                 alone = float(np.linalg.norm(own)) < 1e-6
                 norms = np.linalg.norm(totals, axis=1)
@@ -155,6 +242,23 @@ class Voices:
                     totals[of[i]], totals[best] = own, totals[best] + prints[i] * seconds[i]
                     of[i] = best
             self.of = [ids[k] for k in of]
+        self.merge()
+
+    def merge(self):
+        """Make a voice heard only a little (less than KNOWN seconds) that sounds like another overall (MERGE)
+        part of it: a voice found from a few words unlike the rest of someone's can keep a few more of theirs,
+        each a little closer to it than to anyone (regroup() moves parts one at a time). Two people each heard
+        for a while are left apart, however alike (two voices on one line can be). A named voice stays."""
+        while True:
+            centres, heard = self.centres(), {}
+            for v, s in zip(self.of, self.seconds):
+                heard[v] = heard.get(v, 0.0) + s
+            pairs = sorted(((float(centres[a] @ centres[b]), a, b) for a in centres for b in centres
+                            if a != b and heard[a] < KNOWN and a not in self.names), reverse=True)
+            if not pairs or pairs[0][0] < MERGE["narrow" if self.narrow else "wide"]:
+                return
+            _, drop, keep = pairs[0]
+            self.of = [keep if v == drop else v for v in self.of]
 
     def recognise(self, vector):
         """The remembered voice this is, if any (and not already in this transcript)."""
@@ -185,6 +289,13 @@ class Voices:
 
     def vector(self, vid):
         return self.centres()[vid]
+
+    def told_apart(self, at_least=KNOWN):
+        """{voice: unit vector} of the voices heard for at_least seconds (enough to tell words apart by)."""
+        heard = {}
+        for v, s in zip(self.of, self.seconds):
+            heard[v] = heard.get(v, 0.0) + s
+        return {v: c for v, c in self.centres().items() if heard.get(v, 0.0) >= at_least}
 
     def labelled(self):
         """{label: voiceprint} of every voice in this transcript."""

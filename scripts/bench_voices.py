@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""How well transcripts tell voices apart: python scripts/bench_voices.py path/to/LibriSpeech/dev-clean [--no-turns]
+"""How well transcripts tell voices apart: python scripts/bench_voices.py path/to/LibriSpeech/dev-clean [--no-turns] [--by-word]
 
 Builds mock conversations between 2–4 LibriSpeech speakers (dev-clean, 337 MB from
 https://www.openslr.org/resources/12/dev-clean.tar.gz), cuts them at pauses and between voices as transcribe
@@ -45,11 +45,18 @@ def phone(audio):
     return np.fft.irfft(spectrum, len(audio)).astype(np.float32)
 
 
-def label(audio, use_turns):
-    """The voice labelled at each frame (None where nobody was heard), as a saved transcript has them."""
+def label(audio, use_turns, by_word=False):
+    """The voice labelled at each frame (None where nobody was heard), as a saved transcript has them. by_word:
+    transcribe each stretch, and once two voices are known, tell its words apart by them (voices.by_word), as a
+    transcript does (slower)."""
     found, labels, parts = voices.Voices(), [None] * (len(audio) // FRAME + 1), []
     narrow = voices.narrowband(audio)  # decided for the whole call, as a transcript does as it goes
     for start, samples in stt.stretches(audio, transcript.PAUSE):
+        if by_word:
+            words = stt.words(stt._recognise(samples))
+            for a, b, vector, likely in transcript.voiced_parts(samples, words, narrow, found.told_apart()):
+                parts.append((start + int(a * RATE), start + int(b * RATE), found.voice(vector, b - a, narrow, likely)))
+            continue
         for a, b in transcript.parts_of(samples, None, narrow if use_turns else None):
             part = samples[int(a * RATE):int(b * RATE)]
             parts.append((start + int(a * RATE), start + int(b * RATE), found.voice(voices.voiceprint(part), b - a, narrow)))
@@ -72,7 +79,7 @@ def accuracy(labels, truth):
 
 
 def main():
-    root, use_turns = Path(sys.argv[1]), "--no-turns" not in sys.argv
+    root, use_turns, by_word = Path(sys.argv[1]), "--no-turns" not in sys.argv, "--by-word" in sys.argv
     speakers = {d.name: sorted(d.rglob("*.flac")) for d in root.iterdir() if d.is_dir()}
     stt.load()
     for style, shape in STYLES.items():
@@ -81,7 +88,7 @@ def main():
             for i in range(24):
                 people = rng.sample(sorted(speakers), (2, 2, 3, 4)[i % 4])
                 audio, truth = conversation(rng, speakers, people, **shape)
-                score, found = accuracy(label(change(audio), use_turns), truth)
+                score, found = accuracy(label(change(audio), use_turns, by_word), truth)
                 scores.append(score)
                 exact.append(found == len(people))
             print(f"{style}, {quality}: {np.mean(scores):.1%} of speaking time labelled right; "

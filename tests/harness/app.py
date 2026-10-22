@@ -377,6 +377,18 @@ def cmd_panes(window_title=None):
     return {"panes": sorted(out, key=lambda p: p["x"])}
 
 
+def cmd_scroll(to=None, window_title=None):
+    """Where the big text box is scrolled to: {"value", "upper", "page"} in pixels; to: "top" or "end" first,
+    scrolled as the user would (a moment for it to settle)."""
+    adj = field(window(window_title), "text").get_parent().get_vadjustment()
+    if to:
+        adj.set_value(0 if to == "top" else adj.get_upper() - adj.get_page_size())
+        for _ in range(10):
+            pump()
+            time.sleep(0.01)
+    return {"value": adj.get_value(), "upper": adj.get_upper(), "page": adj.get_page_size()}
+
+
 def cmd_click_icon():
     """Click the floating icon (press and release without moving)."""
     for kind in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.BUTTON_RELEASE):

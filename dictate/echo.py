@@ -7,7 +7,15 @@ ringing on for a little while. So for each stretch the microphone hears, find ho
 just before can make it, in 16 bands of pitch, by gains of its own for each band. Nearly all of an echo can be
 made that way; when you speak, your voice can't be, as the speakers never played it. Measured on a desktop
 microphone a metre from its speakers: at most 38% of an echo was left over; with you speaking over the
-speakers, at least 44% (as loud as them) to 77% (louder)."""
+speakers, at least 44% (as loud as them) to 77% (louder).
+
+Through PipeWire's echo canceller it's less clear-cut: it changes what's left of the echo unevenly, so up to 70%
+of an echo can be left over (what it says is checked against what the speakers said, too: see transcript.py),
+and by its sound alone that can't be told from you saying something over the speakers. But an echo is about as
+loud each time, relative to the speakers (measured: -1 to -18 dB, mostly -3 to -10), and you speaking into your
+microphone makes it louder than that. So a stretch is an echo too if most of it could be the speakers' sound
+(LOOSE) and it's no louder than the echoes so far on this call (LOUDER)."""
+import statistics
 import threading
 import numpy as np
 
@@ -18,6 +26,9 @@ LAGS = range(-15, 26)  # frames: the microphone hears the speakers 0.3 s before 
 RINGS = (0, 2, 5, 10)  # frames: the speakers' sound now, and 40, 100 and 200 ms ago (a room rings on)
 KEEP = 120 * RATE // FRAME  # frames of the speakers' sound kept: two minutes
 LEFT_OVER = 0.42  # an echo: at most this share of the microphone's sound left over once the speakers' is
+LOOSE = 0.6  # or at most this much, if it's no louder than LOUDER dB above the echoes so far (their median),
+LOUDER = 4.0  # relative to the speakers
+ECHOES = 3, 50  # echoes needed before a stretch's loudness can be judged, and the most remembered
 PLAYING = 0.5  # and the speakers were playing for at least this share of it
 QUIET = 1e-4  # frame power (about -90 dB) below which the speakers aren't playing anything
 _window, _hz = np.hanning(FRAME), np.fft.rfftfreq(FRAME, 1 / RATE)
@@ -48,6 +59,7 @@ class Echo:
 
     def __init__(self):
         self.frames, self.first, self.leftover, self.lock = [], 0, b"", threading.Lock()
+        self.gains = []  # dB: how loud the latest echoes were, relative to the speakers
 
     def played(self, chunk):
         """More of the speakers' sound: bytes of 16-bit samples (on the recorder's thread)."""
@@ -78,4 +90,9 @@ class Echo:
         playing = [float((f[max(RINGS):].sum(1) > QUIET).mean()) for f in fits]
         if not fits or max(playing) < PLAYING:
             return False
-        return min(left_over(mic, f) for f in fits) <= LEFT_OVER
+        left, f = min(((left_over(mic, f), i) for i, f in enumerate(fits)))
+        gain = 10 * np.log10(max(float(mic.sum()), 1e-12) / max(float(fits[f][max(RINGS):].sum()), 1e-12))
+        if left <= LEFT_OVER:
+            self.gains = (self.gains + [gain])[-ECHOES[1]:]
+            return True
+        return left <= LOOSE and len(self.gains) >= ECHOES[0] and gain <= statistics.median(self.gains) + LOUDER
