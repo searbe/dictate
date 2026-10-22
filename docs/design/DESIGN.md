@@ -9,13 +9,13 @@ it here and there first. Why it looks like this: [PROPOSALS.md](PROPOSALS.md).
 1. **Small until it's needed.** The capsule is a dot while idle and grows only while it works. Windows open when
    asked for and say one thing at a time.
 2. **One home.** Everything that isn't the capsule or a moment's HUD is a page of the Dictate window.
-3. **Quiet by default, clear when it matters.** Neutral greys carry the interface; colour means something
+3. **Neutral, with colour only for meaning.** Neutral greys carry the interface; each colour has one meaning
    (see Colour). Actions appear when you reach for them (hover), except the one primary action of a view.
 4. **One accent.** Indigo is the only brand colour: selection, the primary button, focus, links, live state.
 5. **Native to the desktop.** Follows the system's light or dark preference, live; uses the system font when
    Inter isn't installed; no in-app theme switch.
-6. **Motion explains, never decorates.** Shape changes morph; nothing loops except a live level meter or a
-   pulse while waiting.
+6. **Motion only for changes.** Shape changes morph; nothing loops except a live level meter or a pulse
+   while waiting.
 7. **Plain words.** Sentence case everywhere, verbs on buttons, the shortest phrasing that's still clear.
 
 ## Colour
@@ -191,8 +191,8 @@ Build every surface from these, in `design.py`; add a component here before usin
   shrinks to what's still usable: long titles and status lines end in "…", text wraps, and below 1120 px the
   sidebar shows only its icons. A pane beside a draggable divider keeps its narrowest small and steady: no
   rows of buttons or changing text side by side that can't wrap or shorten (icon buttons, wrapping rows, short
-  status), or the divider stops wherever that narrowest is at the moment. Panes that shouldn't grow say `hexpand=False` (a scrolled list inside would
-  otherwise make them). Changes made in response to a resize (the sidebar) are applied after GTK's layout, from
+  status), or the divider stops wherever that narrowest is at the moment. Panes that shouldn't grow say
+  `hexpand=False` (a scrolled list inside would otherwise make them). Changes made in response to a resize (the sidebar) are applied after GTK's layout, from
   an idle callback.
 - **Hover-revealed actions** fade with `opacity`, so they keep their place and stay clickable by keyboard and by
   tests; a playing recording keeps its row's actions shown. In GTK 3 only the list row itself is hovered (not

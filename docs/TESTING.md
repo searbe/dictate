@@ -1,21 +1,21 @@
 # Testing Dictate
 
-Two kinds of testing, split by one question: **is the outcome the same every time?**
+There are two kinds of testing:
 
-- **Yes → automated** (`tests/`). The same input always gives the same result, so a test can check it.
-- **No, or it needs real hardware → manual** (the checklist below). Model wording, your voice and microphone,
-  real keyboards, real apps, other computers, other operating systems.
+- **Automated** (`tests/`), for everything that gives the same result from the same input.
+- **Manual** (the checklist below), for what varies or needs real hardware: the model's wording, your voice and
+  microphone, real keyboards, real apps, other computers, other operating systems.
 
 ## Running the automated tests
 
 ```sh
 .venv/bin/pip install --group dev   # once: installs pytest
-python scripts/test.py              # everything (~70 s); add pytest options, e.g. -k history, -x
+python scripts/test.py              # everything (about 3 min); add pytest options, e.g. -k dictations, -x
 ```
 
 `scripts/test.py` gives the tests their own invisible desktop and D-Bus: a headless KWin with XWayland on KDE
 (or Xvfb elsewhere), a temporary home folder and data folder. Nothing touches your real session, your running
-Dictate, your history or your settings. A bare `pytest` also works but skips every test that needs a desktop.
+Dictate, your dictations or your settings. A bare `pytest` also works but skips every test that needs a desktop.
 
 Tests marked `models` use the real speech models and skip if `models/` hasn't been downloaded.
 
@@ -48,12 +48,12 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 
 | Area | File |
 |---|---|
-| Dictating: cleanup, clipboard, Ctrl+V / Ctrl+Shift+V in terminals, history, nothing heard, refine off, recordings kept or not, the hotkey itself, another key with it being another app's shortcut | `test_dictation.py` |
+| Dictating: cleanup, clipboard, Ctrl+V / Ctrl+Shift+V in terminals, the Dictations list, nothing heard, refine off, recordings kept or not, the hotkey itself, another key with it being another app's shortcut | `test_dictation.py` |
 | Choosing a refinement: by window title or app, title changes without refocusing, default refinement, Alt+letter (one that's no refinement's being another app's shortcut), the picker (letter, Enter, Escape, click) | `test_choosing_a_refinement.py` |
 | Real windows on a real KWin, reported by Dictate's KWin script (incl. the Gmail → WhatsApp tab bug) | `test_focused_window.py` |
 | The model: vocabulary and window context in the prompt, loading on key press, unloading when idle, never outliving Dictate, rejecting answers / placeholders / rewrites, errors and a missing llama-server | `test_refinement_model.py` |
 | Dictations: grouped by day, labels, search, copy, play, delete, clear (with confirmation), the keep-dictation-recordings setting | `test_dictations_page.py` |
-| Refinements: add, edit, validate, delete, rename, vocabulary, cleanup prompt and reset | `test_refinement_manager.py` |
+| Refinements: add, edit, validate, delete, rename, vocabulary, cleanup prompt and reset | `test_refinements_page.py` |
 | Another computer (Synergy's log): typed not pasted, its own default refinement, ignoring the hotkey, switching back | `test_other_computer.py` |
 | Quit (menu and signal) with the reason logged, the microphone never left recording (quitting mid-dictation, or crashing mid-recording), run at startup, single instance, switching to `.venv` | `test_running_dictate.py` |
 | Tray icon over the StatusNotifierItem protocol: registers, same menu, turns red while recording, its tooltip saying how long it has been transcribing (paused or not) and the topic now | `test_tray.py` |
@@ -61,7 +61,7 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 | Keys typed and pasted on US and UK layouts, Shift+Enter for new lines, plain punctuation | `test_typing_and_pasting.py` |
 | Speech-to-text with the real models: English, German, silence and noise, live = whole-file | `test_speech_to_text.py` |
 | Downloads: complete, interrupted, not repeated; unpacking | `test_downloads.py` |
-| Transcribe mode: what's being said shown before the pause and replaced by the whole stretch (not saved; not while muted or paused), a stretch cut between voices loses no words (real models), the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / menu, closing the window carries on, pause, dictating meanwhile, echoes (the same words at once, and with the real models a made-up room's echo), playback from Dictations, recordings kept or not, a transcript where nothing was heard not kept, call recordings kept for their own setting, the real model on speakers audio | `test_transcribe_mode.py` |
+| Transcribe mode: what's being said shown before the pause and replaced by the whole stretch (not saved; not while muted or paused), a stretch cut between voices loses no words (real models), the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / menu, closing the window carries on, pause, dictating meanwhile, echoes (the same words at once, and with the real models a made-up room's echo), playback from Dictations, recordings kept or not, a transcript where nothing was heard not kept, transcript recordings kept for their own setting, the real model on speakers audio | `test_transcribe_mode.py` |
 | Transcripts: listed newest first with when and how long, the recording at the top and kept up to date while reading others, reading one, copy, delete (with confirmation) with its recordings, playing the call back (only while its recordings are kept; not while it's recorded), none yet, clicking the capsule while recording | `test_transcripts_window.py` |
 | Echoes: the speakers heard again by the microphone (in made-up rooms, quieter or later) told from you speaking, alone or over them | `test_echo.py` |
 | Topics: listed beside the transcript with who brought each up and who else spoke on it, the current one marked, carried on when the conversation goes back to one, a new paragraph where the topic changes, small talk left out, saved at the top of the transcript (including what was said last, when it's stopped), the transcript carrying on when the model fails, a warning while the less reliable model is used (graphics card busy, or none) and once saved, switching to the better one once the graphics card is free but not mid-dictation, topics that turn out to be one subject merged (only if the model says so again about each pair, and not by the less reliable model) | `test_topics.py` |
@@ -154,23 +154,25 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
   of someone speaking, and grows from the start of what they're saying (it doesn't jump to its last few words),
   until it's replaced by the whole stretch transcribed. Interjections ("yeah", "no") and a quick reply in the
   middle of someone's turn go to the person who said them. With the call on speakers (no headphones), nothing
-  the speakers said turns up as yours, and what you say over them does. After changing `voices.py`, run `python scripts/bench_voices.py
-  LibriSpeech/dev-clean` (download it from openslr.org/12) and compare with the last run: speaking time labelled
-  right 98.6% / 94.3% (with pauses, full quality / phone), 89.8% / 81.5% (quick replies); the right number of
-  people in 83% / 75% and 75% / 67% of conversations. With `--by-word` (as transcripts do, once two voices are
-  known; slower, as it transcribes too): 97.5% / 93.8%, 89.3% / 80.3%; 83% / 79% and 75% / 62%. (A little lower
-  on these made-up conversations of read-out books, but it's what gets a "yeah" or a quick answer in the middle
-  of someone's turn right on a real call, which they don't have.)
+  the speakers said turns up as yours, and what you say over them does.
+- After changing `voices.py`, run `python scripts/bench_voices.py LibriSpeech/dev-clean` (download it from
+  openslr.org/12) and compare with the last run: speaking time labelled right 98.6% / 94.3% (with pauses, full
+  quality / phone), 89.8% / 81.5% (quick replies); the right number of people in 83% / 75% and 75% / 67% of
+  conversations. With `--by-word` (as transcripts do, once two voices are known; slower, as it transcribes too):
+  97.5% / 93.8%, 89.3% / 80.3%; 83% / 79% and 75% / 62%. These are a little lower because the benchmark's
+  conversations are spliced from audiobook readings, with no interjections; word-by-word is what attributes a
+  "yeah" or a quick answer in the middle of someone's turn on a real call.
 - With Remember voices on: name someone, and in a later call with them they're named from their first stretch.
 - Close the Dictate window while transcribing: the reminder appears beside the capsule, on its screen
   (try the capsule near the right edge: it goes on the left); Stop now stops it. With it off screen, a desktop
   notification says it instead, and its Stop now button works.
 - The live summary, on a real call: it appears within a minute, changes about every half a minute, and keeps
-  every subject as it grows; Agreed and
-  Action points hold only what was said; the final pass after Stop reads well and is marked final.
+  every subject as it grows; Agreed and Action points hold only what was said; the final pass after Stop reads
+  well and is marked final.
 - Topics, on a real call: the first is listed within half a minute, and the list reads as what was discussed,
-  in order, with the one being talked about marked "Now" (it keeps up within about half a minute) (which topic, and who brought it up, can slip on a short
-  reply or a quick change of subject). The transcript's colours match. After changing `topics.py`'s prompt, use
+  in order, with the one being talked about marked "Now" within about half a minute of the subject changing
+  (which topic, and who brought it up, can slip on a short reply or a quick change of subject). The
+  transcript's colours match. After changing `topics.py`'s prompt, use
   `python scripts/bench_topics.py` on a few saved transcripts and read the results.
 
 ### 8. The desktop shell

@@ -79,7 +79,7 @@ Hold **Ctrl+Win**. The GPU model is used on NVIDIA cards with enough free memory
 Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can't make one), so use the capsule's menu. **Run at startup** adds a LaunchAgent (`~/Library/LaunchAgents/local.dictate.plist`). macOS will ask for Microphone, Input Monitoring (hotkey) and Accessibility (paste) permissions for the app you launch it from; restart Dictate after granting them. Screen Recording is optional and lets per-app refinements see window titles. Macs with 16 GB of RAM or more use the 9B model on the GPU (Metal). Transcribe mode is Linux only.
 
 ## Checking that it's local only
-Don't take our word for it. On Linux, after setup, run:
+To check that Dictate makes no network connections, on Linux after setup, run:
 
 ```sh
 python scripts/prove_local.py
