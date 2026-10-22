@@ -8,7 +8,7 @@ Push-to-talk dictation that runs entirely on your own computer. Hold a hotkey an
 - **Clean-up:** a local language model (Qwen3.5) removes filler words, applies self-corrections and fixes punctuation and mis-heard words. It uses the GPU when one is free, otherwise the CPU.
 - **Refinement styles:** reformat for Slack, WhatsApp, email or AI agents, or your own styles. Pick one per dictation, set a default, or match styles to apps automatically.
 - **Vocabulary:** names and terms you use, spelled the way you spell them.
-- **Transcribe mode** (Linux): transcribes your computer's audio and your microphone, e.g. a call, telling the voices apart.
+- **Transcribe mode** (Linux): transcribes your computer's audio and your microphone, e.g. a call, telling the voices apart and listing the topics as they come up.
 - **History:** every dictation with what was applied, playback of the recording, copy, delete and clear. Recordings are kept for a time you choose.
 - **Synergy:** while your keyboard is controlling another computer, the text is typed there.
 - **Floating icon and system tray icon** with the same menu, and an optional **Run at startup**.
@@ -28,6 +28,7 @@ Hold **Ctrl+Win** to record, release to transcribe and paste into the focused te
 **Transcribe mode** (Linux) transcribes your computer's audio and your microphone, e.g. a call.
 - **Start / stop:** hold Ctrl+Win, lift Win and press it again. Or use **Stop**, or the menu.
 - People are labelled "Speaker 1", "Speaker 2"… Click a name to rename them; naming two the same merges them.
+- The topics are listed beside the transcript, each in its colour, with who brought it up; the one being talked about now is marked. Click one to go to it. **Find topics** does the same for an older transcript. While the graphics card is busy, a smaller, less reliable model finds them (a warning says so) until it's free again.
 - You can dictate as usual while it runs; your dictations stay out of the transcript.
 - **Transcripts** (menu) lists them all; the live one is at the top. Saved as Markdown in `data/transcripts/`.
 - **Voices…** can remember the people you name, for next time (off by default; ask people first).
@@ -109,8 +110,8 @@ Hold **Ctrl+Cmd** (Option is Alt). There's no menu-bar icon on macOS (GTK 3 can'
 ## Code
 - `dictate.py` starts the app; the app is the `dictate/` package (each module explains itself at the top):
   `app.py` (icon, menu, dictation pipeline), `osio.py` (hotkey, recording, pasting per OS), `stt.py` (speech to
-  text), `refine.py` (cleanup and styles), `dialogs.py` (windows), `transcript.py`, `voices.py` and `echo.py`
-  (transcribe mode), `remote.py` (another computer has the keyboard), `tray.py`, `activewin.py`.
+  text), `refine.py` (cleanup and styles), `dialogs.py` (windows), `transcript.py`, `voices.py`, `echo.py` and
+  `topics.py` (transcribe mode), `remote.py` (another computer has the keyboard), `tray.py`, `activewin.py`.
 - `scripts/`: `fetch.py` (downloads, used by setup), `test.py` (the tests: see [docs/TESTING.md](docs/TESTING.md)),
   `prove_local.py`, `bench.py` (compares refinement models), `bench_voices.py` (telling voices apart).
 - `docs/make_screenshots.py`: regenerates the screenshots.

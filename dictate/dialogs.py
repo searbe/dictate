@@ -1,9 +1,9 @@
 """Dictate's windows: History, the refinement style manager, the style picker, and Transcripts (including the
 one being recorded)."""
-import json
+import json, threading
 from datetime import datetime
 from gi.repository import Gio, Gtk, Gdk, GLib
-from . import refine, transcript, voices
+from . import refine, topics, transcript, voices
 
 CSS = b"""
 * { font-family: "Inter", "Noto Sans", sans-serif; }
@@ -41,7 +41,15 @@ menu separator { background: rgba(255,255,255,.07); margin: 4px 6px; min-height:
 .transcript text { background: #16171a; color: #e6e7ea; }
 .heading { color: #e6e7ea; font-size: 11pt; font-weight: 600; }
 .chip { background: rgba(124,140,255,.12); color: #aab4ff; border-radius: 5px; padding: 1px 7px; font-size: 8.5pt; }
-"""
+.topics { background: #1b1c20; border-left: 1px solid rgba(255,255,255,.05); }
+.topic { background-image: none; background: #1f2125; border: 1px solid rgba(255,255,255,.05); border-radius: 8px; padding: 8px 10px; margin: 3px 10px; box-shadow: none; }
+.topic:hover { background: #25272c; }
+.topic.now { background: #2a2c35; border-top-color: rgba(255,255,255,.18); border-right-color: rgba(255,255,255,.18); border-bottom-color: rgba(255,255,255,.18); }
+.topic-title { color: #e6e7ea; font-weight: 600; }
+.topic-note { color: #b9bcc4; font-size: 9pt; }
+.warning { background: rgba(255,159,67,.12); color: #ffb86b; border-radius: 8px; padding: 7px 10px; margin: 0 10px 6px 10px; font-size: 9pt; }
+""" + "".join(f".topic{i} {{ border-left: 4px solid {c}; }}\n.dot{i} {{ color: {c}; }}\n"
+              for i, c in enumerate(topics.COLOURS)).encode()
 
 
 def install_css():
@@ -396,18 +404,57 @@ def transcript_view():
     return view, buf.create_tag("who", weight=700, foreground="#aab4ff")
 
 
-def show_transcript(view, who, paragraphs, empty, previews=()):
+def topic_tags(buf, i):
+    """The tags for topic i's paragraphs (tinted its colour) and for its name above them."""
+    table = buf.get_tag_table()
+    if not table.lookup(f"topic{i}"):
+        rgba = Gdk.RGBA()
+        rgba.parse(topics.colour(i))
+        tint = Gdk.RGBA(rgba.red, rgba.green, rgba.blue, 0.09)
+        buf.create_tag(f"topic{i}", paragraph_background_rgba=tint)
+        buf.create_tag(f"name{i}", foreground=topics.colour(i), weight=700, scale=0.85, pixels_above_lines=6)
+    return f"topic{i}", f"name{i}"
+
+
+def show_transcript(view, who, paragraphs, empty, previews=(), found=None, marks=None):
     """paragraphs: [(clock, who, text)]; empty: what to say if there are none; previews: what's being said
-    and not yet transcribed whole, shown greyed out after them."""
-    buf = view.get_buffer()
+    and not yet transcribed whole, shown greyed out after them. found: the Topics, and marks: {paragraph's
+    place: topic index}: a paragraph on a topic is tinted its colour, with the topic's name above it where the
+    conversation turns to it. Returns {topic index: a mark where it's first talked about}."""
+    buf, firsts, last = view.get_buffer(), {}, None
     buf.set_text("" if paragraphs or previews else empty)
     for i, (clock, name, text) in enumerate([*paragraphs, *previews]):
         tags = ("pending",) if i >= len(paragraphs) else ()
-        buf.insert_with_tags_by_name(buf.get_end_iter(), ("\n\n" if i else "") + f"{clock} {name}  ", "who", *tags)
-        if tags:
-            buf.insert_with_tags_by_name(buf.get_end_iter(), text, *tags)
-        else:
-            buf.insert(buf.get_end_iter(), text)
+        topic = (marks or {}).get(i) if not tags else None
+        if topic is not None and topic < len(found.topics):
+            tint, label = topic_tags(buf, topic)
+            tags = (tint,)
+            if topic != last:
+                buf.insert_with_tags_by_name(buf.get_end_iter(), ("\n\n" if i else "") + f"● {found.topics[topic]['title']}", label, tint)
+                firsts.setdefault(topic, buf.create_mark(None, buf.get_end_iter(), True))
+                buf.insert_with_tags_by_name(buf.get_end_iter(), "\n", tint)
+            elif i:
+                buf.insert_with_tags_by_name(buf.get_end_iter(), "\n\n", tint)
+        elif i:
+            buf.insert(buf.get_end_iter(), "\n\n")
+        last = topic
+        buf.insert_with_tags_by_name(buf.get_end_iter(), f"{clock} {name}  ", "who", *tags)
+        buf.insert_with_tags_by_name(buf.get_end_iter(), text, *tags)
+    return firsts
+
+
+def small_model(session, found):
+    """A warning, if topics are being (or were) found by the smaller, less reliable model on the CPU."""
+    why = "your graphics card {}" if refine.gpu_present() else "this computer has no graphics card it can use"
+    if session:
+        return f"Warning: using a less reliable model because {why.format('is busy')}." if refine.mode() == "cpu" else None
+    if found and found.small and found.topics:
+        return f"These topics were found with a less reliable model, as {why.format('was busy')}."
+    return None
+
+
+def json_safe(value):
+    return json.dumps(value, sort_keys=True)
 
 
 def open_uri(path):
@@ -422,7 +469,8 @@ def copy_button(path):
 
 
 class TranscriptsWindow:
-    """Every transcript: a list on the left (when, how long, how it starts), the selected one on the right.
+    """Every transcript: a list on the left (when, how long, how it starts), the selected one in the middle and
+    its topics on the right (the current one highlighted while it's recorded; click one to go to it).
     The one being recorded, if any (current() gives its Session), is always at the top of the list and grows
     as it's heard (kept scrolled to the end unless you've scrolled up); while it's selected the header has
     Pause / Resume and Stop (on_stop() stops it). A saved one has Copy all, Open file and Delete.
@@ -432,7 +480,7 @@ class TranscriptsWindow:
 
     def __init__(self, current, on_stop, focus=True):
         self.current, self.on_stop, self.shown, self.paths, self.seen = current, on_stop, None, None, None
-        self.win, self.bar = window("Transcripts", 900, 600)
+        self.win, self.bar = window("Transcripts", 1180, 640)
         self.win.set_focus_on_map(focus)  # False when started from the keyboard mid-conversation
         self.win.connect("destroy", lambda *_: setattr(self, "closed", True))
         self.closed = False
@@ -463,9 +511,15 @@ class TranscriptsWindow:
         main = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         main.pack_start(self.people, False, False, 0)
         main.pack_start(self.scroll, True, True, 0)
+        self.topics = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_top=10, margin_bottom=10)
+        self.topics.shown = None
+        right = css(Gtk.ScrolledWindow(width_request=300, hscrollbar_policy=Gtk.PolicyType.NEVER), "topics")
+        right.add(self.topics)
+        self.firsts = {}
         body = Gtk.Box()
         body.pack_start(side, False, False, 0)
         body.pack_start(main, True, True, 0)
+        body.pack_start(right, False, False, 0)
         self.win.add(body)
         self.win.show_all()
         self.changed()
@@ -521,6 +575,10 @@ class TranscriptsWindow:
                     self.describe(row)
             if self.shown and self.shown.get("recording"):
                 self.show(self.shown)
+            elif self.shown and self.shown.get("changed") is not None:  # e.g. its last topics, just found
+                again = transcript.read(self.shown["path"])
+                if again and again["changed"] != self.shown["changed"]:
+                    self.show(again)
 
     def show_recording(self):
         """Select the one being recorded (it's always first)."""
@@ -553,15 +611,99 @@ class TranscriptsWindow:
         if session:
             self.pause_btn.set_label("Resume" if session.paused else "Pause")
             self.bar.set_subtitle("Paused: nothing is being added" if session.paused else self.LISTENING)
-            show_transcript(self.text, self.who, session.paragraphs(), "Nothing heard yet.", session.previews())
+            found, marks, people = session.topic_view()
+            self.firsts = show_transcript(self.text, self.who, session.paragraphs(), "Nothing heard yet.",
+                                          session.previews(), found, marks)
         else:
             self.bar.set_subtitle(None)
-            show_transcript(self.text, self.who, item.get("paragraphs", []), "Nothing was heard.")
+            paragraphs = item.get("paragraphs", [])
+            found = transcript.read_topics(item["path"])
+            marks, people = (found.of, found.people(transcript.numbered(paragraphs))) if found else ({}, [])
+            self.firsts = show_transcript(self.text, self.who, paragraphs, "Nothing was heard.", found=found, marks=marks)
+        self.show_topics(found, people, bool(session), bool(item.get("paragraphs")), small_model(session, found))
         nameable = not session or session.voices  # without the voice model, a recording's voices are all "Them"
         self.show_people(transcript.labels(session.paragraphs() if session else item.get("paragraphs", [])) if nameable else [])
         if session and following:
             adj = self.scroll.get_vadjustment()
             GLib.idle_add(lambda: adj.set_value(adj.get_upper() - adj.get_page_size()) and False)
+
+    def show_topics(self, found, people, live, heard, warning=None):
+        """The topics of the transcript shown: each a card in its colour, with who started it and who else
+        spoke on it; the one being talked about now highlighted, while it's recorded. warning: that they're
+        found by the less reliable model, or None."""
+        topics_ = found.topics if found else []
+        now = found.now if found and live else None
+        shown = (self.shown["path"], json_safe(topics_), people, now, live, heard, self.finding, warning)
+        if shown == self.topics.shown:
+            return
+        self.topics.shown = shown
+        for kid in self.topics.get_children():
+            kid.destroy()
+        self.topics.pack_start(css(Gtk.Label(label="Topics", xalign=0, margin_start=14, margin_bottom=4), "heading"), False, False, 0)
+        if warning:
+            self.topics.pack_start(css(Gtk.Label(label=warning, xalign=0, wrap=True, max_width_chars=34), "warning"), False, False, 0)
+        if not topics_:
+            if live:
+                hint = "The topics of the conversation appear here as it goes on, about a minute in."
+            elif self.finding == self.shown["path"]:
+                hint = "Finding the topics…"
+            else:
+                hint = "No topics were found." if transcript.read_topics(self.shown["path"]) else \
+                    "Recorded before topics were found." if heard else "Nothing was heard."
+            self.topics.pack_start(css(Gtk.Label(label=hint, xalign=0, wrap=True, max_width_chars=34, margin_start=14,
+                                                 margin_end=14), "hint"), False, False, 0)
+            if heard and not live and self.finding != self.shown["path"] and not transcript.read_topics(self.shown["path"]):
+                find = button("Find topics", self.find_topics)
+                find.set_halign(Gtk.Align.START)
+                find.set_margin_start(14)
+                find.set_margin_top(8)
+                self.topics.pack_start(find, False, False, 0)
+        for i, t in enumerate(topics_):
+            card = css(Gtk.Button(), "topic", f"topic{i % len(topics.COLOURS)}", *(["now"] if i == now else []))
+            card.connect("clicked", lambda _, i=i: self.go_to_topic(i))
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+            head = Gtk.Box(spacing=6)
+            head.pack_start(css(Gtk.Label(label=t["title"], xalign=0, wrap=True, max_width_chars=26), "topic-title"), True, True, 0)
+            if i == now:
+                head.pack_end(css(Gtk.Label(label="Now"), "chip"), False, False, 0)
+            box.pack_start(head, False, False, 0)
+            who = people[i] if i < len(people) else []
+            if who:
+                text = f"{who[0]} brought it up" + (f" · with {', '.join(who[1:])}" if who[1:] else "")
+                box.pack_start(css(Gtk.Label(label=text, xalign=0, wrap=True, max_width_chars=34), "time"), False, False, 0)
+            for point in t["points"]:
+                box.pack_start(css(Gtk.Label(label=point, xalign=0, wrap=True, max_width_chars=34), "topic-note"), False, False, 0)
+            card.add(box)
+            self.topics.pack_start(card, False, False, 0)
+        self.topics.show_all()
+
+    def go_to_topic(self, i):
+        """Scroll the transcript to where topic i is first talked about."""
+        mark = self.firsts.get(i)
+        if mark and not mark.get_deleted():
+            self.text.scroll_to_mark(mark, 0.0, True, 0.0, 0.1)
+
+    finding = None
+
+    def find_topics(self):
+        """Find the topics of a transcript saved before topics were (it takes a model request per few minutes)."""
+        path = self.finding = self.shown["path"]
+        self.topics.shown = None
+        self.show(self.shown)
+        def find():
+            try:
+                found = transcript.find_topics(path)
+                transcript.save_topics(path, found)
+            except (OSError, ValueError, KeyError) as err:
+                print("topics: couldn't find them:", err, flush=True)
+            GLib.idle_add(done)
+        def done():
+            self.finding = None
+            if not self.closed and self.shown and self.shown["path"] == path:
+                self.shown = transcript.read(path) or self.shown
+                self.topics.shown = None
+                self.show(self.shown)
+        threading.Thread(target=find, daemon=True).start()
 
     def show_people(self, labels):
         """A button per voice in the transcript shown, to name it."""

@@ -482,7 +482,7 @@ class App:
             self.rec = None
         if self.session:  # save what's still to be transcribed
             session, self.session = self.session, None
-            return session.stop(Gtk.main_quit)
+            return session.stop(Gtk.main_quit, last_topics=False)
         Gtk.main_quit()
 
     def run(self):

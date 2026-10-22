@@ -18,7 +18,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 import dictate  # noqa: E402
 dictate.bootstrap()
-from dictate import osio, refine, stt, voices  # noqa: E402
+from dictate import osio, refine, stt, topics, voices  # noqa: E402
 import numpy as np  # noqa: E402
 from gi.repository import Gdk, GLib, Gtk  # noqa: E402
 
@@ -129,6 +129,10 @@ voices.voiceprint = lambda s: fake_voiceprint(s[1]) if isinstance(s, tuple) else
 voices.narrowband = lambda s=None, power=None: False if isinstance(s, tuple) else _narrowband(s, power)
 voices.available = lambda: not os.environ.get("DICTATE_TEST_NO_VOICES")
 refine.IDLE = float(os.environ.get("DICTATE_TEST_IDLE", refine.IDLE))
+topics.TICK, topics.EVERY, topics.MOST, topics.FREE_FOR = 0.2, 0, 0, 0.6  # topics as soon as anything is said
+gpu = {"state": os.environ.get("DICTATE_TEST_GPU", "free")}  # the graphics card: "free", "busy" or "none"
+refine.gpu_ok = lambda: gpu["state"] == "free"
+refine.gpu_present = lambda: gpu["state"] != "none"
 
 from dictate import app as dictate_app  # noqa: E402  (after the swaps, like the real launcher's order)
 
@@ -258,6 +262,11 @@ def cmd_hear_so_far(text, source, length=1.0):
     for live in reversed(ears):
         if getattr(live, "source", None) == source:
             return live.on_preview(now() - length, text)
+
+
+def cmd_gpu(state):
+    """The graphics card becomes "free" or "busy" (a game starts or stops)."""
+    gpu["state"] = state
 
 
 def cmd_keys(down=(), up=()):

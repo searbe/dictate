@@ -228,7 +228,7 @@ def save_vocab(text):
     VOCAB.write_text(text.strip() + "\n")
 
 
-_proc, _mode, _hold, _last = None, None, False, 0.0
+_proc, _mode, _hold, _last, _keep = None, None, False, 0.0, False
 
 
 def _die_with_parent():  # Linux, in the child: if dictate exits or crashes, the server (and its VRAM) goes too
@@ -296,12 +296,47 @@ def gpu_ok():
     return model.exists() and gpu_free((model.stat().st_size >> 20) + SPARE_VRAM_MB)
 
 
-def warm(mode=None):
-    """Start the server if it isn't running (non-blocking) and keep it alive until release().
-    mode forces "gpu" or "cpu" (used by bench.py); by default it's decided from the GPU's current load."""
-    global _proc, _mode, _hold
+def gpu_present():
+    """Whether there's a GPU the larger model could use, when it's free (else it's always the CPU)."""
+    if not MODELS["gpu"].exists():
+        return False
+    if sys.platform == "darwin":
+        return gpu_free(0)
+    if sys.platform == "win32":
+        return bool(shutil.which("nvidia-smi"))
+    for dev in Path("/sys/class/drm").glob("card*/device"):
+        try:
+            if int((dev / "mem_info_vram_total").read_text()) > 8 << 30:
+                return True
+        except (OSError, ValueError):
+            continue
+    return False
+
+
+def mode():
+    """"gpu" or "cpu": where the loaded model runs (the larger one on the GPU), or None if none is loaded."""
+    return _mode if _proc and _proc.poll() is None else None
+
+
+def to_gpu():
+    """If the smaller model is loaded on the CPU (the GPU was busy), nothing is being refined, and the GPU is
+    free now: load the larger one there instead. Returns whether it did. Slow: not on the GTK thread."""
     with _lock:
-        _hold = True
+        if not (_proc and _proc.poll() is None and _mode == "cpu" and not _hold and gpu_ok()):
+            return False
+    stop()
+    warm(hold=False)
+    return True
+
+
+def warm(mode=None, hold=True):
+    """Start the server if it isn't running (non-blocking); with hold, keep it alive until release().
+    mode forces "gpu" or "cpu" (used by bench.py); by default it's decided from the GPU's current load."""
+    global _proc, _mode, _hold, _last
+    with _lock:
+        if hold:
+            _hold = True
+        _last = time.monotonic()
         if _proc and _proc.poll() is None:
             return
         _mode = mode or ("gpu" if gpu_ok() else "cpu")
@@ -321,10 +356,16 @@ def release():
     _hold, _last = False, time.monotonic()
 
 
+def keep(on):
+    """Keep the server loaded while on (while transcribing, for its topics), however long it's unused."""
+    global _keep, _last
+    _keep, _last = on, time.monotonic()
+
+
 def stop(if_idle=False):
     global _proc
     with _lock:
-        if _proc and not (if_idle and (_hold or time.monotonic() - _last < IDLE)):
+        if _proc and not (if_idle and (_hold or _keep or time.monotonic() - _last < IDLE)):
             _proc.terminate()
             try:
                 _proc.wait(timeout=3)
@@ -385,17 +426,32 @@ def _run(text, prompt, strict, app=""):
     return out
 
 
-def complete(text, prompt, app=""):
-    """The raw model output for text under prompt (waits for the model to finish loading)."""
-    warm()
+def _ready(hold=True):
+    """Start the model if need be, and wait for it to finish loading."""
+    warm(hold=hold)
     for _ in range(600):  # wait up to 60s for the model to load
         if not _proc or _proc.poll() is not None:
             raise OSError("llama-server isn't running")
         try:
             _post("/health", timeout=1)
-            break
+            return
         except OSError:
             time.sleep(0.1)
+
+
+def ask(system, user, schema, max_tokens=500):
+    """The model's answer to user under system, as JSON matching schema (used for topics, not refining)."""
+    _ready(hold=False)  # a dictation's hold is the dictation's: released when it's pasted
+    return _post("/v1/chat/completions", {
+        "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+        "temperature": 0, "max_tokens": max_tokens, "chat_template_kwargs": {"enable_thinking": False},
+        "response_format": {"type": "json_schema", "json_schema": {"schema": schema}},
+    }, timeout=120)["choices"][0]["message"]["content"].strip()
+
+
+def complete(text, prompt, app=""):
+    """The raw model output for text under prompt (waits for the model to finish loading)."""
+    _ready()
     if app:
         prompt += f"\n\n(Context: the message is being typed into this window: {app})"
     return _post("/v1/chat/completions", {

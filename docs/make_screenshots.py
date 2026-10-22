@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 import dictate  # noqa: E402
 dictate.bootstrap()
-from dictate import dialogs, osio, refine, transcript  # noqa: E402
+from dictate import dialogs, osio, refine, topics, transcript  # noqa: E402
 from dictate.app import KEEP_AUDIO  # noqa: E402
 from gi.repository import GLib, Gtk  # noqa: E402
 
@@ -105,14 +105,29 @@ def main():
         (transcript.FOLDER / f"{name}.md").write_text(f"# Transcript\n\nLasted {took}, until 00:00.\n" + "".join(
             f"\n**{clock} {who}:** {text}\n" for clock, who, text in paragraphs))
     now = transcript.FOLDER / "2026-10-21 14.02.00.md"  # being recorded
-    live = SimpleNamespace(path=now, started=transcript.datetime(2026, 10, 21, 14, 2), paused=False, voices=True, previews=lambda: [("14:02:19", "…", "And if we roll back the new")], paragraphs=lambda: [
-        ("14:02:03", "Priya", "Can everyone see my screen? This is the dashboard from last week."),
-        ("14:02:07", "Speaker 2", "Yes, but it's a bit blurry."),
-        ("14:02:10", "Me", "Fine here."),
-        ("14:02:12", "Priya", "Great. So the sign-ups dropped on Thursday, and we think it's the new form.")])
+    said = [  # (clock, who, text, topic)
+        ("14:02:03", "Priya", "Can everyone see my screen? This is the dashboard from last week.", None),
+        ("14:02:07", "Speaker 2", "Yes, but it's a bit blurry.", None),
+        ("14:02:12", "Priya", "So the sign-ups dropped on Thursday, and we think it's the new form.", 0),
+        ("14:02:20", "Me", "Is it the form, or the email check we added?", 0),
+        ("14:02:26", "Speaker 2", "The email check. Half the codes never arrive.", 0),
+        ("14:03:02", "Me", "Then the release has to wait. Can we move it to the tenth?", 1),
+        ("14:03:09", "Priya", "The tenth works, QA gets the whole week.", 1),
+        ("14:03:31", "Priya", "Back to the codes: Sam, can you check the email provider today?", 0)]
+    found = topics.Topics({"topics": [
+        {"title": "Sign-ups dropped", "points": ["Priya: sign-ups fell on Thursday, maybe because of the new form.",
+                                                 "Speaker 2: it's the email check; half the codes never arrive.",
+                                                 "Priya asks Sam to check the email provider today."]},
+        {"title": "Release date", "points": ["Me wants to move the release to the tenth; Priya agrees, so QA gets the week."]}],
+        "now": 0})
+    live = SimpleNamespace(path=now, started=transcript.datetime(2026, 10, 21, 14, 2), paused=False, voices=True,
+                           previews=lambda: [("14:03:40", "…", "And if it's the provider, we")],
+                           paragraphs=lambda: [p[:3] for p in said],
+                           topic_view=lambda: (found, {i: p[3] for i, p in enumerate(said) if p[3] is not None},
+                                               [["Priya", "Me", "Speaker 2"], ["Me", "Priya"]]))
     now.write_text("")
     browser = dialogs.TranscriptsWindow(lambda: live, lambda: None)
-    offscreen(browser.win, DOCS / "transcripts.png", ["win"], (900, 440))
+    offscreen(browser.win, DOCS / "transcripts.png", ["win"], (1180, 520))
     shutil.rmtree(tmp)
 
 

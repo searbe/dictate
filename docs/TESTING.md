@@ -62,6 +62,7 @@ them. `tests/harness/client.py` has the vocabulary (`dictate()`, `click()`, `rea
 | Transcribe mode: what's being said shown before the pause and replaced by the whole stretch (not saved; not while muted or paused), a stretch cut between voices loses no words (real models), the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / menu, closing the window carries on, pause, dictating meanwhile, echoes (the same words at once, and with the real models a made-up room's echo), History playback, recordings kept or not, the real model on speakers audio | `test_transcribe_mode.py` |
 | Transcripts window: listed newest first with when and how long, the recording at the top and kept up to date while reading others, reading one, copy, delete (with confirmation) with its recordings, older transcripts' length from their recording, none yet, clicking the icon while recording | `test_transcripts_window.py` |
 | Echoes: the speakers heard again by the microphone (in made-up rooms, quieter or later) told from you speaking, alone or over them | `test_echo.py` |
+| Topics: listed beside the transcript with who brought each up and who else spoke on it, the current one marked, carried on when the conversation goes back to one, a new paragraph where the topic changes, small talk left out, saved at the top of the transcript (including what was said last, when it's stopped), found for an older transcript, the transcript carrying on when the model fails, a warning while the less reliable model is used (graphics card busy, or none) and once saved, switching to the better one once the graphics card is free but not mid-dictation | `test_topics.py` |
 | Grouping voices into people on a call's worth of made-up voiceprints: one voice each, short parts never someone new, numbers kept when one is named | `test_voice_grouping.py` |
 | Voices: told apart, named live or after the call, merged by naming two the same, remembered only when turned on (live and after the call), listed and forgotten, all forgotten when turned off, "Them" without the voice model | `test_voices.py` |
 | The real thing end to end (real speech model, llama-server and refinement model), and `scripts/prove_local.py`: no network call leaves the computer | `test_local_only.py` |
@@ -148,6 +149,10 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
   right 98.6% / 94.3% (with pauses, full quality / phone), 89.8% / 81.5% (quick replies); the right number of
   people in 83% / 75% and 75% / 67% of conversations.
 - With Remember voices on: name someone, and in a later call with them they're named from their first stretch.
+- Topics, on a real call: the first is listed about a minute in, and the list reads as what was discussed, in
+  order, with the one being talked about marked "Now" (which topic, and who brought it up, can slip on a short
+  reply or a quick change of subject). The transcript's colours match. After changing `topics.py`'s prompt, use
+  **Find topics** on a few saved transcripts (copies: it rewrites them) and read the results.
 
 ### 8. The desktop shell
 
