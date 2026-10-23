@@ -211,7 +211,7 @@ if LINUX:
             while True:
                 for key, _ in self.sel.select(self.RESCAN):
                     try:
-                        events = key.fileobj.read()
+                        events = list(key.fileobj.read())  # (read() is a generator: it raises when iterated)
                     except OSError:  # unplugged
                         self.lost(key.fileobj)
                         continue

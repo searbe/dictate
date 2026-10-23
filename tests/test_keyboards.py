@@ -25,11 +25,11 @@ class Keyboard:
     def capabilities(self):
         return {e.EV_KEY: list(self.keys)}
 
-    def read(self):
+    def read(self):  # a generator, like evdev's: an unplugged keyboard's error comes when it's iterated
         os.read(self.r, 1)
         if self.gone:
             raise OSError(19, "No such device")
-        return [self.queued.pop(0)]
+        yield self.queued.pop(0)
 
     def close(self):
         pass
