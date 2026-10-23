@@ -265,9 +265,6 @@ class App:
             if away and self.cfg["remote_mode"] == "ignore":
                 return  # e.g. the other computer runs its own Dictate
             pressed = self.hotkey.chord.pressed_at
-            # where the text will go: the other computer (typed through Synergy), or the focused app here,
-            # captured now, before any of our windows take focus
-            self.app = OTHER_COMPUTER if away else activewin.snapshot()
             AUDIO.mkdir(parents=True, exist_ok=True)
             self.wav = str(AUDIO / f"{datetime.now():%Y%m%d-%H%M%S-%f}.wav")
             self.rec = osio.Recorder()
@@ -284,6 +281,10 @@ class App:
             if self.session:
                 self.session.mute("me", False)
             rec, self.rec = self.rec, None
+            # where the text will go, decided now you've stopped: the other computer if Synergy has the keyboard
+            # (typed there; started here, its own Dictate never saw the press), else the focused app here (our own
+            # windows are ignored, so this is still the app you're in)
+            self.app = OTHER_COMPUTER if remote.on_remote_screen() else activewin.snapshot()
             self.set_state("busy")
             refining = self.cfg["refine"] or alt  # Alt asks for a refinement, which always includes cleanup
             threading.Thread(target=self.process, args=(rec, self.live, self.wav, refining, alt, letter, self.app),

@@ -98,3 +98,36 @@ def test_when_the_other_computer_drops_off_the_keyboard_is_back_here(start, tmp_
         f.write(json.dumps({"msg": 'jump from "laptop" to "deck" at 1720,720'}) + "\n")
 
     assert app.dictate("back here")["type"] == "pasted"
+
+
+def hold_and_switch(app, home, *screens):
+    """Start dictating, let Synergy move the keyboard (screens), then release."""
+    mark = app.mark()
+    app.send("say", text="moved")
+    app.send("keys", down=["ctrl", "meta"])
+    app.wait_for("recording", after=mark)
+    switch(home, *screens)
+    app.send("keys", up=["meta", "ctrl"])
+    return app.result(mark)
+
+
+def test_moving_to_the_other_computer_while_dictating_types_it_there(start, tmp_path):
+    app = start_with_synergy(start, tmp_path, refinements=[])
+    app.focus("Slack", "general - Slack")  # still focused here, but the keys now go over there
+
+    assert hold_and_switch(app, tmp_path / "home", ("deck", "laptop"))["type"] == "typed"
+    assert app.dictations()[-1]["app"] == "other computer"
+
+
+def test_moving_back_here_while_dictating_pastes_it_here(start, tmp_path):
+    app = start_with_synergy(start, tmp_path, ("deck", "laptop"), refinements=[])
+
+    assert hold_and_switch(app, tmp_path / "home", ("laptop", "deck"))["type"] == "pasted"
+
+
+def test_moving_there_while_dictating_types_it_even_when_the_hotkey_is_ignored_there(start, tmp_path):
+    """Started here, so the other computer's own Dictate never saw the press: this one types it."""
+    app = start_with_synergy(start, tmp_path, refinements=[])
+    app.send("menu", path=["When another computer has the keyboard", "Ignore the hotkey"])
+
+    assert hold_and_switch(app, tmp_path / "home", ("deck", "laptop"))["type"] == "typed"

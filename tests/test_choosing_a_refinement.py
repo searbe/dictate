@@ -42,6 +42,22 @@ def test_a_new_title_in_the_same_window_is_used_without_switching_windows(start)
     assert [e["refinement"] for e in app.dictations()] == ["Mail", "Chat"]
 
 
+def test_the_app_focused_when_you_release_picks_the_refinement(start):
+    """Start dictating in one app, switch to another while still holding Ctrl+Win: the text goes there, so its
+    refinement applies."""
+    app = start(refinements=REFINEMENTS)
+    app.focus("thunderbird", "Write: (no subject)")
+    mark = app.mark()
+    app.send("say", text="see you soon")
+    app.send("keys", down=["ctrl", "meta"])
+    app.wait_for("recording", after=mark)
+    app.focus("slack", "general - Acme - Slack")
+    app.send("keys", up=["meta", "ctrl"])
+    app.result(mark)
+
+    assert refined_as(app) == "Chat"
+
+
 def test_with_no_matching_app_the_default_refinement_applies(start):
     app = start(refinements=REFINEMENTS[:1] + [refinement("Plain", "p", default=True)])
     app.focus("org.kde.kate", "notes.txt — Kate")

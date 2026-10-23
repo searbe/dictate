@@ -119,8 +119,8 @@ speaking and unloaded after 30 seconds unused, so it doesn't hold the graphics c
 | **Right-click the capsule** | The menu: refine text on or off, the default refinement, your dictations, transcripts and settings |
 
 You can dictate as usual while a call is being transcribed; your dictations stay out of the transcript. On Linux,
-terminals get Ctrl+Shift+V. While your keyboard controls another computer through Synergy or similar, the text is
-typed there instead.
+terminals get Ctrl+Shift+V. If your keyboard controls another computer through Synergy or similar when you let go, the
+text is typed there instead.
 
 ## More
 

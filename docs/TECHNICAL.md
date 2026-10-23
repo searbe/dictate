@@ -16,8 +16,9 @@ Dictate does, see the [README](../README.md).
   doesn't hold the graphics card while you game. A change that looks wrong (too much reworded, an answer instead of a
   cleanup) is thrown away and your words are pasted as they were.
 - **Pasting:** the text goes on the clipboard and into the focused app with Ctrl+V (Ctrl+Shift+V in terminals); while
-  your keyboard controls another computer (Synergy and similar), it's typed instead. The focused app is found
-  through KWin, for per-app refinements.
+  your keyboard controls another computer (Synergy and similar), it's typed instead. Both are decided when you
+  release Ctrl+Win: which computer has the keyboard, and the focused app (found through KWin, for per-app
+  refinements).
 - **Transcribe mode** records the computer's speakers (PipeWire's monitor) and your microphone separately:
   - **Speakers:** voiceprints ([TitaNet small](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/titanet_small))
     tell the people on the call apart, a word at a time once each has been heard for a while, so a quick "yeah"
