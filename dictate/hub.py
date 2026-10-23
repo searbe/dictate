@@ -21,6 +21,7 @@ class Hub:
         bar.set_custom_title(Gtk.Box())  # the page says what it is; the bar only holds the window's buttons
         self.win.set_titlebar(bar)
         bar.show_all()  # (else there's no title bar at all: nothing to close or drag the window by)
+        self.win.connect("delete-event", lambda *_: not self.may_close())  # (True keeps it open)
         self.win.connect("destroy", lambda *_: setattr(self, "closed", True))
         self.closed = False
 
@@ -56,6 +57,15 @@ class Hub:
         body.pack_start(self.stack, True, True, 0)
         self.win.add(body)
         body.show_all()
+
+    def may_close(self):
+        """Before the window closes: a page with unsaved changes is shown, and asks whether to save them."""
+        for key, page in self.pages.items():
+            if getattr(page, "dirty", lambda: False)():
+                self.show(key)
+                if not page.leave():
+                    return False
+        return True
 
     COMPACT = 1120  # px: a window narrower than this has the sidebar's icons only (so Transcripts fits in ~960)
 
@@ -325,7 +335,8 @@ class RefinementsPage:
         body = Gtk.Box(spacing=0, margin_start=12, margin_end=24, margin_bottom=24)
         left = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=200, spacing=8)
         self.list = d.classes(Gtk.ListBox(), "pick")
-        self.list.connect("row-selected", lambda _, row: row and self.show(row.get_index()))
+        self.list.connect("row-selected", lambda _, row: row and self.picked(row.get_index()))
+        self.rebuilding = False
         left.pack_start(self.list, False, False, 0)
         new = d.button("New refinement", self.add, "quiet", icon="plus")
         new.set_halign(Gtk.Align.START)
@@ -368,11 +379,48 @@ class RefinementsPage:
 
     def shown(self, new=False, on_change=None, **_):
         self.on_change = on_change
-        self.show(self.i)  # (what's hidden for the one selected)
+        if not self.dirty():  # (unsaved changes stay while you look at another page)
+            self.show(self.i)  # (what's hidden for the one selected)
         if new:
             self.add()
 
+    def saved_text(self, i):
+        return [lambda: self.data["cleanup"], refine.load_vocab, summary.prompt][i]() if i < self.FIXED \
+            else self.data["refinements"][i - self.FIXED]["prompt"]
+
+    def dirty(self):
+        """Whether what's in the editor differs from what's saved."""
+        text = self.prompt.get_buffer().props.text
+        if self.i < self.FIXED:
+            return text != self.saved_text(self.i)
+        s = self.data["refinements"][self.i - self.FIXED]
+        return (self.name.get_text(), self.key.get_text().lower(), self.apps.get_text(), text) != \
+            (s.get("name", ""), s.get("key", ""), s.get("apps", ""), s.get("prompt", ""))
+
+    def leave(self):
+        """Before the one shown is left: if it has unsaved changes, ask whether to save them. False: stay on it."""
+        if self.dirty():
+            answer = huds.ask_save(self.hub.win, self.title.get_text())
+            if answer == "save" and not self.save():
+                return False  # (it says what's missing)
+            if answer is None:
+                return False
+        if self.i >= self.FIXED and not self.data["refinements"][self.i - self.FIXED]["key"]:  # a new one, never saved
+            del self.data["refinements"][self.i - self.FIXED]
+        return True
+
+    def picked(self, i):
+        if self.rebuilding or i == self.i:
+            return
+        if self.leave():
+            self.rebuild(i)
+        else:  # back to the one with the changes, as it is
+            self.rebuilding = True
+            self.list.select_row(self.list.get_row_at_index(self.i))
+            self.rebuilding = False
+
     def rebuild(self, select):
+        self.rebuilding = True
         for row in self.list.get_children():
             self.list.remove(row)
         rows = [("Cleanup", None), ("Vocabulary", None), ("Live summary", None)] + \
@@ -385,12 +433,14 @@ class RefinementsPage:
             self.list.add(box)
         self.list.show_all()
         self.list.select_row(self.list.get_row_at_index(select))
+        self.rebuilding = False
+        self.show(select)
 
     def show(self, i):
         self.i = i
         refinement = self.data["refinements"][i - self.FIXED] if i >= self.FIXED else {}
         self.title.set_text(["Cleanup", "Vocabulary", "Live summary"][i] if i < self.FIXED else refinement.get("name") or "New refinement")
-        text = [lambda: self.data["cleanup"], refine.load_vocab, summary.prompt][i]() if i < self.FIXED else refinement["prompt"]
+        text = self.saved_text(i)
         self.fields.set_visible(i >= self.FIXED)
         self.delete_btn.set_visible(i >= self.FIXED)
         self.reset_btn.set_visible(i in self.DEFAULTS)
@@ -412,11 +462,25 @@ class RefinementsPage:
             "or two.")
 
     def add(self):
+        if not self.leave():
+            return
         self.data["refinements"].append({"name": "New refinement", "key": "", "apps": "", "prompt": ""})
         self.rebuild(len(self.data["refinements"]) + self.FIXED - 1)
         self.name.grab_focus()
 
+    def fresh_defaults(self):
+        """Take the default refinements (here and on another computer) from the file: Settings and the menu
+        change them there, after this page read it."""
+        data = refine.load_refinements()
+        default = next((s["name"] for s in data["refinements"] if s.get("default")), None)
+        for s in self.data["refinements"]:
+            s["default"] = s["name"] == default
+        self.data.pop("remote_default", None)
+        if "remote_default" in data:
+            self.data["remote_default"] = data["remote_default"]
+
     def save(self):
+        self.fresh_defaults()
         text = self.prompt.get_buffer().props.text.strip()
         if self.i == 0:
             self.data["cleanup"] = text
@@ -442,8 +506,10 @@ class RefinementsPage:
         self.saved.set_text("Saved")
         if self.on_change:
             self.on_change()
+        return True
 
     def remove(self):
+        self.fresh_defaults()
         del self.data["refinements"][self.i - self.FIXED]
         refine.save_refinements(self.data)
         self.rebuild(0)

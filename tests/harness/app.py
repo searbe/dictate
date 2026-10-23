@@ -491,7 +491,7 @@ def run(msg):
             replied.append(True)
             event("done", id=cid, **result)
 
-    if name == "click":  # a click that opens a confirmation dialog only returns once it's answered
+    if name in ("click", "select", "close"):  # one that opens a confirmation dialog only returns once it's answered
         GLib.timeout_add(200, lambda: reply() or False)
     try:
         result = COMMANDS[name](**msg) or {}

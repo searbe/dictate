@@ -52,6 +52,19 @@ def confirm(parent, question, detail, action="Delete all"):
     return answer == Gtk.ResponseType.OK
 
 
+def ask_save(parent, name):
+    """Ask before unsaved changes to name are lost: "save", "discard", or None to go back to them (Cancel, Escape)."""
+    question = f"Save your changes to {name}?"
+    dialog = HudDialog(parent, question)
+    dialog.card.pack_start(d.text(question, "title", wrap=True, max_chars=40), False, False, 0)
+    dialog.card.pack_start(d.text("They haven't been saved yet.", "small", wrap=True, max_chars=50), False, False, 0)
+    dialog.finish(dialog.answer("Cancel", Gtk.ResponseType.CANCEL), dialog.answer("Don't save", Gtk.ResponseType.REJECT),
+                  dialog.answer("Save", Gtk.ResponseType.OK, "primary", default=True))
+    answer = dialog.run()
+    dialog.destroy()
+    return {Gtk.ResponseType.OK: "save", Gtk.ResponseType.REJECT: "discard"}.get(answer)
+
+
 def ask_name(parent, label, remembers):
     """Ask what a voice is called. remembers: whether naming it remembers the voice for later transcripts."""
     dialog = HudDialog(parent, f"Who is {label}?")

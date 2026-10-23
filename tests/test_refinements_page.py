@@ -2,7 +2,7 @@
 Each change is checked by what it does to the next dictation, not by what's in the settings file."""
 import json
 from conftest import needs_session
-from harness.client import refinement
+from harness.client import eventually, refinement
 
 pytestmark = needs_session
 W = "Refinements"
@@ -121,3 +121,99 @@ def test_the_cleanup_prompt_can_be_edited_and_reset_to_the_default(start, model)
     app.click("Save", window=W)
     app.dictate("hello there")
     assert "Make the minimal edits" in model.requests()[-1]["system"]
+
+
+def saved_prompt(app, name):
+    return next(s["prompt"] for s in json.loads((app.data / "refinements.json").read_text())["refinements"] if s["name"] == name)
+
+
+def edit_chat(start, model):
+    app = open_manager(start, model, refinements=[{**refinement("Chat", "c"), "prompt": "Leave it alone"}])
+    app.send("select", row="Chat", window_title=W)
+    app.send("fill", name="text", text="Shout everything", window_title=W)
+    return app
+
+
+def test_closing_with_unsaved_changes_asks_and_save_saves_them(start, model):
+    app = edit_chat(start, model)
+
+    app.send("close", window_title=W)
+    app.wait_window(None)
+    assert "Save your changes to Chat?" in app.read(None)
+    app.click("Save")
+
+    eventually(lambda: W not in app.send("windows")["titles"])
+    assert saved_prompt(app, "Chat") == "Shout everything"
+
+
+def test_closing_without_saving_keeps_what_was_saved(start, model):
+    app = edit_chat(start, model)
+
+    app.send("close", window_title=W)
+    app.wait_window(None)
+    app.click("Don't save")
+
+    eventually(lambda: W not in app.send("windows")["titles"])
+    assert saved_prompt(app, "Chat") == "Leave it alone"
+
+
+def test_cancel_keeps_the_window_open_with_the_changes(start, model):
+    app = edit_chat(start, model)
+
+    app.send("close", window_title=W)
+    app.wait_window(None)
+    app.click("Cancel")
+
+    assert W in app.send("windows")["titles"]
+    assert app.send("field", name="text", window_title=W)["text"] == "Shout everything"
+
+
+def test_picking_another_row_with_unsaved_changes_asks_first(start, model):
+    app = edit_chat(start, model)
+
+    app.send("select", row="Vocabulary", window_title=W)
+    app.wait_window(None)
+    app.click("Cancel")
+    assert app.send("field", name="text", window_title=W)["text"] == "Shout everything"
+
+    app.send("select", row="Vocabulary", window_title=W)
+    app.wait_window(None)
+    app.click("Save")
+    eventually(lambda: saved_prompt(app, "Chat") == "Shout everything")
+
+
+def test_unsaved_changes_are_still_there_after_looking_at_another_page(start, model):
+    app = edit_chat(start, model)
+
+    app.send("menu", path=["Settings…"])
+    app.wait_window("Settings")
+    app.send("menu", path=["Refinements…"])
+    app.wait_window(W)
+
+    assert app.send("field", name="text", window_title=W)["text"] == "Shout everything"
+
+
+def test_closing_with_nothing_changed_just_closes(start, model):
+    app = open_manager(start, model, refinements=[refinement("Chat", "c")])
+    app.send("select", row="Chat", window_title=W)
+
+    app.send("close", window_title=W)
+
+    eventually(lambda: W not in app.send("windows")["titles"])
+
+
+def test_saving_a_refinement_keeps_the_defaults_chosen_in_settings_meanwhile(start, model):
+    app = open_manager(start, model, refinements=[refinement("Chat", "c"), refinement("Mail", "m")])
+    app.send("menu", path=["Settings…"])
+    app.wait_window("Settings")
+    app.send("choose", option="Mail", setting="Default refinement", window_title="Settings")
+    app.send("choose", option="Chat", setting="Default refinement there", window_title="Settings")
+    app.send("menu", path=["Refinements…"])
+    app.wait_window(W)
+    app.send("select", row="Chat", window_title=W)
+    app.send("fill", name="text", text="Shout everything", window_title=W)
+    app.click("Save", window=W)
+
+    data = json.loads((app.data / "refinements.json").read_text())
+    assert [s["name"] for s in data["refinements"] if s.get("default")] == ["Mail"]
+    assert data["remote_default"] == "Chat"
