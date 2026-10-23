@@ -20,9 +20,11 @@ beside it with which paragraph is on which, by their place in it (a paragraph en
 is a live summary (summary.py), with a final pass when it's stopped; above the topics."""
 import json
 import logging
+import queue
 import re
 import threading
 import time
+from collections import deque
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -41,6 +43,10 @@ PAUSE = 1.2  # seconds of silence that end a stretch: transcribed whole, more ar
 PIECE = 0.4  # but who said it is worked out between its shorter pauses, where people usually take turns
 ECHO = 0.6  # share of a stretch's words also heard through the speakers at the same time, for it to be an echo
 STAMP = "%Y-%m-%d %H.%M.%S"  # a transcript's file name: when it started
+AHEAD = 10.0  # seconds of the speakers heard after a stretch before it's split between voices (the segmenter
+WINDOW = 60.0  # tells a change better hearing what follows), and how much before it the segmenter hears too
+RECENT = 300.0  # seconds of the speakers kept for that: longer than a stretch can be, plus both of those
+PENDING, UNKNOWN = "pending", -1  # a stretch from the speakers still to be split between voices; whose it is so far
 LASTED = re.compile(r"^Lasted (.+), until \d\d:\d\d\.$", re.M)
 PARAGRAPH = re.compile(r"^\*\*(\d\d:\d\d:\d\d) (.+?):\*\* (.*)$", re.M)
 
@@ -237,6 +243,35 @@ def between_words(parts, words, near=0.6):
     return list(zip(edges, [*edges[1:], parts[-1][1]]))
 
 
+class Recent:
+    """The last few minutes of what the speakers played, as recorded (16-bit chunks), for the segmenter."""
+
+    def __init__(self, seconds):
+        self.most, self.chunks, self.kept, self.total = int(seconds * stt.RATE), deque(), 0, 0
+        self.lock = threading.Lock()
+
+    def add(self, chunk):
+        samples = np.frombuffer(chunk, np.int16)
+        with self.lock:
+            self.chunks.append(samples)
+            self.kept += len(samples)
+            self.total += len(samples)
+            while self.kept - len(self.chunks[0]) >= self.most:
+                self.kept -= len(self.chunks.popleft())
+
+    def end(self):
+        """Seconds recorded so far."""
+        return self.total / stt.RATE
+
+    def audio(self, a, b):
+        """(start, samples): what was played from a to b seconds, as float32 (from start, if a is no longer kept)."""
+        with self.lock:
+            first = self.total - self.kept
+            whole = np.concatenate(self.chunks) if self.chunks else np.zeros(0, np.int16)
+        i, j = max(0, int(a * stt.RATE) - first), max(0, int(b * stt.RATE) - first)
+        return (first + i) / stt.RATE, whole[i:j].astype(np.float32) / 32768
+
+
 class Session:
     """A transcript being recorded. on_change() runs on the GTK thread whenever the transcript changes."""
 
@@ -259,6 +294,7 @@ class Session:
         self.last_merge = self.now()
         self.summary, self.last_summary = summary.Summary(), self.now()
         self.gpu_free_for = 0.0  # seconds the GPU has been free while the smaller model is loaded on the CPU
+        self.start_settling()
         llm.server.keep(True)  # the model, loaded for the whole call (from now, so it's ready for the first topics)
         llm.server.warm(hold=False)
         GLib.timeout_add(int(topics.TICK * 1000), self.tick)
@@ -269,8 +305,8 @@ class Session:
                             on_preview=lambda *so_far, who=who: self.preview(who, *so_far))
             rec = osio.Recorder()
             rec.start(path, speakers=speakers, echo_cancel=not speakers,
-                      on_audio=(lambda chunk, push=live.push: (self.echo.played(chunk), push(chunk))) if speakers
-                      else live.push)
+                      on_audio=(lambda chunk, push=live.push: (self.echo.played(chunk), self.recent.add(chunk),
+                                                               push(chunk))) if speakers else live.push)
             self.recorders.append(rec)
             self.recordings.append(path)
             self.lives.append(live)
@@ -290,7 +326,12 @@ class Session:
             heard = [((who, start + a, start + b, said), None)
                      for (a, b), said in zip(parts, said_in(parts, words, text))
                      if said and not self.echo.echo(start + a, samples[int(a * stt.RATE):int(b * stt.RATE)])]
-        elif who == "them" and self.voices and real:
+        elif who == "them" and self.voices and real and voices.segmenter_available():
+            high, total = voices.band(samples)
+            self.band = (self.band[0] + high, self.band[1] + total)
+            heard = [((who, start, end, text), PENDING)]  # whose it is, provisionally: split once more is heard
+            self.settling.put((start, end, text, samples, words, voices.narrowband(power=self.band)))
+        elif who == "them" and self.voices and real:  # (no segmentation model: told apart by voiceprints alone)
             high, total = voices.band(samples)
             self.band = (self.band[0] + high, self.band[1] + total)
             narrow = voices.narrowband(power=self.band)
@@ -304,12 +345,68 @@ class Session:
 
     def _add(self, who, heard):
         for stretch, voice in heard:
-            self.heard.append((*stretch, self.voices.voice(*voice) if voice else None))
+            if voice == PENDING:  # until it's settled: the voice heard last, as most stretches carry on from it
+                self.pending.add(stretch[1])
+                vid = len(self.voices.of) - 1 if self.voices.of else UNKNOWN
+            else:
+                vid = self.voices.voice(*voice) if voice else None
+            self.heard.append((*stretch, vid))
         if self.voices:
             self.known = self.voices.told_apart()  # (for hear(), on Live's thread: a new dict, never changed)
         self.previewing.pop(who, None)  # now transcribed whole
         self.save()
         self.on_change()
+
+    # --- who said what, once more has been heard ---
+    def start_settling(self):
+        self.recent = Recent(RECENT)  # what the speakers played lately, for the segmenter
+        self.settling = queue.Queue()  # stretches from the speakers to split between voices (hear(), _settle())
+        self.pending = set()  # the starts of those in the transcript, not split yet
+        self.settled = threading.Event()  # set once the last one has been (after stop())
+        threading.Thread(target=self._settle, daemon=True).start()
+
+    def _settle(self):
+        """On its own thread: split each stretch from the speakers between voices where the segmenter hears the
+        voice change, once AHEAD seconds more have been heard (or recording has stopped), then hand the parts
+        to Voices (on the GTK thread)."""
+        while (item := self.settling.get()) is not None:
+            start, end, text, samples, words, narrow = item
+            while not self.stopped and self.recent.end() < end + AHEAD:
+                time.sleep(0.2)
+            try:
+                heard = self._split(start, end, text, samples, words, narrow)
+            except Exception:  # never lose what was said: keep it whole
+                log.exception("couldn't split a stretch between voices")
+                heard = [(("them", start, end, text), (voices.voiceprint(samples), end - start, narrow, None))]
+            GLib.idle_add(self._settled, start, heard)
+        self.settled.set()
+
+    def _split(self, start, end, text, samples, words, narrow):
+        """The parts of a stretch said by one voice each: cut where the segmenter, hearing from up to WINDOW
+        seconds before it to AHEAD after, hears the voice change; each change moved to the gap between words."""
+        at, window = self.recent.audio(min(start, end - WINDOW), end + AHEAD)
+        length = len(samples) / stt.RATE
+        cuts = [c + at - start for c in voices.changes(window)] if len(window) else []
+        edges = [0.0, *(c for c in cuts if 0.3 < c < length - 0.3), length]
+        parts = list(zip(edges, edges[1:]))
+        if words and len(parts) > 1:
+            parts = between_words(parts, words)
+        parts = [(a, b) for a, b in parts if b - a >= 0.05]
+        return [(("them", start + a, start + b, said),
+                 (voices.voiceprint(samples[int(a * stt.RATE):int(b * stt.RATE)]), b - a, narrow, None))
+                for (a, b), said in zip(parts, said_in(parts, words, text)) if said]
+
+    def _settled(self, start, heard):
+        """A stretch from the speakers has been split between voices: its parts replace it."""
+        self.heard = [h for h in self.heard if not (h[0] == "them" and h[1] == start)]
+        self.pending.discard(start)
+        self._add("them", heard)
+        return False
+
+    def finish_settling(self):
+        """Split what's still to be split now (recording has stopped), and wait until it's been handed over."""
+        self.settling.put(None)
+        self.settled.wait()
 
     def preview(self, who, start, text, samples=None, at=None):
         """What who is saying so far (on Live's thread); samples: the end of it, from at seconds."""
@@ -373,6 +470,7 @@ class Session:
                 rec.stop()
             for live in self.lives:
                 live.finish()  # its last stretches arrive through hear(), before on_done
+            self.finish_settling()
             GLib.idle_add(saved)
         def saved():
             if not self.kept():
@@ -398,8 +496,10 @@ class Session:
 
     # --- topics ---
     def lines(self):
-        """[(start, who's name, text)]: what's in the transcript, a line per stretch."""
-        return [(start, self.name(who, vid), text) for who, start, _, text, vid in self.kept()]
+        """[(start, who's name, text)]: what's in the transcript, a line per stretch (once it's known who said it:
+        not those still to be split between voices)."""
+        return [(start, self.name(who, vid), text) for who, start, _, text, vid in self.kept()
+                if not (who == "them" and start in self.pending)]
 
     def tick(self):
         """Every few seconds: sort what's been said into topics, when it's due."""
@@ -537,6 +637,8 @@ class Session:
         return len(words & heard) >= ECHO * len(words)
 
     def name(self, who, vid):
+        if vid == UNKNOWN:  # the first stretch from the speakers, not split between voices yet
+            return "…"
         return self.voices.label(vid) if vid is not None else NAMES[who]
 
     def paragraphs(self):

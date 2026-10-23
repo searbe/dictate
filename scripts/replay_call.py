@@ -6,7 +6,8 @@ Takes a transcript's two recordings (`<stem> them.ogg` and `<stem> me.ogg`, whil
 through transcript.Session as a call would be heard (stt.Live, speaker voices, the echo check), then writes the
 new transcript to out.md (by default a temporary file; never over the original) and prints who was heard, for how
 long and how alike their voices are. Use it to see what a change to stt.py, voices.py, echo.py or transcript.py
-does to a real call. Topics and the summary aren't made (no model is loaded); remembered voices aren't used."""
+does to a real call. Topics and the summary aren't made (no model is loaded). Remembered voices are only used
+with --remembered (they're read, never changed)."""
 import sys
 import tempfile
 import threading
@@ -24,14 +25,15 @@ import soundfile
 from dictate import echo, stt, summary, topics, transcript, voices
 
 
-def session(stem, out):
+def session(stem, out, remembered=()):
     """A Session as Session() makes one, without its recorders, model or timers."""
     s = transcript.Session.__new__(transcript.Session)
     s.started, s.t0, s.on_change = datetime.strptime(Path(stem).name, transcript.STAMP), time.monotonic(), lambda: None
-    s.path, s.heard, s.voices, s.known, s.band = Path(out), [], voices.Voices(), {}, (0.0, 0.0)
+    s.path, s.heard, s.voices, s.known, s.band = Path(out), [], voices.Voices(remembered), {}, (0.0, 0.0)
     s.previewing, s.echo, s.muted = {}, echo.Echo(), {who: [] for who, _ in transcript.SOURCES}
     s.paused = s.stopped = s.asking = False
     s.topics, s.asked, s.summary = topics.Topics(), set(), summary.Summary()
+    s.start_settling()
     return s
 
 
@@ -51,12 +53,17 @@ def main():
     lock = threading.Lock()
     transcript.GLib.idle_add = lambda f, *a: (lock.acquire(), f(*a), lock.release()) and False  # (no GTK loop here)
     echo.KEEP = len(them)  # (the speakers are given all at once, not as they play: keep all of it)
-    s = session(stem, out)
+    s = session(stem, out, voices.remembered() if "--remembered" in sys.argv else ())
+    voices.remembering = lambda: False  # (so nothing is written beside out.md)
     s.echo.played(samples(them))
+    s.recent = transcript.Recent(len(them) / stt.RATE + 1)  # (all of it: it's given at once, not as it plays)
+    s.recent.add(samples(them))
     for who, audio in (("them", them), ("me", me)):
         live = stt.Live(pause=transcript.PAUSE, on_text=lambda *heard, who=who: s.hear(who, *heard))
         live.push(samples(audio))
         live.finish()
+    s.stopped = True
+    s.finish_settling()
     s.now = lambda: len(them) / stt.RATE
     s.save()
 

@@ -20,9 +20,11 @@ Dictate does, see the [README](../README.md).
   release Ctrl+Win: which computer has the keyboard, and the focused app (found through KWin, for per-app
   refinements).
 - **Transcribe mode** records the computer's speakers (PipeWire's monitor) and your microphone separately:
-  - **Speakers:** voiceprints ([TitaNet small](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/titanet_small))
-    tell the people on the call apart, a word at a time once each has been heard for a while, so a quick "yeah"
-    goes to whoever said it.
+  - **Speakers:** a segmentation model ([pyannote segmentation 3.0](https://huggingface.co/pyannote/segmentation-3.0))
+    finds where the voice changes, however quick the turns, and voiceprints
+    ([TitaNet small](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/titanet_small)) tell which person
+    each part is. A line is shown at once with the voice heard last, and settled about 10 seconds later: the
+    segmenter tells a change better once it has heard what follows.
   - **Echo:** without headphones, the microphone hears the speakers too: what it heard is checked against what the
     speakers played (sound and words), so the call isn't written down twice as you.
   - **Topics and summary:** the refinement model updates the topics about every 20 seconds and the summary about
@@ -44,7 +46,7 @@ Transcription takes 0.1 s or less after you let go. Refining is the slow part: a
 
 ## Setup (self-contained)
 Each setup script installs into this folder and nothing anywhere else, and is safe to re-run:
-- `models/`: Parakeet TDT 0.6B v3 (~640 MB, speech), Silero VAD, TitaNet small (40 MB, voices), and Qwen3.5 4B (~2.7 GB, CPU) and 9B (~5.7 GB, GPU) for refinement.
+- `models/`: Parakeet TDT 0.6B v3 (~640 MB, speech), Silero VAD, TitaNet small (40 MB, voices), pyannote segmentation (6 MB, where voices change), and Qwen3.5 4B (~2.7 GB, CPU) and 9B (~5.7 GB, GPU) for refinement.
 - `bin/llama/`: a llama.cpp release (Vulkan on Linux/Windows, Metal on macOS), used for refinement.
 - `.venv/`: Python packages.
 - `data/`: your dictations, recordings, transcripts, settings, refinements and vocabulary.
@@ -119,4 +121,4 @@ Ubuntu: `sudo apt install bubblewrap strace`).
 on) and `state.json`. Logs go to `journalctl --user` when started from the desktop.
 
 ## Licenses
-Dictate is MIT: see [LICENSE](../LICENSE). The models and tools the setup scripts download come under their own licenses: [Parakeet TDT](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), [Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-9B), [Silero VAD](https://github.com/snakers4/silero-vad), [TitaNet](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/titanet_small), [llama.cpp](https://github.com/ggml-org/llama.cpp), [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) and, on Windows, [gvsbuild](https://github.com/wingtk/gvsbuild)'s GTK runtime.
+Dictate is MIT: see [LICENSE](../LICENSE). The models and tools the setup scripts download come under their own licenses: [Parakeet TDT](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3), [Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-9B), [Silero VAD](https://github.com/snakers4/silero-vad), [TitaNet](https://catalog.ngc.nvidia.com/orgs/nvidia/teams/nemo/models/titanet_small), [pyannote segmentation](https://huggingface.co/pyannote/segmentation-3.0), [llama.cpp](https://github.com/ggml-org/llama.cpp), [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) and, on Windows, [gvsbuild](https://github.com/wingtk/gvsbuild)'s GTK runtime.

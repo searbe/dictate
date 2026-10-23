@@ -66,6 +66,15 @@ def main():
     # telling voices apart in transcripts: TitaNet small (see voices.py; compare with bench_voices.py)
     download("https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/"  # sic
              "nemo_en_titanet_small.onnx", MODELS / "titanet_small.onnx")
+    # where the voice changes in a transcript, every ~17 ms: pyannote's segmentation model (see voices.py)
+    if not (MODELS / "segmentation.onnx").exists():
+        name = "sherpa-onnx-pyannote-segmentation-3-0"
+        download("https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-segmentation-models/"
+                 f"{name}.tar.bz2", MODELS / f"{name}.tar.bz2")
+        unpack(MODELS / f"{name}.tar.bz2", MODELS)
+        (MODELS / name / "model.onnx").rename(MODELS / "segmentation.onnx")
+        shutil.rmtree(MODELS / name)
+        (MODELS / f"{name}.tar.bz2").unlink()
     # refinement: 4B for the CPU, 9B for the GPU (see MODELS in refine.py; compare others with bench.py)
     download(f"{HF}/Qwen3.5-4B-GGUF/resolve/main/Qwen3.5-4B-Q4_K_M.gguf", MODELS / "qwen3.5-4b-q4_k_m.gguf")
     download(f"{HF}/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q4_K_M.gguf", MODELS / "qwen3.5-9b-q4_k_m.gguf")

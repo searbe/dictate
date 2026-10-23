@@ -233,7 +233,8 @@ def test_speech_through_the_speakers_is_transcribed_by_the_real_model(start, tmp
 
     app.click("Stop", "Transcripts")  # the sample ends mid-word: its last stretch is transcribed on stopping
     eventually(lambda: SAID in app.transcript_file().lower(), timeout=60)
-    assert "Speaker 1:**" in app.transcript_file()  # its voice, told apart by the real voice model
+    eventually(lambda: "Speaker 1:**" in app.transcript_file(), timeout=60)  # its voice, told apart by the
+    # real voice model (once it's been heard for a while, or recording has stopped: see transcript.AHEAD)
     assert "Me:**" not in app.transcript_file()  # the microphone heard silence
 
 

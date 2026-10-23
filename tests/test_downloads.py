@@ -55,7 +55,8 @@ def test_rerunning_setup_downloads_nothing_that_is_already_there(tmp_path, monke
     models, bin_ = tmp_path / "models", tmp_path / "bin"
     for path in (models / "parakeet", bin_ / "llama"):
         path.mkdir(parents=True)
-    for name in ("silero_vad.onnx", "titanet_small.onnx", "qwen3.5-4b-q4_k_m.gguf", "qwen3.5-9b-q4_k_m.gguf"):
+    for name in ("silero_vad.onnx", "titanet_small.onnx", "segmentation.onnx", "qwen3.5-4b-q4_k_m.gguf",
+                 "qwen3.5-9b-q4_k_m.gguf"):
         (models / name).write_bytes(b"x")
     monkeypatch.setattr(fetch, "MODELS", models)
     monkeypatch.setattr(fetch, "BIN", bin_)

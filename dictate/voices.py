@@ -17,6 +17,7 @@ import numpy as np
 from . import DATA, ROOT, store
 
 MODEL = ROOT / "models/titanet_small.onnx"
+SEGMENTER = ROOT / "models/segmentation.onnx"  # pyannote's: where the voice changes, every ~17 ms
 SETTINGS = DATA / "voices.json"
 SAME = {"wide": 0.42, "narrow": 0.6}  # how similar two voiceprints must be to be the same voice; phone audio
 # (nothing above 3.4 kHz) makes everyone sound more alike, so it needs a closer match
@@ -31,10 +32,37 @@ MERGE = {"wide": 0.5, "narrow": 0.7}  # a voice heard less than KNOWN seconds th
 SHORT_COUNTS = 0.3  # how much a short part counts towards its voice's sound, for each second of it
 REGROUP = 2  # times every part is given again to the voice it's closest to, after each new one
 _ex, _lock = None, threading.Lock()
+_segmenter, _segmenter_lock = None, threading.Lock()
 
 
 def available():
     return MODEL.exists()
+
+
+def segmenter_available():
+    return available() and SEGMENTER.exists()
+
+
+def changes(samples):
+    """[seconds]: where the voice changes in samples (16 kHz float32), by pyannote's segmentation model, which
+    hears who's talking in 10 s windows, every ~17 ms, however quick the turns. Only where it changes: who's
+    talking is left to Voices (its speakers are only told apart within a window, and its clustering of them
+    across windows splits one person in two, so it's kept fine-grained: every change it hears is a cut).
+    Better with some of what's said after a change than without (see transcript.AHEAD)."""
+    global _segmenter
+    import sherpa_onnx
+    with _segmenter_lock:
+        if not _segmenter:
+            _segmenter = sherpa_onnx.OfflineSpeakerDiarization(sherpa_onnx.OfflineSpeakerDiarizationConfig(
+                segmentation=sherpa_onnx.OfflineSpeakerSegmentationModelConfig(
+                    pyannote=sherpa_onnx.OfflineSpeakerSegmentationPyannoteModelConfig(model=str(SEGMENTER)),
+                    num_threads=2),
+                embedding=sherpa_onnx.SpeakerEmbeddingExtractorConfig(model=str(MODEL), num_threads=2),
+                clustering=sherpa_onnx.FastClusteringConfig(num_clusters=-1, threshold=0.3),
+                min_duration_on=0.2, min_duration_off=0.3))
+        found = _segmenter.process(samples).sort_by_start_time()
+    return sorted({b.start if b.start < a.end else (a.end + b.start) / 2
+                   for a, b in zip(found, found[1:]) if a.speaker != b.speaker})
 
 
 def voiceprint(samples):
