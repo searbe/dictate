@@ -1,8 +1,12 @@
 """Transcribe mode: Ctrl+Win, lift Win, Win again, and everything said through the speakers (by "Speaker 1",
 "Speaker 2", …: see test_voices.py) and into the microphone ("Me") is written into a transcript as it's heard,
 shown at the top of the Transcripts window, until it's stopped the same way, or with the Stop button."""
-import os, re, time
+import os
+import re
+import time
+
 import pytest
+
 from conftest import needs_models, needs_session, sample_speech
 from harness.client import eventually
 
@@ -286,7 +290,8 @@ def test_a_stretch_cut_between_voices_loses_no_words_with_the_real_models(start,
     """Two voices without a pause: the stretch is transcribed whole, then cut between words where the voice
     changes, so every word is kept, once, in order. (The second voice is the sample sped up by a fifth;
     scripts/bench_voices.py measures how well real different voices are told apart.)"""
-    import numpy as np, soundfile
+    import numpy as np
+    import soundfile
     voice = soundfile.read(str(sample_speech(tmp_path / "one.wav")), dtype="float32")[0]
     other = np.interp(np.arange(0, len(voice), 1.2), np.arange(len(voice)), voice)
     both = tmp_path / "both.wav"
@@ -306,7 +311,8 @@ def test_a_stretch_cut_between_voices_loses_no_words_with_the_real_models(start,
 def test_the_speakers_echoing_into_the_microphone_are_not_you_with_the_real_models(start, tmp_path):
     """Without headphones: the microphone hears them through the speakers (here, a made-up room: see
     test_echo.py), then you say the same once they've stopped."""
-    import numpy as np, soundfile
+    import numpy as np
+    import soundfile
     from test_echo import room
     them = soundfile.read(str(sample_speech(tmp_path / "speech.wav")), dtype="float32")[0]
     gap = np.zeros(16000 * 3, np.float32)

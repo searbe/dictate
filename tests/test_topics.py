@@ -1,8 +1,11 @@
 """Topics: while a conversation is transcribed, its topics are listed beside it in the Transcripts window, each
 in its own colour, with who brought it up and who else spoke on it, the one being talked about now marked; the
-transcript shows each topic's name where the conversation turns to it. They're saved with the transcript. The model finds them (here, its stand-in: see
-harness/fake_llama.py), in JSON: each topic with the numbers of the lines about it."""
-import json, time
+transcript shows each topic's name where the conversation turns to it. They're saved with the transcript. The model
+finds them (here, its stand-in: see harness/fake_llama.py), in JSON: each topic with the numbers of the lines about
+it."""
+import json
+import time
+
 from conftest import needs_session
 from harness.client import eventually
 
@@ -13,7 +16,8 @@ TOPICS = "live list of the topics"  # in the topics prompt
 def answer(when, *found):
     """A rule: when the lines sent include when, the model answers with these (title, what was said, line numbers)."""
     return {"prompt": TOPICS, "text": when,
-            "reply": json.dumps({"topics": [{"topic": 0, "title": t, "said": n, "lines": l} for t, n, l in found]})}
+            "reply": json.dumps({"topics": [{"topic": 0, "title": t, "said": n, "lines": lines}
+                                            for t, n, lines in found]})}
 
 
 BUDGET = answer("budget", ("The budget", "Speaker 1 asked about it; Me thinks it's too high.", [1, 2]))
@@ -80,7 +84,8 @@ def test_going_back_to_a_topic_carries_it_on(start, model):
     eventually(lambda: "Me will cut it." in app.read("Transcripts"))
     texts = app.read("Transcripts")
     assert texts.count("The budget") == 1  # still one topic, with what was said on it before, and now
-    assert texts.index("Speaker 1 asked about it; Me thinks it's too high.") < texts.index("Me will cut it.") < texts.index("Hiring")
+    assert (texts.index("Speaker 1 asked about it; Me thinks it's too high.") < texts.index("Me will cut it.")
+            < texts.index("Hiring"))
     assert texts.index("Now") < texts.index("Hiring")  # marked on the budget again
     assert app.transcript().count("● The budget") == 2  # where the conversation turned to it, both times
 
@@ -95,7 +100,8 @@ def test_topics_are_saved_at_the_top_of_the_transcript(start, model):
 
     eventually(lambda: app.stopped())
     saved = app.transcript_file()
-    assert "## Topics\n\n- **The budget** (Speaker 1, Me): Speaker 1 asked about it; Me thinks it's too high.\n" in saved
+    assert ("## Topics\n\n- **The budget** (Speaker 1, Me): Speaker 1 asked about it; Me thinks it's too high.\n"
+            in saved)
     assert saved.index("## Topics") < saved.index("Speaker 1:** Shall we look at the budget?")
     eventually(lambda: "Speaker 1 brought it up · with Me" in app.read("Transcripts"))  # shown, as saved
     assert "Now" not in app.read("Transcripts")  # nothing is being talked about now
@@ -213,7 +219,7 @@ def four_topics(start, model, *rules):
     for said, source in (("Shall we look at the budget?", "speakers"), ("And we need to hire a designer.", "speakers"),
                          ("The office move is in May.", "mic"), ("I'll cut the travel costs.", "mic")):
         app.hear(said, source=source)
-        eventually(lambda: len([r for r in model.requests() if TOPICS in r["system"] and said in r["text"]]) > 0)
+        eventually(lambda said=said: any(TOPICS in r["system"] and said in r["text"] for r in model.requests()))
     return app
 
 
@@ -224,7 +230,8 @@ def test_topics_that_turn_out_to_be_one_subject_are_merged(start, model):
     eventually(lambda: "Budget and costs" in app.read("Transcripts"))
     texts = app.read("Transcripts")
     assert "The budget" not in texts and "Cutting costs" not in texts
-    assert texts.index("Speaker 1 asked about it; Me thinks it's too high.") < texts.index("Me will cut the travel costs.")
+    assert (texts.index("Speaker 1 asked about it; Me thinks it's too high.")
+            < texts.index("Me will cut the travel costs."))
     assert "Hiring" in texts and "Office move" in texts  # the others stay as they were
     assert app.transcript().count("● Budget and costs") == 2  # where the conversation turned to it, both times
 
@@ -232,7 +239,8 @@ def test_topics_that_turn_out_to_be_one_subject_are_merged(start, model):
 def test_topics_are_not_merged_unless_asked_again_they_are_one_subject(start, model):
     """Asked about the whole list, a model is quick to group things only talked about together."""
     app = four_topics(start, model, {"prompt": MERGING, "reply": json.dumps(
-        {"groups": [{"topics": [2, 3], "title": "Hiring and the office"}]})}, {"prompt": SAME, "reply": '{"same": false}'})
+        {"groups": [{"topics": [2, 3], "title": "Hiring and the office"}]})},
+        {"prompt": SAME, "reply": '{"same": false}'})
 
     eventually(lambda: any(SAME in r["system"] for r in model.requests()))
     time.sleep(0.5)

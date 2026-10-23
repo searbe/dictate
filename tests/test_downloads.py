@@ -1,8 +1,15 @@
 """scripts/fetch.py, which the setup scripts run to download the models and llama.cpp. Served from a local
 web server here, so nothing is downloaded for real."""
-import importlib.util, io, tarfile, threading, urllib.request, zipfile
+import importlib.util
+import io
+import tarfile
+import threading
+import urllib.request
+import zipfile
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
 import pytest
+
 from conftest import ROOT
 
 spec = importlib.util.spec_from_file_location("fetch", ROOT / "scripts/fetch.py")
@@ -36,7 +43,7 @@ def test_a_download_arrives_complete(server, tmp_path):
 
 
 def test_an_interrupted_download_is_never_mistaken_for_a_finished_one(server, tmp_path):
-    with pytest.raises(Exception):
+    with pytest.raises(OSError):
         fetch.download(f"{server}/broken", tmp_path / "model.gguf")
     assert not (tmp_path / "model.gguf").exists()
 

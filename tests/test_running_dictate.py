@@ -1,7 +1,14 @@
 """Starting, stopping and the things that outlive a session: run at startup, one copy only, the quit log."""
-import os, signal, socket, subprocess, sys, time
+import os
+import signal
+import socket
+import subprocess
+import sys
+import time
 from pathlib import Path
+
 import pytest
+
 from conftest import ROOT, needs_session
 
 VENV_PY = ROOT / ".venv/bin/python"
@@ -14,8 +21,8 @@ def test_quit_from_the_menu_exits_and_says_why_in_the_log(start):
     app.send("menu", path=["Quit"])
 
     assert app.proc.wait(10) == 0
-    assert any(l.endswith("quitting: Quit chosen from the menu") for l in app.logs)
-    assert any(l.endswith("exited") for l in app.logs)
+    assert any(line.endswith("quitting: Quit chosen from the menu") for line in app.logs)
+    assert any(line.endswith("exited") for line in app.logs)
 
 
 @needs_session
@@ -25,7 +32,7 @@ def test_being_stopped_by_the_system_exits_cleanly_and_says_why(start):
     app.proc.send_signal(signal.SIGTERM)
 
     assert app.proc.wait(10) == 0
-    assert any(l.endswith("quitting: got SIGTERM") for l in app.logs)
+    assert any(line.endswith("quitting: got SIGTERM") for line in app.logs)
 
 
 @needs_session
@@ -52,7 +59,8 @@ def test_a_recorder_never_outlives_dictate_even_if_it_crashes(tmp_path, kind):
     start = (f"osio.Recorder().start({str(tmp_path / 'r.wav')!r})" if kind == "dictation" else
              f"osio.Recorder().start({str(tmp_path / 'r.ogg')!r}, on_audio=lambda chunk: None)")
     code = f"import sys, time; sys.path.insert(0, {str(ROOT)!r}); from dictate import osio; {start}; time.sleep(60)"
-    dictate = subprocess.Popen([str(VENV_PY), "-c", code], env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"})
+    dictate = subprocess.Popen([str(VENV_PY), "-c", code],
+                               env={**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}"})
     deadline = time.monotonic() + 10
     while not (pid_file.exists() and pid_file.read_text().strip()) and time.monotonic() < deadline:
         time.sleep(0.05)
@@ -81,10 +89,10 @@ def test_run_at_startup_adds_a_login_entry_that_starts_dictate_and_removes_it_ag
 
     app.send("menu", path=["Run at startup"])
 
-    exec_line = next(l for l in entry.read_text().splitlines() if l.startswith("Exec="))
+    exec_line = next(line for line in entry.read_text().splitlines() if line.startswith("Exec="))
     python, script = [Path(p) for p in exec_line[5:].strip('"').split('" "')]
     assert python.exists() and script == ROOT / "dictate.py"
-    icon = next(l for l in entry.read_text().splitlines() if l.startswith("Icon="))[5:]
+    icon = next(line for line in entry.read_text().splitlines() if line.startswith("Icon="))[5:]
     assert icon == str(ROOT / "dictate/icon.png") and Path(icon).exists()  # Dictate's own icon
     assert {"label": "Run at startup", "ticked": True} in app.send("menu_items")["items"]
 

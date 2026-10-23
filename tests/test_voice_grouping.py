@@ -3,6 +3,7 @@ call: two parts of one person are about 0.57 alike, of two people about 0.23 (ev
 sound), so a part can easily look more like someone else than like the person's own first few parts."""
 import numpy as np
 import pytest
+
 from conftest import needs_models, sample_speech
 from dictate import voices
 
@@ -32,8 +33,8 @@ def one_voice_each(parts, labels):
     """Whether there are as many voices as people, each person's speaking time almost all under one."""
     people = sorted(set(w for _, _, w in parts))
     for who in people:
-        theirs = [(l, s) for (_, s, w), l in zip(parts, labels) if w == who]
-        if max(sum(s for l, s in theirs if l == label) for label in set(labels)) < 0.9 * sum(s for _, s in theirs):
+        theirs = [(lab, s) for (_, s, w), lab in zip(parts, labels) if w == who]
+        if max(sum(s for lab, s in theirs if lab == label) for label in set(labels)) < 0.9 * sum(s for _, s in theirs):
             return False
     return len(set(labels)) == len(people)
 
@@ -120,6 +121,7 @@ def test_a_quick_reply_between_someones_sentences_is_the_other_voices_with_the_r
     """One voice, then another's sentence and the first again, without a pause: once both are known, each
     word goes to whoever it sounds like (voices.by_word). The other voice is the sample slowed down or sped up."""
     import soundfile
+
     from dictate import stt
     stt.load()
     one = soundfile.read(str(sample_speech(tmp_path / "one.wav")), dtype="float32")[0]

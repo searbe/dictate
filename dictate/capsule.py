@@ -5,11 +5,17 @@ it's been going and the topic now.
 
 It's drawn in cairo inside one fixed, transparent window (resizing a window every frame jitters under XWayland),
 growing away from the nearer screen edge; only the capsule's own shape takes clicks, the rest passes through.
-The app owns the window's events (drag, click, menu) and tells the capsule what's happening."""
-import math, os, time
+It can be dragged anywhere; the app is told about clicks (interact()) and tells the capsule what's happening
+(update())."""
+import math
+import os
+import time
+
 import cairo
 from gi.repository import Gdk, GLib, Gtk
+
 from . import design as d
+from . import transcript
 
 H, DOT = 36, 36  # the capsule's height, and the idle dot's size
 PAD = 10  # around the capsule, for its shadow
@@ -90,10 +96,7 @@ class Capsule:
         return float(d.layout(cairo.Context(surface), words, "caption", tabular=True)[1])
 
     def session_words(self):
-        s = self.session
-        seconds = int(s.now())
-        clock = f"{seconds // 3600}:{seconds // 60 % 60:02d}:{seconds % 60:02d}" if seconds >= 3600 else f"{seconds // 60}:{seconds % 60:02d}"
-        topic = s.topics.topics[s.topics.now]["title"] if s.topics.now is not None and s.topics.now < len(s.topics.topics) else ""
+        clock, topic = transcript.clock(self.session.now()), self.session.topics.current()
         return f"{clock} · {topic}" if topic else clock
 
     def tick_on(self):
@@ -123,7 +126,80 @@ class Capsule:
         self.ticking = None
         return False
 
+    # --- moving it, and clicks on it ---
+    DRAG = 3  # px the pointer moves with the button down before it's a drag, not a click
+    SETTLE = 500  # ms after the last move before it counts as put down
+
+    def interact(self, on_click, on_menu, on_settled):
+        """Take the window's events: drag to move it (on_settled() once it's been put down), click it
+        (on_click()), or right-click it (on_menu(event))."""
+        self.on_click, self.on_menu, self.on_settled = on_click, on_menu, on_settled
+        self.pressed = None  # where the left button went down, until it's a drag or a click
+        self.settling = None
+        w = self.win
+        w.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.BUTTON_RELEASE_MASK
+                     | Gdk.EventMask.POINTER_MOTION_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK
+                     | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+        w.connect("button-press-event", self._press)
+        w.connect("motion-notify-event", self._motion)
+        w.connect("button-release-event", self._release)
+        w.connect("configure-event", self._moved)
+        w.connect("enter-notify-event", lambda *_: self.hover(True))
+        w.connect("leave-notify-event", lambda *_: self.hover(False))
+
+    def _press(self, w, ev):
+        if ev.button == 1:
+            self.pressed = (ev.x_root, ev.y_root)
+        elif ev.button == 3:
+            self.on_menu(ev)
+        return True
+
+    def _motion(self, w, ev):
+        if self.pressed and max(abs(ev.x_root - self.pressed[0]), abs(ev.y_root - self.pressed[1])) > self.DRAG:
+            x, y = self.pressed
+            self.pressed = None
+            w.begin_move_drag(1, int(x), int(y), ev.time)
+        return True
+
+    def _release(self, w, ev):
+        if ev.button == 1 and self.pressed:  # didn't move: a click
+            self.pressed = None
+            self.on_click()
+        return True
+
+    def _moved(self, *_):
+        if self.settling:
+            GLib.source_remove(self.settling)
+        self.settling = GLib.timeout_add(self.SETTLE, self._settled)
+
+    def _settled(self):
+        """Put down after a move: grow away from the nearer edge, and say where it is now."""
+        self.settling = None
+        self.settle()
+        self.on_settled()
+        return False
+
     # --- where it is ---
+    def place(self, pos, anchor):
+        """Put it where it was left: the window at pos, its dot at the anchor end."""
+        self.win.move(*pos)
+        self.anchor = anchor
+
+    def position(self):
+        return list(self.win.get_position())
+
+    def on_screen(self):
+        """Whether it's shown, on one of the screens."""
+        if not self.win.get_mapped():
+            return False
+        x, y, w, h = self.dot_rect()
+        display = Gdk.Display.get_default()
+        for i in range(display.get_n_monitors()):
+            area = display.get_monitor(i).get_geometry()
+            if area.x <= x + w // 2 < area.x + area.width and area.y <= y + h // 2 < area.y + area.height:
+                return True
+        return False
+
     def left(self):
         """The capsule's x within the window."""
         return PAD if self.anchor == "left" else W - PAD - self.width
@@ -156,7 +232,7 @@ class Capsule:
         """Only the capsule takes clicks; the rest of the window passes them through."""
         gdk = self.win.get_window()
         if gdk:
-            region = cairo.Region(cairo.RectangleInt(int(self.left()), PAD, int(math.ceil(self.width)), H))
+            region = cairo.Region(cairo.RectangleInt(int(self.left()), PAD, math.ceil(self.width), H))
             gdk.input_shape_combine_region(region, 0, 0)
 
     # --- drawing ---

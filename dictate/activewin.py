@@ -3,17 +3,39 @@
 KDE (Linux): a tiny KWin script, loaded at runtime, reports each activation over D-Bus.
 Windows: asks the OS for the foreground window. macOS: asks for the frontmost app.
 Dictate's own windows are ignored, so this stays the app you were typing in."""
-import atexit, os, sys
+import atexit
+import logging
+import os
+import sys
+from dataclasses import dataclass
 from pathlib import Path
+
 from . import osio
 
+log = logging.getLogger(__name__)
+
+
+
+@dataclass(frozen=True)
+class Window:
+    """Where a dictation's text goes: an app here (its window class and title), or another computer (remote:
+    your keyboard is driving it through Synergy or similar, so its apps can't be seen)."""
+    cls: str = ""
+    title: str = ""
+    remote: bool = False
+
+    def describe(self) -> str:
+        """e.g. 'general - Acme - Slack (Slack)', for the model's context; empty if unknown."""
+        return f"{self.title} ({self.cls})" if self.cls else ""
+
+    def matches(self) -> str:
+        """What per-app refinements are matched against."""
+        return f"{self.cls} {self.title}"
+
+
+OTHER_COMPUTER = Window(remote=True)
 current = {"cls": "", "title": ""}
 on_switch = []  # callbacks run when another app gets focus (KDE only)
-
-
-def describe(app):
-    """e.g. 'general - Acme - Slack (Slack)'; empty if unknown."""
-    return f"{app['title']} ({app['cls']})" if app["cls"] else ""
 
 
 if sys.platform.startswith("linux"):
@@ -24,8 +46,8 @@ if sys.platform.startswith("linux"):
 <arg type="s" direction="in"/><arg type="s" direction="in"/><arg type="i" direction="in"/><arg type="b" direction="in"/>
 </method></interface></node>"""
 
-    def snapshot():
-        return dict(current)
+    def snapshot() -> Window:
+        return Window(**current)
 
     def _on_call(conn, sender, path, iface, method, params, invocation):
         cls, title, pid, switched = params.unpack()  # switched: focus moved here, not just a new title
@@ -45,7 +67,7 @@ if sys.platform.startswith("linux"):
             kwin.start()
             atexit.register(lambda: kwin.unloadScript("(s)", PLUGIN))
         except GLib.Error as err:  # not KDE, or KWin scripting unavailable: just no app context
-            print("activewin: unavailable:", err.message)
+            log.info("unavailable: %s", err.message)
 
     def start():
         Gio.bus_own_name(Gio.BusType.SESSION, "local.dictate", 0, _on_bus, None, None)
@@ -61,8 +83,8 @@ else:
             if pid != os.getpid():
                 current.update(cls=cls, title=title)
         except Exception as err:  # no app context is fine; never break dictation over it
-            print("activewin: unavailable:", err)
-        return dict(current)
+            log.info("unavailable: %s", err)
+        return Window(**current)
 
     if sys.platform == "win32":
         import ctypes
@@ -82,8 +104,8 @@ else:
             return pid.value, Path(exe.value).stem, title.value  # e.g. "slack", "general - Acme - Slack"
 
     else:  # macOS: AppKit and Quartz come with pynput's dependencies
-        from AppKit import NSWorkspace
         import Quartz
+        from AppKit import NSWorkspace
 
         def _frontmost():
             app = NSWorkspace.sharedWorkspace().frontmostApplication()

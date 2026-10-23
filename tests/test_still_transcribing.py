@@ -4,6 +4,7 @@ transcribing, with every way to stop it, Stop now and Keep going; a desktop noti
 on screen."""
 import time
 from datetime import date, timedelta
+
 from conftest import needs_session
 from harness.client import eventually
 

@@ -2,7 +2,13 @@
 """Downloads the models and the llama.cpp build for this OS into models/ and bin/. Run by the setup scripts.
 
 Safe to re-run: anything already present is skipped."""
-import platform, shutil, stat, sys, tarfile, urllib.request, zipfile
+import platform
+import shutil
+import stat
+import sys
+import tarfile
+import urllib.request
+import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent  # the project folder

@@ -4,7 +4,13 @@
 They get their own D-Bus and an invisible desktop, so they never touch your real session, your running
 Dictate or your data: a headless KWin with XWayland where KDE is installed (which also runs Dictate's KWin
 script for real), else Xvfb. With neither, only the tests that need no desktop run. See docs/TESTING.md."""
-import os, shlex, shutil, subprocess, sys, tempfile, time
+import os
+import shlex
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent

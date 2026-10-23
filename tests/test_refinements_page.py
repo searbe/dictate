@@ -1,6 +1,7 @@
-"""Refinements, in the Dictate window: creating, editing and deleting refinements, the vocabulary and the cleanup prompt.
-Each change is checked by what it does to the next dictation, not by what's in the settings file."""
+"""Refinements, in the Dictate window: creating, editing and deleting refinements, the vocabulary and the cleanup
+prompt. Each change is checked by what it does to the next dictation, not by what's in the settings file."""
 import json
+
 from conftest import needs_session
 from harness.client import eventually, refinement
 
@@ -67,7 +68,8 @@ def test_a_refinement_needs_a_name_a_free_letter_and_a_description(start, model)
 
 def test_editing_a_refinement_changes_what_it_does(start, model):
     model.rules({"prompt": "Shout everything", "op": "upper"})
-    app = open_manager(start, model, refinements=[{**refinement("Chat", "c", apps="slack"), "prompt": "Leave it alone"}])
+    app = open_manager(start, model,
+                       refinements=[{**refinement("Chat", "c", apps="slack"), "prompt": "Leave it alone"}])
     app.send("select", row="Chat", window_title=W)
     app.send("fill", name="text", text="Shout everything", window_title=W)
     app.click("Save", window=W)
@@ -124,7 +126,8 @@ def test_the_cleanup_prompt_can_be_edited_and_reset_to_the_default(start, model)
 
 
 def saved_prompt(app, name):
-    return next(s["prompt"] for s in json.loads((app.data / "refinements.json").read_text())["refinements"] if s["name"] == name)
+    return next(s["prompt"] for s in json.loads((app.data / "refinements.json").read_text())["refinements"]
+                if s["name"] == name)
 
 
 def edit_chat(start, model):

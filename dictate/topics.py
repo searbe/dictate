@@ -1,7 +1,7 @@
 """The topics of a conversation, kept up to date while it's transcribed, so someone in the call can glance at
 what's been discussed and what's being discussed now (scripts/bench_topics.py tries them on saved transcripts).
 
-Every so often the lines heard since the last time go to the refinement model (refine.ask), numbered, with the
+Every so often the lines heard since the last time go to the refinement model (llm.ask), numbered, with the
 topics so far and the few lines before them for context. It answers with the topics of those lines (at most
 three, in JSON), each with what those lines said about it and their numbers: carrying on an earlier topic (by
 its number) or a new one. So the list, and what's been said on each topic, only grows (a small model asked to
@@ -19,8 +19,13 @@ topics of a meeting well; merging joined its two topics on one bug, and nothing 
 turn are a topic each, it kept one person's four cameras apart, each with what was said of it. (Also tried:
 having the model say what's being tried, and telling it next time; it lumped everything after under that.)
 4B (CPU) took 8–19 s and was rougher: small talk kept as topics, and different subjects lumped into one."""
-import json, re
-from . import refine
+import json
+import logging
+import re
+
+from . import llm, prompts
+
+log = logging.getLogger(__name__)
 
 TICK = 5  # seconds between checks for whether an update is due (and whether the GPU has come free)
 FREE_FOR = 15  # seconds the GPU must be free, while the smaller model's on the CPU, to switch to the larger
@@ -34,44 +39,37 @@ RECENT = 8  # the latest topics are given with their last points; earlier ones b
 MERGE = 600  # seconds between asking which topics are the same subject
 MERGE_FROM = 4  # topics: fewer aren't worth asking about
 COLOURS = ("#7c8cff", "#ff9f43", "#2ed1a2", "#ff6b9a", "#f9d65c", "#b18cff", "#5ec8ff", "#9be15d")
-PROMPT = """You keep a live list of the topics of a meeting or call while it happens, for someone in it to glance at.
-You get the topics so far, and the transcript of what was said since, as numbered lines (after a few lines from before, for context). The transcript is from speech recognition: it has mis-heard words, cut-off sentences and lines given to the wrong speaker.
-
-Reply with the topics of the numbered lines, in the order they came up: at most 3, fewer is better. Each has:
-- topic: the number of the topic in the list whose subject the lines carry on, or 0 for a new subject.
-- title: 2 to 6 words (for a topic carried on, its title as it is).
-- said: one short sentence on what these lines say about it (opinions, problems, ideas, decisions, things to do), naming who where it matters.
-- lines: the numbers of the lines about it, including short replies to them.
-A topic is one subject people talk about for a while, such as a tool, a feature, a bug, a version being tried or a plan, not each remark. Lines on the same subject as a topic in the list carry it on (rather than start one much like it); a different subject is a new topic, even if it comes up in the same conversation or activity. When people try several things in turn, each is its own topic, and what they say goes under the one being tried at the time it's said.
-Leave out greetings, small talk and shouts while playing. If nothing else was said, reply with no topics. Don't invent anything that wasn't said."""
+PROMPT = prompts.load("topics")
 
 
 def schema(lines, known):
     """The answer's shape, for lines new lines and known topics: the model can only give numbers that exist
     (left to count, a small model can number lines on and on)."""
     number = lambda low, high: {"type": "integer", "minimum": low, "maximum": high}
-    return {"type": "object", "required": ["topics"], "properties": {"topics": {"type": "array", "maxItems": 3, "items": {
+    topic = {
         "type": "object", "required": ["topic", "title", "said", "lines"], "properties": {
             "topic": number(0, known), "title": {"type": "string", "maxLength": 60},
             "said": {"type": "string", "maxLength": 200},
-            "lines": {"type": "array", "minItems": 1, "maxItems": lines, "items": number(1, lines)}}}}}}
+            "lines": {"type": "array", "minItems": 1, "maxItems": lines, "items": number(1, lines)}}}
+    return {"type": "object", "required": ["topics"],
+            "properties": {"topics": {"type": "array", "maxItems": 3, "items": topic}}}
 
 
-MERGE_PROMPT = """You keep the list of topics of a meeting or call tidy while it happens. Below are its topics so far, numbered, each with what was said on it. Some may be one subject listed twice under different titles, because it came up again later (e.g. "Boost bug" and "Movement direction bug").
-
-Reply with the groups of topics that are one subject and should be one topic, each with a title for it (2 to 6 words). Only group topics that really are the same subject: different things that came up in the same discussion, or one after another, stay separate. Different options, versions or things tried or compared in turn (e.g. two cameras, two builds, two designs) are different subjects, even though they're the same kind of thing: never group them. If none are the same subject, reply with no groups."""
+MERGE_PROMPT = prompts.load("topics-merge")
 
 
-SAME_PROMPT = """Two topics from the list of topics of a meeting or call, each with what was said on it. Are they one subject that came up twice (so they should be one topic), rather than two different things, however related or close together in the conversation? Different options, versions or things tried in turn are different things."""
+SAME_PROMPT = prompts.load("topics-same")
 SAME_SCHEMA = {"type": "object", "required": ["same"], "properties": {"same": {"type": "boolean"}}}
 
 
 def merge_schema(known):
     number = {"type": "integer", "minimum": 1, "maximum": known}
-    return {"type": "object", "required": ["groups"], "properties": {"groups": {"type": "array", "maxItems": 5, "items": {
+    group = {
         "type": "object", "required": ["topics", "title"], "properties": {
             "topics": {"type": "array", "minItems": 2, "maxItems": known, "items": number},
-            "title": {"type": "string", "maxLength": 60}}}}}}
+            "title": {"type": "string", "maxLength": 60}}}
+    return {"type": "object", "required": ["groups"],
+            "properties": {"groups": {"type": "array", "maxItems": 5, "items": group}}}
 
 
 def similar(a, b):
@@ -100,6 +98,10 @@ class Topics:
     def data(self):
         return {"topics": self.topics, "of": list(self.of.items()), "now": self.now, "small": self.small}
 
+    def current(self):
+        """The title of the topic being talked about now, or None."""
+        return self.topics[self.now]["title"] if self.now is not None and self.now < len(self.topics) else None
+
     def colour(self, i):
         """The colour of topic i."""
         return colour(self.topics[i]["colour"])
@@ -121,11 +123,12 @@ class Topics:
 
     def ask(self, lines, before=()):
         """The model's answer for lines (slow: not on the GTK thread)."""
-        known = "\n".join(f"{i}. {t['title']}" + (f": {' '.join(t['points'][-2:])}" if i > len(self.topics) - RECENT else "")
+        known = "\n".join(f"{i}. {t['title']}"
+                          + (f": {' '.join(t['points'][-2:])}" if i > len(self.topics) - RECENT else "")
                           for i, t in enumerate(self.topics, 1)) or "(none yet)"
         context = "".join(f"(before) {who}: {text}\n" for _, who, text in before[-BEFORE:])
         numbered = "".join(f"{n}. {who}: {text}\n" for n, (_, who, text) in enumerate(lines, 1))
-        return refine.ask(PROMPT, f"Topics so far:\n{known}\n\nWhat was said since:\n<transcript>\n{context}{numbered}"
+        return llm.ask(PROMPT, f"Topics so far:\n{known}\n\nWhat was said since:\n<transcript>\n{context}{numbered}"
                                   f"</transcript>", schema(len(lines), len(self.topics)), max_tokens=1200)
 
     def apply(self, lines, reply):
@@ -134,7 +137,7 @@ class Topics:
             found = json.loads(reply)["topics"]
             assert isinstance(found, list)
         except (ValueError, KeyError, TypeError, AssertionError):
-            print("topics: the model's answer isn't topics:", reply[:100], "…", reply[-100:], flush=True)
+            log.warning("the model's answer isn't topics: %s … %s", reply[:100], reply[-100:])
             return False
         titles = {t["title"].lower(): i for i, t in enumerate(self.topics)}
         claimed = {}
@@ -147,7 +150,8 @@ class Topics:
                 continue
             number = t.get("topic")
             i = titles.get(title.lower())
-            if i is None and isinstance(number, int) and 1 <= number <= len(self.topics) and similar(title, self.topics[number - 1]["title"]):
+            if (i is None and isinstance(number, int) and 1 <= number <= len(self.topics)
+                    and similar(title, self.topics[number - 1]["title"])):
                 i = number - 1
             if i is None:
                 i = titles[title.lower()] = len(self.topics)
@@ -182,15 +186,16 @@ class Topics:
         about = lambda i: f"{self.topics[i]['title']}: {' '.join(self.topics[i]['points'])}"
         listed = "\n".join(f"{i}. {about(i - 1)}" for i in range(1, len(self.topics) + 1))
         try:
-            groups = json.loads(refine.ask(MERGE_PROMPT, f"Topics:\n{listed}", merge_schema(len(self.topics)),
+            groups = json.loads(llm.ask(MERGE_PROMPT, f"Topics:\n{listed}", merge_schema(len(self.topics)),
                                            max_tokens=500))["groups"]
         except (KeyError, TypeError):
             return '{"groups": []}'
         checked = []
         for g in groups if isinstance(groups, list) else []:
             members = sorted({n for n in g.get("topics") or [] if isinstance(n, int) and 1 <= n <= len(self.topics)})
-            same = [n for n in members[1:] if json.loads(refine.ask(
-                SAME_PROMPT, f"A. {about(members[0] - 1)}\n\nB. {about(n - 1)}", SAME_SCHEMA, max_tokens=20)).get("same") is True]
+            same = [n for n in members[1:] if json.loads(llm.ask(
+                SAME_PROMPT, f"A. {about(members[0] - 1)}\n\nB. {about(n - 1)}", SAME_SCHEMA,
+                max_tokens=20)).get("same") is True]
             if same:
                 checked.append({**g, "topics": [members[0], *same]})
         return json.dumps({"groups": checked})
@@ -202,13 +207,14 @@ class Topics:
             groups = json.loads(reply)["groups"]
             assert isinstance(groups, list)
         except (ValueError, KeyError, TypeError, AssertionError):
-            print("topics: the model's answer isn't groups of topics:", reply[:100], flush=True)
+            log.warning("the model's answer isn't groups of topics: %s", reply[:100])
             return False
         into, used = {}, set()  # merged topic -> the one it's merged into
         for g in groups:
             if not isinstance(g, dict):
                 continue
-            members = sorted({n - 1 for n in g.get("topics") or [] if isinstance(n, int) and 1 <= n <= len(self.topics)} - used)
+            members = sorted({n - 1 for n in g.get("topics") or [] if isinstance(n, int) and 1 <= n <= len(self.topics)}
+                             - used)
             if len(members) < 2:
                 continue
             keep, title = members[0], " ".join(str(g.get("title", "")).split())
@@ -218,7 +224,7 @@ class Topics:
             if title:
                 self.topics[keep]["title"] = title
             used.update(members)
-            print("topics: merged", [self.topics[i]["title"] for i in members[1:]], "into", self.topics[keep]["title"], flush=True)
+            log.info("merged %s into %s", [self.topics[i]["title"] for i in members[1:]], self.topics[keep]["title"])
         if not into:
             return False
         moved = {}  # old index -> new

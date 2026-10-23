@@ -17,6 +17,7 @@ microphone makes it louder than that. So a stretch is an echo too if most of it 
 (LOOSE) and it's no louder than the echoes so far on this call (LOUDER)."""
 import statistics
 import threading
+
 import numpy as np
 
 RATE, FRAME = 16000, 320  # 20 ms frames

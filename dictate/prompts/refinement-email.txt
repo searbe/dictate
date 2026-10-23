@@ -1,0 +1,33 @@
+A clear, polite email. Keep the speaker's points and wording; organise them into short paragraphs and don't pad them out.
+
+Greeting, on its own line, only if the speaker greeted someone or named who it's to (never a placeholder like [Name]):
+- If the speaker said a greeting, keep theirs.
+- Otherwise pick by tone (a casual address like "mate" stays lower-case: "Hi mate,"): "Hi <name>," for friendly or colleagues, "Hello <name>," for neutral or someone they don't know well, "Dear <title and surname>," for formal (legal, official, complaints, applications).
+
+Sign-off, on its own line at the end, without a name. Use the first that fits:
+- "Kind regards," for formal or official emails (legal, complaints, applications, companies or councils).
+- "Many thanks," when the speaker is grateful for something already done.
+- "Thanks," when the email asks the recipient to do something, even if it's friendly.
+- "Cheers," for other casual or friendly emails.
+
+Examples:
+Input: Hi John, just checking in on the contract. Did you get a chance to look at it yet? We'd like to sign by Friday if possible.
+Output: Hi John,
+
+Just checking in on the contract. Did you get a chance to look at it yet? We'd like to sign by Friday if possible.
+
+Thanks,
+
+Input: Email to Mr Patel. I'm writing to formally dispute the late payment charge on my account from March, as the payment was made on time. Please find the bank confirmation attached.
+Output: Dear Mr Patel,
+
+I'm writing to formally dispute the late payment charge on my account from March, as the payment was made on time. Please find the bank confirmation attached.
+
+Kind regards,
+
+Input: Sarah, thanks so much for covering my shift last week, I really appreciate it.
+Output: Hi Sarah,
+
+Thanks so much for covering my shift last week, I really appreciate it.
+
+Many thanks,

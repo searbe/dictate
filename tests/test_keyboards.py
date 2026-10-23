@@ -1,20 +1,27 @@
 """Keyboards coming and going while Dictate runs (Linux): one unplugged, or a USB hub dropping out for a
 moment, mustn't stop Ctrl+Win working, or leave it held; one plugged in works from then on. The keyboards here
 are stand-ins (no key reaches your desktop), but the hotkey watching them is the real one (osio.Hotkey)."""
-import glob, os, sys, time
+import glob
+import os
+import sys
+import time
+
 import pytest
 from gi.repository import GLib
 
 pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="evdev is Linux's")
 if sys.platform.startswith("linux"):
-    from evdev import InputEvent, ecodes as e
+    from evdev import InputEvent
+    from evdev import ecodes as e
+
     from dictate import osio
 
 
 class Keyboard:
     """A stand-in keyboard at path: keys pressed on it are read as from a real one."""
 
-    def __init__(self, folder, n, name="USB keyboard", keys=(e.KEY_LEFTCTRL,) if sys.platform.startswith("linux") else ()):
+    def __init__(self, folder, n, name="USB keyboard",
+                 keys=(e.KEY_LEFTCTRL,) if sys.platform.startswith("linux") else ()):
         self.path, self.name, self.keys, self.queued, self.gone = str(folder / f"event{n}"), name, keys, [], False
         self.r, self.w = os.pipe()
         open(self.path, "w").close()  # the device's node appearing
@@ -54,7 +61,8 @@ def plugged(tmp_path, monkeypatch):
             raise OSError(2, "No such device")
         return devices[path]
     monkeypatch.setattr(osio.evdev, "InputDevice", device)
-    monkeypatch.setattr(osio.evdev, "list_devices", lambda folder: sorted(glob.glob(f"{folder}/event*")))  # (not real devices)
+    monkeypatch.setattr(osio.evdev, "list_devices",
+                        lambda folder: sorted(glob.glob(f"{folder}/event*")))  # (not real devices)
 
     def plug(n, **kw):
         kb = Keyboard(tmp_path, n, **kw)
@@ -67,7 +75,8 @@ def plugged(tmp_path, monkeypatch):
 
 def hotkey(plugged):
     """The real hotkey, watching plugged's keyboards; returns it and the list its presses (True), releases
-    (False) and other apps' shortcuts ("other") go to. (Each test's has its own folder: the hotkeys of earlier tests are still running.)"""
+    (False) and other apps' shortcuts ("other") go to. (Each test's has its own folder: the hotkeys of earlier tests are
+    still running.)"""
     class Hotkey(osio.Hotkey):
         DIR, RESCAN = plugged.folder, 0.05
     calls = []

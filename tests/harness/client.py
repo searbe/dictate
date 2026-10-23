@@ -1,5 +1,10 @@
 """The test's side of harness/app.py: starts Dictate in its own process and talks to it like a user would."""
-import json, os, subprocess, sys, threading, time
+import json
+import os
+import subprocess
+import sys
+import threading
+import time
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -48,7 +53,8 @@ class Dictate:
 
     def happened(self, kind, after=0, **match):
         with self.changed:
-            return any(ev["type"] == kind and all(ev.get(k) == v for k, v in match.items()) for ev in self.events[after:])
+            return any(ev["type"] == kind and all(ev.get(k) == v for k, v in match.items())
+                       for ev in self.events[after:])
 
     def send(self, cmd, **args):
         self.next_id += 1
@@ -139,7 +145,7 @@ class Dictate:
     def dictations(self):
         """What's been kept of each dictation (data/dictations.jsonl), oldest first."""
         path = self.data / "dictations.jsonl"
-        return [json.loads(l) for l in path.read_text().splitlines()] if path.exists() else []
+        return [json.loads(line) for line in path.read_text().splitlines()] if path.exists() else []
 
     def focus(self, cls, title, switched=True):
         """Tell Dictate which window has focus, exactly as the KWin script does over D-Bus."""

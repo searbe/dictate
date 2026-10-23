@@ -2,11 +2,17 @@
 
 Live transcribes while recording: at each pause, the speech so far is transcribed in the background,
 so when recording stops only the stretch since the last pause is left. transcribe() does a whole file."""
-import collections, os, threading, time, wave
+import collections
+import os
+import threading
+import time
+import wave
+
 import numpy as np
 import sherpa_onnx
 
 from . import ROOT
+
 MODELS = ROOT / "models"
 RATE = 16000
 PREVIEW = 1.0  # seconds between previews of the stretch still being spoken (transcribe mode)
@@ -39,7 +45,8 @@ def vad_config(pause):
 
 def stretches(samples, pause=0.4):
     """[(start sample, samples)]: the stretches of speech in samples, as Live would find them."""
-    vad = sherpa_onnx.VoiceActivityDetector(vad_config(pause), buffer_size_in_seconds=max(60, len(samples) // RATE + 10))
+    vad = sherpa_onnx.VoiceActivityDetector(vad_config(pause),
+                                            buffer_size_in_seconds=max(60, len(samples) // RATE + 10))
     win = _vad_cfg.silero_vad.window_size
     for i in range(0, len(samples), win):
         vad.accept_waveform(samples[i:i + win])

@@ -3,10 +3,24 @@
 Linux reads keyboards with evdev, records with pw-record and pastes through uinput (works on Wayland).
 Windows and macOS use pynput for keys and sounddevice for the microphone.
 """
-import ctypes, itertools, os, signal, subprocess, sys, threading, time, unicodedata, wave
+import ctypes
+import itertools
+import logging
+import os
+import signal
+import subprocess
+import sys
+import threading
+import time
+import unicodedata
+import wave
 from pathlib import Path
+
 from gi.repository import GLib
+
 from . import ROOT
+
+log = logging.getLogger(__name__)
 
 LINUX, WINDOWS, MAC = sys.platform.startswith("linux"), sys.platform == "win32", sys.platform == "darwin"
 HEARS_SPEAKERS = LINUX  # Recorder can record what the computer plays (transcribe mode)
@@ -42,7 +56,7 @@ def notify(title, body, actions=(), on_action=lambda key: None, image=None):
     """A desktop notification that stays until it's dismissed, with buttons (actions: [(key, label)]);
     on_action(key) runs on the GTK thread when one's clicked; image: a PNG's path. Linux only (the
     freedesktop Notifications service); elsewhere, or if there's none, it's only logged."""
-    print("notification:", title, "-", body, flush=True)
+    log.info("notification: %s - %s", title, body)
     if not LINUX:
         return
     from gi.repository import Gio
@@ -55,12 +69,12 @@ def notify(title, body, actions=(), on_action=lambda key: None, image=None):
         hints = {"image-path": GLib.Variant("s", str(image))} if image else {}
         reply = bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
                               "org.freedesktop.Notifications", "Notify",
-                              GLib.Variant("(susssasa{sv}i)", ("Dictate", 0, str(ROOT / "dictate/icon.png"), title, body,
-                                                               [x for a in actions for x in a], hints, 0)),
+                              GLib.Variant("(susssasa{sv}i)", ("Dictate", 0, str(ROOT / "dictate/icon.png"), title,
+                                                               body, [x for a in actions for x in a], hints, 0)),
                               None, Gio.DBusCallFlags.NONE, 2000, None)
         _notified[reply.unpack()[0]] = on_action
     except GLib.Error as err:
-        print("notification: couldn't show it:", err.message, flush=True)
+        log.warning("notification: couldn't show it: %s", err.message)
 
 
 def _clicked(nid, key):
@@ -90,7 +104,8 @@ class Chord:
     MODIFIERS = {"ctrl", "meta", "alt"}
 
     def __init__(self, callback, on_again=None, on_other=lambda: None, letters=None):
-        self.callback, self.on_again, self.held, self.active, self.alt, self.letter = callback, on_again, {}, False, False, None
+        self.callback, self.on_again, self.held = callback, on_again, {}
+        self.active, self.alt, self.letter = False, False, None
         self.on_other, self.letters = on_other, letters  # letters None: any letter is a refinement's
         self.pressed_at = None  # when the chord's key was physically pressed (wall clock), for latency logs
         self.lifted = None  # when Win was let go with Ctrl still down (monotonic), until Ctrl is let go too
@@ -151,6 +166,7 @@ class Chord:
 
 if LINUX:
     import selectors
+
     import evdev
     from evdev import ecodes as e
 
@@ -193,7 +209,7 @@ if LINUX:
                 if keyboard:
                     self.sel.register(dev, selectors.EVENT_READ)
                     self.watching[path] = dev
-                    print("hotkey: watching", dev.name, flush=True)
+                    log.info("hotkey: watching %s", dev.name)
                 else:
                     dev.close()
 
@@ -204,7 +220,7 @@ if LINUX:
                 dev.close()
             except OSError:
                 pass
-            print("hotkey: keyboard gone:", dev.name, flush=True)
+            log.info("hotkey: keyboard gone: %s", dev.name)
             self.chord.release_all()  # its keys can't be let go of now: don't leave Ctrl+Win held
 
         def run(self):
@@ -243,7 +259,8 @@ if LINUX:
             if not on_audio:
                 self.proc, self.reader = subprocess.Popen([*cmd, path], **TIED), None
                 return
-            import numpy as np, soundfile
+            import numpy as np
+            import soundfile
             out = soundfile.SoundFile(path, "w", RATE, 1, format="OGG", subtype="OPUS")
             self.proc = subprocess.Popen([*cmd, "--raw", "-"], stdout=subprocess.PIPE, **TIED)
 
@@ -276,7 +293,8 @@ if LINUX:
                 f'node.passive = true }} capture.props = {{ node.name = "{name}-capture" }} }}')
         try:
             proc = subprocess.Popen(["pw-cli", "-m", "load-module", "libpipewire-module-echo-cancel", args],
-                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **TIED)
+                                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    **TIED)
         except OSError:
             return None
         for _ in range(30):  # it's there within a few tenths of a second
@@ -331,7 +349,8 @@ if LINUX:
                 if c not in self.keys:
                     continue
                 code, shift = self.keys[c]
-                for k, v in ([(e.KEY_LEFTSHIFT, 1)] if shift else []) + [(code, 1), (code, 0)] + ([(e.KEY_LEFTSHIFT, 0)] if shift else []):
+                for k, v in (([(e.KEY_LEFTSHIFT, 1)] if shift else []) + [(code, 1), (code, 0)]
+                             + ([(e.KEY_LEFTSHIFT, 0)] if shift else [])):
                     self.kbd.write(e.EV_KEY, k, v)
                     self.kbd.syn()
                     time.sleep(0.003)  # let the forwarding (e.g. Synergy over the network) keep up
@@ -372,7 +391,7 @@ else:
         def start(self, path, speakers=False, on_audio=None, echo_cancel=False):
             if speakers or on_audio:  # (so echo_cancel doesn't arise)
                 raise NotImplementedError("recording the speakers is Linux-only for now")
-            self.wav = wave.open(path, "wb")
+            self.wav = wave.open(path, "wb")  # noqa: SIM115 (open until stop())
             self.wav.setnchannels(1)
             self.wav.setsampwidth(2)
             self.wav.setframerate(RATE)
@@ -422,7 +441,8 @@ class Player:
                 self.on_playing(False)
             on_done()
         if LINUX:
-            proc = self.proc = subprocess.Popen(["pw-play", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, **TIED)
+            proc = self.proc = subprocess.Popen(["pw-play", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                                **TIED)
             wait = proc.wait
         else:
             import numpy as np

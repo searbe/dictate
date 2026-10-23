@@ -3,10 +3,12 @@
 Prints "focused" each time it gets keyboard focus. Lines on stdin: "title <new title>" renames it
 (like a browser switching tabs), "focus" asks for focus back, "quit" closes it."""
 import sys
+
 import gi
+
 gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
-from gi.repository import GLib, Gtk  # noqa: E402
+from gi.repository import GLib, Gtk
 
 GLib.set_prgname(sys.argv[1])  # becomes the window's class, which KWin reports
 win = Gtk.Window(title=sys.argv[2], default_width=400, default_height=300)

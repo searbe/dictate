@@ -1,5 +1,7 @@
 """Holding the hotkey, speaking and releasing: what ends up pasted, on the clipboard and in history."""
-import os, time
+import os
+import time
+
 from conftest import needs_session
 from harness.client import refinement
 

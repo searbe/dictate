@@ -1,7 +1,7 @@
 # Dictate's design system
 
-Every surface of Dictate follows this. The values live in code in `dictate/design.py` (which generates the app's
-CSS from them); use its names, never raw colours or sizes. When something new needs a value that isn't here, add
+Every surface of Dictate follows this. The values live in code in `dictate/design.py` (which fills them into the app's
+stylesheet, `dictate/style.css`); use its names, never raw colours or sizes. When something new needs a value that isn't here, add
 it here and there first. Why it looks like this: [PROPOSALS.md](PROPOSALS.md).
 
 ## Principles
@@ -175,7 +175,7 @@ Build every surface from these, in `design.py`; add a component here before usin
   (`.title`, `.small`, `.caption`, `.chip`, `.row-item`, `btn primary`…). A new colour or size goes into
   `SCHEMES`/`TYPE` and this file first.
 - **Components, not widgets.** `design.button`, `icon_button`, `field`, `setting_row`, `group_header`,
-  `empty_state`, `warning_strip`, `status_pill`, `Hud`; pages are built with `hub.page_header`. Hand-built
+  `empty_state`, `warning_strip`, `status_pill`, `Hud`; pages are built with `design.page_header`. Hand-built
   widgets get the matching class.
 - **Light and dark.** Everything takes its colours from the scheme at draw time; things drawn in cairo (the
   capsule, the tray icon, text-view tags) redraw from `design.on_scheme` when it changes.

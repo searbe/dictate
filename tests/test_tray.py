@@ -1,6 +1,10 @@
 """The system tray icon, seen from the tray's side: the D-Bus StatusNotifierItem protocol that Plasma speaks."""
-import sys, threading, time
+import sys
+import threading
+import time
+
 import pytest
+
 from conftest import needs_session
 
 pytestmark = [needs_session, pytest.mark.skipif(not sys.platform.startswith("linux"), reason="KDE tray protocol")]
@@ -58,7 +62,7 @@ def registered(items, timeout=10):
 
 def labels(node):
     _id, props, children = node
-    return [props.get("label", "")] + [l for c in children for l in labels(c)]
+    return [props.get("label", "")] + [label for c in children for label in labels(c)]
 
 
 def redness(pixmaps):
@@ -74,7 +78,8 @@ def test_dictate_shows_a_tray_icon_with_the_same_menu(start, tray):
 
     assert prop(service, "Title") == "Dictate"
     _rev, layout = item_call(service, "com.canonical.dbusmenu", "GetLayout", (0, -1, ["label"]), "(iias)")
-    assert {"Open Dictate", "Refine text", "Default refinement", "Dictations", "Refinements…", "Settings…", "Run at startup", "Quit"} <= set(labels(layout))
+    assert {"Open Dictate", "Refine text", "Default refinement", "Dictations", "Refinements…", "Settings…",
+            "Run at startup", "Quit"} <= set(labels(layout))
 
 
 def test_the_tray_icon_turns_red_while_recording(start, tray):

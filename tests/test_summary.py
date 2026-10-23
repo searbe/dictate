@@ -3,6 +3,7 @@ it's about, what was discussed and agreed, the action points), kept up to date a
 when it's stopped; saved at the top of the transcript. Its prompt is in Refinements. The model writes it (here, its
 stand-in: see harness/fake_llama.py)."""
 import json
+
 from conftest import needs_session
 from harness.client import eventually
 

@@ -9,7 +9,7 @@ There are two kinds of testing:
 ## Running the automated tests
 
 ```sh
-.venv/bin/pip install --group dev   # once: installs pytest
+.venv/bin/pip install --group dev   # once: installs pytest and ruff
 python scripts/test.py              # everything (about 3 min); add pytest options, e.g. -k dictations, -x
 ```
 
@@ -61,6 +61,7 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 | Keys typed and pasted on US and UK layouts, Shift+Enter for new lines, plain punctuation | `test_typing_and_pasting.py` |
 | Speech-to-text with the real models: English, German, silence and noise, live = whole-file | `test_speech_to_text.py` |
 | Downloads: complete, interrupted, not repeated; unpacking | `test_downloads.py` |
+| Dictate's files: saved whole or not at all (a failed save leaves the old file), missing or damaged ones read as defaults, recordings deleted when their time is up but never one being recorded | `test_files.py` |
 | Transcribe mode: what's being said shown before the pause and replaced by the whole stretch (not saved; not while muted or paused), a stretch cut between voices loses no words (real models), the Ctrl+Win, Win gesture (and not mistaking a dictation for it), speakers and microphone labelled, paragraphs, stop / Stop / menu, closing the window carries on, pause, dictating meanwhile, echoes (the same words at once, and with the real models a made-up room's echo), playback from Dictations, recordings kept or not, a transcript where nothing was heard not kept, transcript recordings kept for their own setting, the real model on speakers audio | `test_transcribe_mode.py` |
 | Transcripts: listed newest first with when and how long, the recording at the top and kept up to date while reading others, reading one, copy, delete (with confirmation) with its recordings, playing the call back (only while its recordings are kept; not while it's recorded), none yet, clicking the capsule while recording | `test_transcripts_window.py` |
 | Echoes: the speakers heard again by the microphone (in made-up rooms, quieter or later) told from you speaking, alone or over them | `test_echo.py` |

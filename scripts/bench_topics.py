@@ -6,13 +6,16 @@ them: each paragraph cut into sentences, about its stretches, spread over its ti
 schedule (topics.EVERY, MOST, WORDS) and merged every topics.MERGE seconds and at the end, as a call is. Prints
 each update's time and the topic now, then each topic with what was said on it and its lines, and what no topic
 claimed. Nothing is saved. --cpu uses the smaller model, as when the graphics card is busy."""
-import re, sys, time
+import re
+import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import dictate  # noqa: E402
+import dictate
+
 dictate.bootstrap(gui=False)
-from dictate import refine, topics, transcript  # noqa: E402
+from dictate import llm, topics, transcript
 
 
 def stretches(path):
@@ -43,9 +46,9 @@ def replay(path):
             found.update(new, [(s, w, t) for s, e, w, t in lines[:sorted_upto]])
             sorted_upto, last = n, now
             title = found.topics[found.now]["title"] if found.now is not None else None
-            print(f"--- {min(now, lines[-1][1]) / 60:4.1f} min: {len(new):3} lines, {time.time() - took:4.1f} s; now: {title}",
-                  flush=True)
-            if (n == len(lines) or now - merged >= topics.MERGE) and refine.mode() == "gpu":
+            print(f"--- {min(now, lines[-1][1]) / 60:4.1f} min: {len(new):3} lines, "
+                  f"{time.time() - took:4.1f} s; now: {title}", flush=True)
+            if (n == len(lines) or now - merged >= topics.MERGE) and llm.server.mode == "gpu":
                 found.merge()
                 merged = now
     people = found.people([(s, w, t) for s, e, w, t in lines])
@@ -58,10 +61,10 @@ def replay(path):
 def main():
     paths = [Path(a) for a in sys.argv[1:] if not a.startswith("--")] or \
         sorted(transcript.FOLDER.glob("*.md"), key=lambda p: -len(p.read_text()))[:3]
-    refine.warm("cpu" if "--cpu" in sys.argv else None, hold=False)
+    llm.server.warm("cpu" if "--cpu" in sys.argv else None, hold=False)
     for path in paths:
         replay(path)
-    refine.stop()
+    llm.server.stop()
 
 
 if __name__ == "__main__":

@@ -4,9 +4,13 @@ are as wide as you drag them, remembered) (the current one marked while it's rec
 click one to go to it). The one being recorded (the app's session) is always first in the list and grows as it's
 heard (kept scrolled to the end unless you've scrolled up); while it's shown, the header has its status, Pause /
 Resume and Stop. A saved one has Copy all, Open file, Open folder and Delete. Closing the window doesn't stop it."""
-import json, threading
+import json
+import threading
+
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango
-from . import design as d, huds, refine, summary, transcript, voices
+
+from . import design as d
+from . import huds, llm, summary, transcript, voices
 
 
 def transcript_view():
@@ -99,9 +103,10 @@ def show_transcript(view, paragraphs, previews=(), found=None, marks=None):
 
 def small_model(session, found):
     """A warning, if topics are being (or were) found by the smaller, less reliable model on the CPU."""
-    why = "your graphics card {}" if refine.gpu_present() else "this computer has no graphics card it can use"
+    why = "your graphics card {}" if llm.gpu_present() else "this computer has no graphics card it can use"
     if session:
-        return f"Warning: using a less reliable model because {why.format('is busy')}." if refine.mode() == "cpu" else None
+        return (f"Warning: using a less reliable model because {why.format('is busy')}." if llm.server.mode == "cpu"
+                else None)
     if found and found.small and found.topics:
         return f"These topics were found with a less reliable model, as {why.format('was busy')}."
     return None
@@ -125,7 +130,8 @@ class TranscriptsPage:
         self.list = d.classes(Gtk.ListBox(), "pick")
         self.list.connect("row-selected", lambda _, row: row and self.show(row.item))
         left = d.classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=160), "panel")
-        left.pack_start(d.classes(Gtk.Label(label="Transcripts", xalign=0, margin=16, margin_bottom=8), "title"), False, False, 0)
+        left.pack_start(d.classes(Gtk.Label(label="Transcripts", xalign=0, margin=16, margin_bottom=8), "title"),
+                        False, False, 0)
         left.pack_start(d.scrolled(self.list), True, True, 0)
         folder = d.button("Open folder", lambda: (transcript.FOLDER.mkdir(parents=True, exist_ok=True),
                                                   open_uri(transcript.FOLDER)), "quiet", icon="folder", small=True)
@@ -144,9 +150,11 @@ class TranscriptsPage:
         self.pause_btn = d.icon_button("pause", "Pause", self.toggle_pause)  # (icons: the column stays narrow)
         self.live_actions = Gtk.Box(spacing=8)
         self.live_actions.pack_start(self.pause_btn, False, False, 0)
-        self.live_actions.pack_start(d.button("Stop", lambda: self.app.stop_transcribing(), "primary", icon="stop"), False, False, 0)
+        self.live_actions.pack_start(d.button("Stop", lambda: self.app.stop_transcribing(), "primary", icon="stop"),
+                                     False, False, 0)
         self.saved_actions = Gtk.Box(spacing=2)
-        self.play_btn = d.icon_button("play", "Play", lambda: self.play_from(0) if not self.playing else self.app.player.stop())
+        self.play_btn = d.icon_button("play", "Play",
+                                      lambda: self.play_from(0) if not self.playing else self.app.player.stop())
         self.saved_actions.pack_start(self.play_btn, False, False, 0)
         copy = d.icon_button("copy", "Copy all", lambda: (
             Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(self.shown_item["path"].read_text(), -1),
@@ -163,8 +171,8 @@ class TranscriptsPage:
             box.set_valign(Gtk.Align.START)
             box.set_no_show_all(True)
             header.pack_end(box, False, False, 0)
-        self.people = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, column_spacing=6, row_spacing=6, margin_start=24,
-                                  margin_end=24, margin_bottom=8, no_show_all=True, homogeneous=False,
+        self.people = Gtk.FlowBox(selection_mode=Gtk.SelectionMode.NONE, column_spacing=6, row_spacing=6,
+                                  margin_start=24, margin_end=24, margin_bottom=8, no_show_all=True, homogeneous=False,
                                   max_children_per_line=40)  # (wraps)
         self.text = transcript_view()
         self.text.connect("button-release-event", self.clicked)
@@ -211,7 +219,7 @@ class TranscriptsPage:
 
         # list | transcript | topics: the list and the rail keep the width they're dragged to (resize=False),
         # the transcript takes the rest
-        self.panes = self.app.cfg.get("transcript_panes", list(self.PANES))
+        self.panes = self.app.settings.get("transcript_panes", list(self.PANES))
         # (each divider: a hairline with 2 px either side to grab, in the colour of the pane beside it)
         self.outer = d.classes(Gtk.Paned(wide_handle=False), "after-panel")
         self.inner = d.classes(Gtk.Paned(wide_handle=False), "before-panel")
@@ -242,7 +250,7 @@ class TranscriptsPage:
         self.panes = [self.outer.get_position(), self.inner.get_allocated_width() - self.inner.get_position()]
         if self.saving:
             GLib.source_remove(self.saving)
-        self.saving = GLib.timeout_add(500, lambda: (self.app.save_state(transcript_panes=self.panes),
+        self.saving = GLib.timeout_add(500, lambda: (self.app.settings.update(transcript_panes=self.panes),
                                                      setattr(self, "saving", None)) and False)
 
     @property
@@ -363,9 +371,7 @@ class TranscriptsPage:
             self.pause_btn.icon.set_icon("record" if session.paused else "pause")
             dot = self.status.get_children()[0].get_style_context()
             (dot.add_class if session.paused else dot.remove_class)("paused")
-            seconds = int(session.now())
-            self.status.text.set_text(f"{seconds // 3600}:{seconds // 60 % 60:02d}:{seconds % 60:02d}" if seconds >= 3600
-                                      else f"{seconds // 60}:{seconds % 60:02d}")
+            self.status.text.set_text(transcript.clock(session.now()))
             self.status.set_tooltip_text("Paused" if session.paused else "Recording")
             self.meta.set_text("Nothing is being added" if session.paused else self.LISTENING)
             found, marks, people = session.topic_view()
@@ -385,7 +391,8 @@ class TranscriptsPage:
         self.show_summary(session.summary if session else transcript.read_summary(item["path"]), bool(session),
                           bool(item.get("paragraphs")))
         nameable = not session or session.voices  # without the voice model, a recording's voices are all "Them"
-        self.show_people(transcript.labels(session.paragraphs() if session else item.get("paragraphs", [])) if nameable else [])
+        self.show_people(transcript.labels(session.paragraphs() if session else item.get("paragraphs", []))
+                         if nameable else [])
 
     def show_topics(self, found, people, live, heard, warning=None):
         """The topics of the transcript shown: each a card edged in its colour, with who brought it up and who
@@ -393,7 +400,8 @@ class TranscriptsPage:
         by the less reliable model, or None."""
         topics_ = found.topics if found else []
         now = found.now if found and live else None
-        shown = (self.shown_item["path"], json.dumps(topics_, sort_keys=True), people, now, live, heard, warning, d.scheme)
+        shown = (self.shown_item["path"], json.dumps(topics_, sort_keys=True), people, now, live, heard, warning,
+                 d.scheme)
         if shown == self.topics.shown:
             return
         self.topics.shown = shown
@@ -488,7 +496,8 @@ class TranscriptsPage:
                       "As it was when it stopped")
             top.pack_start(d.text(status, "caption", wrap=True), True, True, 0)
             copy = d.icon_button("copy", "Copy summary", lambda: (
-                Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(text, -1), d.flash(copy, "Copied", "Copy summary", "copy")))
+                Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(text, -1),
+                d.flash(copy, "Copied", "Copy summary", "copy")))
             top.pack_end(copy, False, False, 0)
             self.summary.pack_start(top, False, False, 0)
             first = True
@@ -523,7 +532,7 @@ class TranscriptsPage:
             kid.destroy()
         self.people.add(d.text("Speakers", "caption", margin_end=4))
         for label in labels:
-            self.people.add(d.button(label, lambda l=label: self.rename(l), small=True, tooltip=f"Rename {label}"))
+            self.people.add(d.button(label, lambda who=label: self.rename(who), small=True, tooltip=f"Rename {label}"))
         for kid in self.people.get_children():
             kid.show_all()
         self.people.set_visible(bool(labels))

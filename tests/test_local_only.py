@@ -3,8 +3,12 @@ refinement model clean it up. Only the keyboard, microphone and paste are stand-
 
 scripts/prove_local.py runs this inside a sealed sandbox with no network and records every network call that
 every process makes, to show that Dictate works entirely on this computer."""
-import shutil, subprocess, sys
+import shutil
+import subprocess
+import sys
+
 import pytest
+
 from conftest import MODELS, ROOT, needs_models, needs_session, sample_speech
 
 LLAMA = ROOT / "bin/llama/llama-server"
@@ -15,7 +19,7 @@ SAID = "ask not what your country can do for you"
 
 
 def test_a_real_dictation_is_transcribed_and_refined_on_this_computer(start, tmp_path):
-    from dictate.refine import CLEANUP
+    from dictate.refinements import CLEANUP
     shout = {"name": "Shout", "key": "s", "apps": "",
              "prompt": "Rewrite the message in CAPITAL LETTERS. Change nothing else."}  # unmistakably the model's work
     app = start(refinements=[shout], cleanup=CLEANUP, llama=LLAMA,

@@ -3,6 +3,7 @@ made up: the speakers' sound a moment later, quieter, duller and ringing on. How
 in echo.py's notes."""
 import numpy as np
 import soundfile
+
 from conftest import needs_models, sample_speech
 from dictate import echo
 

@@ -1,0 +1,8 @@
+name: Lint
+on: [push, pull_request]
+jobs:
+  ruff:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx run ruff==0.17.2 check .

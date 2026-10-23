@@ -1,8 +1,12 @@
 """Speech-to-text with the real models (Silero VAD + Parakeet). Deterministic: the same audio always gives the
 same text. Needs the downloaded models; uses the sample recordings that come with Parakeet."""
-import threading, time, wave
+import threading
+import time
+import wave
+
 import numpy as np
 import pytest
+
 from conftest import MODELS, needs_models
 
 pytestmark = [needs_models, pytest.mark.models]

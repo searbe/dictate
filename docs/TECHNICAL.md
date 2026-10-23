@@ -92,16 +92,24 @@ Dictate, keyboard and microphone (quit Dictate first). It needs `bubblewrap` and
 Ubuntu: `sudo apt install bubblewrap strace`).
 
 ## Code
-- `dictate.py` starts the app; the app is the `dictate/` package (each module explains itself at the top):
-  `app.py` (menu, dictation pipeline), `capsule.py`, `hub.py` and `transcripts_page.py` (the Dictate window),
-  `huds.py` (picker, reminders, dialogs), `design.py` (the design system), `osio.py` (hotkey, recording, pasting
-  per OS), `stt.py` (speech to text), `refine.py` (cleanup and refinements), `transcript.py`, `voices.py`, `echo.py`,
-  `topics.py` and `summary.py` (transcribe mode), `remote.py` (another computer has the keyboard), `tray.py`,
-  `activewin.py`.
+- `dictate.py` starts the app; the app is the `dictate/` package. Each module explains itself at the top:
+  - **The app:** `app.py` (the dictation pipeline and transcribe mode, tying the rest together), `capsule.py`,
+    `menu.py` (the capsule's menu, also in the tray), `tray.py`.
+  - **Dictating:** `osio.py` (hotkey, recording and pasting, per OS), `stt.py` (speech to text), `refine.py`
+    (cleanup and refinements), `llm.py` (the local model: llama-server, started on demand), `activewin.py` (the
+    focused window), `remote.py` (another computer has the keyboard).
+  - **Transcribe mode:** `transcript.py`, `voices.py`, `echo.py`, `topics.py`, `summary.py`.
+  - **The Dictate window:** `hub.py` (the window and its sidebar), one module per page (`dictations_page.py`,
+    `transcripts_page.py`, `refinements_page.py`, `voices_page.py`, `settings_page.py`), `huds.py` (the picker,
+    reminders and dialogs), `design.py` and `style.css` (the design system).
+  - **Your data:** `settings.py`, `history.py` (dictations), `refinements.py` (refinements and vocabulary), and
+    `store.py`, which every save goes through (written to a temporary file, then swapped in, so a crash never
+    leaves a half-written file). The built-in prompts are text files in `prompts/`.
 - `scripts/`: `fetch.py` (downloads, used by setup), `test.py` (the tests: see [TESTING.md](TESTING.md)),
   `prove_local.py`, `bench.py` (compares refinement models), `bench_voices.py` (telling voices apart),
   `bench_topics.py` (topics on saved transcripts), `replay_call.py` (a recorded call through transcribe mode again).
 - `docs/make_screenshots.py`: regenerates the screenshots.
+- Lint with `.venv/bin/ruff check .` (configured in `pyproject.toml`; `pip install --group dev` installs it).
 - How the UI is designed, and the rules for changing it: [design/DESIGN.md](design/DESIGN.md).
 
 ## Data

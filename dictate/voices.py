@@ -9,10 +9,12 @@ measures how well this works.
 
 Remembering voices is opt-in (data/voices.json): once on, a voice you name in a transcript is remembered,
 on this computer only, and named automatically in later transcripts. Turning it off forgets them all."""
-import json, threading
+import threading
 from datetime import datetime
+
 import numpy as np
-from . import DATA, ROOT
+
+from . import DATA, ROOT, store
 
 MODEL = ROOT / "models/titanet_small.onnx"
 SETTINGS = DATA / "voices.json"
@@ -86,8 +88,8 @@ def turns(samples, narrow):
 
 
 def by_word(samples, words, known, narrow=False):
-    """[(start, end, voiceprint, voice)] in seconds: the parts of a stretch spoken by one voice each, told apart a word at
-    a time by which of the known voices ({voice: unit vector}, two or more, each heard KNOWN seconds or more) it
+    """[(start, end, voiceprint, voice)] in seconds: the parts of a stretch spoken by one voice each, told apart a word
+    at a time by which of the known voices ({voice: unit vector}, two or more, each heard KNOWN seconds or more) it
     sounds most like, in short windows around it; voice is None if it's long enough to tell (SHORT) and like none
     of them (SAME): someone new, for Voices to find. Catches a "yeah" or a quick reply between someone's sentences,
     which turns() (comparing 1.5 s slices, with no idea who's who) can't. A run of a word or two that isn't a
@@ -121,11 +123,12 @@ def by_word(samples, words, known, narrow=False):
                 runs[-1][2] = i + 1
             else:
                 runs.append([who[i], i, i + 1])
-        for k, (v, a, b) in enumerate(runs):
+        for k, (_, a, b) in enumerate(runs):
             if len(runs) == 1:
                 break
             brief = b - a <= 2 or ends[b - 1] - starts[a] < BRIEF
-            sentence = (a == 0 or ends_sentence(words[a - 1][1])) and (b == len(words) or ends_sentence(words[b - 1][1]))
+            sentence = ((a == 0 or ends_sentence(words[a - 1][1]))
+                        and (b == len(words) or ends_sentence(words[b - 1][1])))
             if brief and not sentence:
                 other = runs[k - 1][0] if k > 0 else runs[k + 1][0]
                 for i in range(a, b):
@@ -149,7 +152,8 @@ def by_word(samples, words, known, narrow=False):
         a = 0.0 if k == 0 else starts[i] - 0.01  # just before the word that starts the part
         b = seconds if k == len(edges) - 1 else starts[edges[k + 1]] - 0.01
         inside = (mids >= a) & (mids <= b)
-        vector = whole if len(edges) == 1 else voiceprint(samples[int(a * 16000):int(b * 16000)]) if b - a >= SHORT else \
+        vector = whole if len(edges) == 1 else \
+            voiceprint(samples[int(a * 16000):int(b * 16000)]) if b - a >= SHORT else \
             (prints[inside].mean(0) if inside.any() else prints[np.argmin(np.abs(mids - (a + b) / 2))])
         out.append((a, b, vector / (float(np.linalg.norm(vector)) or 1), ids[voice[k]]))
     return out
@@ -187,7 +191,8 @@ class Voices:
         """Add a part heard; returns its id (its voice can change as more is heard: see label()). likely: the voice
         by_word told it was, word by word: a short part's is (too short to tell by its voiceprint as a whole)."""
         centres = self.centres()
-        best, similar = max(((v, float(vector @ c)) for v, c in centres.items()), key=lambda t: t[1], default=(None, -1.0))
+        best, similar = max(((v, float(vector @ c)) for v, c in centres.items()), key=lambda t: t[1],
+                            default=(None, -1.0))
         told = likely in centres and seconds < SHORT
         if told:
             best, similar = likely, 1.0
@@ -305,15 +310,12 @@ class Voices:
 
 # --- remembered voices (opt-in) ---
 def settings():
-    try:
-        return {"remember": False, "voices": [], **json.loads(SETTINGS.read_text())}
-    except (OSError, ValueError):
-        return {"remember": False, "voices": []}
+    return {"remember": False, "voices": [], **store.read_json(SETTINGS, {})}
 
 
 def _save(s):
     SETTINGS.parent.mkdir(parents=True, exist_ok=True)
-    SETTINGS.write_text(json.dumps(s))
+    store.write_json(SETTINGS, s)
 
 
 def remembering():

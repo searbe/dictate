@@ -18,12 +18,20 @@ beside it too, so a voice can be named (and remembered) after the call.
 Its topics (topics.py) are kept up to date as it's heard, listed at the top of the transcript, and saved
 beside it with which paragraph is on which, by their place in it (a paragraph ends where the topic changes). So
 is a live summary (summary.py), with a final pass when it's stopped; above the topics."""
-import json, re, threading, time
+import json
+import logging
+import re
+import threading
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
+
 import numpy as np
 from gi.repository import GLib
-from . import DATA, echo, osio, refine, stt, summary, topics, voices
+
+from . import DATA, echo, llm, osio, store, stt, summary, topics, voices
+
+log = logging.getLogger(__name__)
 
 FOLDER = DATA / "transcripts"
 SOURCES = (("me", False), ("them", True))  # who, recorded from the speakers
@@ -35,6 +43,13 @@ ECHO = 0.6  # share of a stretch's words also heard through the speakers at the 
 STAMP = "%Y-%m-%d %H.%M.%S"  # a transcript's file name: when it started
 LASTED = re.compile(r"^Lasted (.+), until \d\d:\d\d\.$", re.M)
 PARAGRAPH = re.compile(r"^\*\*(\d\d:\d\d:\d\d) (.+?):\*\* (.*)$", re.M)
+
+
+def clock(seconds):
+    """How long a call has been going, as a timer shows it: e.g. "4:07", "1:02:09"."""
+    seconds = int(seconds)
+    hours, minutes, seconds = seconds // 3600, seconds // 60 % 60, seconds % 60
+    return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
 
 
 def length(seconds):
@@ -133,18 +148,16 @@ def rename(path, label, name):
     name = clean_name(name)
     if not name or name == label:
         return
-    text = re.sub(rf"^(\*\*\d\d:\d\d:\d\d ){re.escape(label)}(:\*\*)", lambda m: m[1] + name + m[2], path.read_text(), flags=re.M)
-    path.write_text(text)
-    try:
-        prints = json.loads(voiceprints(path).read_text())
-    except (OSError, ValueError):
-        return
-    if label in prints:
+    text = re.sub(rf"^(\*\*\d\d:\d\d:\d\d ){re.escape(label)}(:\*\*)", lambda m: m[1] + name + m[2], path.read_text(),
+                  flags=re.M)
+    store.write_text(path, text)
+    prints = store.read_json(voiceprints(path))
+    if prints and label in prints:
         vector = np.asarray(prints.pop(label), np.float32)
         if name in prints:  # two voices with one name are one voice
             vector = vector + np.asarray(prints[name], np.float32)
         prints[name] = (vector / np.linalg.norm(vector)).tolist()
-        voiceprints(path).write_text(json.dumps(prints))
+        store.write_json(voiceprints(path), prints)
         voices.remember(name, prints[name])
 
 
@@ -155,8 +168,8 @@ def read(path):
     except (ValueError, OSError):
         return None
     lasted = LASTED.search(text)
-    return {"path": path, "started": started, "length": lasted[1] if lasted else "", "paragraphs": PARAGRAPH.findall(text),
-            "changed": changed}
+    return {"path": path, "started": started, "length": lasted[1] if lasted else "",
+            "paragraphs": PARAGRAPH.findall(text), "changed": changed}
 
 
 def saved():
@@ -208,7 +221,8 @@ def said_in(parts, words, text):
     if len(parts) == 1:
         return [text]
     starts = [a for a, _ in parts[1:]]
-    return ["".join(w for t, w in words if (i == 0 or t >= parts[i][0]) and (i == len(parts) - 1 or t < starts[i])).strip()
+    return ["".join(w for t, w in words
+                    if (i == 0 or t >= parts[i][0]) and (i == len(parts) - 1 or t < starts[i])).strip()
             for i in range(len(parts))]
 
 
@@ -245,8 +259,8 @@ class Session:
         self.last_merge = self.now()
         self.summary, self.last_summary = summary.Summary(), self.now()
         self.gpu_free_for = 0.0  # seconds the GPU has been free while the smaller model is loaded on the CPU
-        refine.keep(True)  # the model, loaded for the whole call (from now, so it's ready for the first topics)
-        refine.warm(hold=False)
+        llm.server.keep(True)  # the model, loaded for the whole call (from now, so it's ready for the first topics)
+        llm.server.warm(hold=False)
         GLib.timeout_add(int(topics.TICK * 1000), self.tick)
         self.recorders, self.lives, self.recordings = [], [], []
         for who, speakers in SOURCES:
@@ -255,7 +269,8 @@ class Session:
                             on_preview=lambda *so_far, who=who: self.preview(who, *so_far))
             rec = osio.Recorder()
             rec.start(path, speakers=speakers, echo_cancel=not speakers,
-                      on_audio=(lambda chunk, push=live.push: (self.echo.played(chunk), push(chunk))) if speakers else live.push)
+                      on_audio=(lambda chunk, push=live.push: (self.echo.played(chunk), push(chunk))) if speakers
+                      else live.push)
             self.recorders.append(rec)
             self.recordings.append(path)
             self.lives.append(live)
@@ -272,7 +287,8 @@ class Session:
         real = isinstance(samples, np.ndarray)  # (not a test's stand-in)
         if who == "me" and real:
             parts = parts_of(samples, words, None)
-            heard = [((who, start + a, start + b, said), None) for (a, b), said in zip(parts, said_in(parts, words, text))
+            heard = [((who, start + a, start + b, said), None)
+                     for (a, b), said in zip(parts, said_in(parts, words, text))
                      if said and not self.echo.echo(start + a, samples[int(a * stt.RATE):int(b * stt.RATE)])]
         elif who == "them" and self.voices and real:
             high, total = voices.band(samples)
@@ -313,7 +329,8 @@ class Session:
         left out of the transcript: muted, or the microphone's echo of the speakers)."""
         out, them = [], self.previewing.get("them")
         for who, (start, text) in sorted(self.previewing.items(), key=lambda p: p[1][0]):
-            if self.left_out(who, start, self.now(), text, [("them", them[0], self.now(), them[1], None)] if them else []):
+            if self.left_out(who, start, self.now(), text,
+                             [("them", them[0], self.now(), them[1], None)] if them else []):
                 continue
             name = "…" if who == "them" and self.voices else NAMES[who]  # whose voice it is comes once it's whole
             out.append((f"{self.started + timedelta(seconds=start):%H:%M:%S}", name, text))
@@ -348,7 +365,8 @@ class Session:
     def stop(self, on_done, last_topics=True):
         """Stop recording, transcribe what's left, save, sort what's left into topics, merge any that are one
         subject and write the final summary (unless not last_topics: quitting doesn't wait for the model), then
-        on_done() on the GTK thread. If nothing was heard, nothing is kept: the transcript and its recordings are deleted."""
+        on_done() on the GTK thread. If nothing was heard, nothing is kept: the transcript and its recordings are
+        deleted."""
         self.stopped = True
         def finish():
             for rec in self.recorders:
@@ -370,7 +388,7 @@ class Session:
             elif not self.sort_topics(then=tidy):
                 tidy()
         def done():
-            refine.keep(False)
+            llm.server.keep(False)
             on_done()
         threading.Thread(target=finish, daemon=True).start()
 
@@ -387,7 +405,7 @@ class Session:
         """Every few seconds: sort what's been said into topics, when it's due."""
         if self.stopped:
             return False
-        lines, slow = [l for l in self.lines() if l[0] not in self.asked], refine.mode() == "cpu"
+        lines, slow = [line for line in self.lines() if line[0] not in self.asked], llm.server.mode == "cpu"
         if not self.asking and self.topics.due(lines, self.now() - self.last_topics, slow):
             self.sort_topics()
         elif not self.asking and self.now() - self.last_merge >= topics.MERGE:
@@ -400,14 +418,14 @@ class Session:
     def back_to_gpu(self):
         """With the smaller model on the CPU (the GPU was busy), switch to the larger one on the GPU once it's
         been free for a while (not just a game's loading screen), between topic updates and dictations."""
-        if refine.mode() != "cpu" or self.asking:
+        if llm.server.mode != "cpu" or self.asking:
             self.gpu_free_for = 0.0
             return
-        self.gpu_free_for = self.gpu_free_for + topics.TICK if refine.gpu_ok() else 0.0
+        self.gpu_free_for = self.gpu_free_for + topics.TICK if llm.gpu_ok() else 0.0
         if self.gpu_free_for >= topics.FREE_FOR:
             self.gpu_free_for, self.asking = 0.0, True  # no topics while it loads
             def switch():
-                switched = refine.to_gpu()
+                switched = llm.server.to_gpu()
                 GLib.idle_add(lambda: (setattr(self, "asking", False), switched and self.on_change()) and False)
             threading.Thread(target=switch, daemon=True).start()
 
@@ -415,25 +433,25 @@ class Session:
         """Ask the model for the topics of what hasn't been sorted yet (on a thread), then save and show
         them, then then(). Returns False if there was nothing to sort (and then() isn't called)."""
         lines = self.lines()
-        new = [l for l in lines if l[0] not in self.asked]
+        new = [line for line in lines if line[0] not in self.asked]
         if not new:
             return False
-        before = [l for l in lines if l[0] in self.asked]
-        self.asked.update(l[0] for l in new)
+        before = [line for line in lines if line[0] in self.asked]
+        self.asked.update(line[0] for line in new)
         self.asking, self.last_topics = True, self.now()
         def ask():
             try:
                 reply = self.topics.ask(new, before)
             except (OSError, ValueError, KeyError) as err:
-                print("topics: couldn't ask the model:", err, flush=True)
+                log.warning("topics: couldn't ask the model: %s", err)
                 reply = None
-            GLib.idle_add(answered, reply, refine.mode())
+            GLib.idle_add(answered, reply, llm.server.mode)
         def answered(reply, model):
             self.asking = False
             if model == "cpu":
                 self.topics.small = True
             if reply is None:
-                self.asked.difference_update(l[0] for l in new)  # try again next time
+                self.asked.difference_update(line[0] for line in new)  # try again next time
             elif self.topics.apply(new, reply):
                 self.save()
                 self.on_change()
@@ -455,7 +473,7 @@ class Session:
             try:
                 reply = self.summary.ask_final(lines, self.topics) if final else self.summary.ask(lines, self.topics)
             except (OSError, ValueError, KeyError) as err:
-                print("summary: couldn't ask the model:", err, flush=True)
+                log.warning("summary: couldn't ask the model: %s", err)
                 reply = None
             GLib.idle_add(answered, reply)
 
@@ -474,14 +492,14 @@ class Session:
         then(). Returns False if it isn't asked (too few topics, or the smaller model's loaded: then() isn't
         called)."""
         self.last_merge = self.now()
-        if len(self.topics.topics) < topics.MERGE_FROM or refine.mode() != "gpu":
+        if len(self.topics.topics) < topics.MERGE_FROM or llm.server.mode != "gpu":
             return False
         self.asking = True
         def ask():
             try:
                 reply = self.topics.merge_ask()
             except (OSError, ValueError, KeyError) as err:
-                print("topics: couldn't ask the model:", err, flush=True)
+                log.warning("topics: couldn't ask the model: %s", err)
                 reply = None
             GLib.idle_add(answered, reply)
         def answered(reply):
@@ -541,17 +559,18 @@ class Session:
         return out
 
     def markdown(self):
-        head = f"# Transcript, {self.started:%A %-d %B %Y, %H:%M}\n\nLasted {length(self.now())}, until {datetime.now():%H:%M}.\n"
+        head = (f"# Transcript, {self.started:%A %-d %B %Y, %H:%M}\n\n"
+                f"Lasted {length(self.now())}, until {datetime.now():%H:%M}.\n")
         above = summary.markdown(self.summary.text) + topics_markdown(self.topics, self.topics.people(self.lines()))
         head += above + ("\n## Transcript\n" if above else "")
         return head + "".join(f"\n**{clock} {who}:** {text}\n" for clock, who, text in self.paragraphs())
 
     def save(self):
-        self.path.write_text(self.markdown())
+        store.write_text(self.path, self.markdown())
         if self.topics.topics:
             marks = self.topic_view()[1]  # saved by paragraph: a saved transcript has no stretches
-            topics_file(self.path).write_text(json.dumps({**self.topics.data(), "of": list(marks.items())}))
+            store.write_json(topics_file(self.path), {**self.topics.data(), "of": list(marks.items())})
         if self.summary.text:
-            summary_file(self.path).write_text(json.dumps(self.summary.data()))
+            store.write_json(summary_file(self.path), self.summary.data())
         if self.voices and voices.remembering():  # so its voices can be named, and remembered, later
-            voiceprints(self.path).write_text(json.dumps(self.voices.labelled()))
+            store.write_json(voiceprints(self.path), self.voices.labelled())

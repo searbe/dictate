@@ -1,13 +1,17 @@
 """Shared fixtures. Run the suite with `python scripts/test.py`: it gives the tests their own invisible
 desktop (a headless KWin, or Xvfb) and their own D-Bus, so nothing touches your real session, your
 running Dictate, or your data. Tests that need that isolation skip under a bare `pytest`."""
-import json, os, sys, wave
+import json
+import os
+import sys
+import wave
 from pathlib import Path
+
 import numpy as np
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from harness.client import Dictate  # noqa: E402
+from harness.client import Dictate
 
 ROOT = Path(__file__).resolve().parent.parent
 ISOLATED = os.environ.get("DICTATE_TEST_SESSION") == "1"
@@ -43,7 +47,7 @@ class FakeModel:
         self.rules_file.write_text(json.dumps(list(rules)))
 
     def _log(self):
-        return [json.loads(l) for l in self.log_file.read_text().splitlines()] if self.log_file.exists() else []
+        return [json.loads(line) for line in self.log_file.read_text().splitlines()] if self.log_file.exists() else []
 
     def requests(self):
         return [r for r in self._log() if "system" in r]
@@ -65,8 +69,8 @@ def start(tmp_path, model):
     refinements: the "refinements" list for refinements.json (with a "CLEANUP" cleanup prompt); settings: state.json."""
     running = []
 
-    def start(refinements=None, vocab=None, settings=None, cleanup="CLEANUP", llama=ROOT / "tests/harness/fake_llama.py",
-              env=None):
+    def start(refinements=None, vocab=None, settings=None, cleanup="CLEANUP",
+              llama=ROOT / "tests/harness/fake_llama.py", env=None):
         home, data = tmp_path / "home", tmp_path / "data"
         home.mkdir(exist_ok=True)
         data.mkdir(exist_ok=True)

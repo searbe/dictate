@@ -1,8 +1,12 @@
 """Real windows on a real (headless) KWin, reported by Dictate's own KWin script: does Dictate know where
 the text is going? These cover what the other tests stand in for with a D-Bus call."""
-import subprocess, sys, time
+import subprocess
+import sys
+import time
 from pathlib import Path
+
 import pytest
+
 from conftest import needs_kwin
 from harness.client import refinement
 

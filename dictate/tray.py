@@ -2,10 +2,16 @@
 
 KDE/Linux: a StatusNotifierItem over D-Bus, with the GTK menu mirrored by dbusmenu.
 Windows: GTK's built-in status icon. macOS: none (GTK 3 has no menu-bar icon); the floating icon remains."""
-import os, sys
+import logging
+import os
+import sys
+
 import gi
-from . import osio
 from gi.repository import Gdk, Gio, GLib, Gtk
+
+from . import osio
+
+log = logging.getLogger(__name__)
 
 SIZES = (32, 64)  # pixel sizes offered to the tray
 
@@ -61,7 +67,7 @@ class Tray:
             gi.require_version("DbusmenuGtk3", "0.4")
             from gi.repository import Dbusmenu, DbusmenuGtk3
         except (ValueError, ImportError):
-            return print("tray: dbusmenu not available, no tray icon")
+            return log.info("dbusmenu not available, no tray icon")
         self.dbusmenu = Dbusmenu.Server.new("/MenuBar")  # mirrors the GTK menu, kept in sync as it changes
         root = DbusmenuGtk3.gtk_parse_menu_structure(self.menu)
         root.connect("about-to-show", lambda *_: self.before_show() or True)
@@ -89,7 +95,8 @@ class Tray:
             return self.pixmaps
         return {
             "Category": GLib.Variant("s", "ApplicationStatus"), "Id": GLib.Variant("s", "dictate"),
-            "Title": GLib.Variant("s", "Dictate"), "Status": GLib.Variant("s", "Active"), "IconName": GLib.Variant("s", ""),
+            "Title": GLib.Variant("s", "Dictate"), "Status": GLib.Variant("s", "Active"),
+            "IconName": GLib.Variant("s", ""),
             "ToolTip": GLib.Variant("(sa(iiay)ss)", ("", [], "Dictate", self.status())),
             "ItemIsMenu": GLib.Variant("b", True),  # any click opens the menu
             "Menu": GLib.Variant("o", "/MenuBar"),
@@ -101,7 +108,8 @@ class Tray:
         import numpy as np
         surface = self.render(px)
         surface.flush()
-        bgra = np.frombuffer(surface.get_data(), np.uint8).reshape(px, px, 4).astype(np.float32)  # cairo: BGRA, premultiplied
+        # cairo: BGRA, premultiplied
+        bgra = np.frombuffer(surface.get_data(), np.uint8).reshape(px, px, 4).astype(np.float32)
         alpha = bgra[..., 3:4]
         bgra[..., :3] = np.where(alpha > 0, bgra[..., :3] * 255 / np.maximum(alpha, 1), 0)
         argb = GLib.Bytes.new(bgra[..., ::-1].astype(np.uint8).tobytes())

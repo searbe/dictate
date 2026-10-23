@@ -2,6 +2,7 @@
 The virtual keyboard is replaced by one that records key presses; the expected keys come from the standard
 US and UK layouts, written out independently here."""
 import sys
+
 import pytest
 
 pytestmark = pytest.mark.skipif(not sys.platform.startswith("linux"), reason="Linux types through uinput")

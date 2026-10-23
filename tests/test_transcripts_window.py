@@ -1,10 +1,15 @@
 """Transcripts, in the Dictate window: every saved transcript in a list (when, how long, how it starts), the
 selected one shown beside it, with Copy all, Open file and Delete (icon buttons, found by their tooltips), and
 Open folder."""
-import json, shutil, subprocess, time
+import json
+import shutil
+import subprocess
+import time
+
 import numpy as np
 import pytest
 import soundfile
+
 from conftest import needs_session
 from harness.client import eventually
 
@@ -88,15 +93,6 @@ def test_a_transcript_just_recorded_is_listed_with_how_long_it_lasted(start):
 
     assert "under a minute" in app.read("Transcripts")
     assert "Speaker 1  A short one." in shown(app)
-
-
-def recording(start):
-    app = start(refinements=[])
-    app.ctrl_win_win()
-    app.wait_window("Transcripts")
-    app.send("menu", path=["Transcripts"])
-    app.wait_window("Transcripts")
-    return app
 
 
 def at_end(app):
@@ -183,7 +179,8 @@ def test_delete_asks_then_deletes_the_transcript_and_its_recordings(start):
     app.click("Delete")
 
     eventually(lambda: not list(folder.iterdir()))
-    assert {"No transcripts yet", "To start one, hold Ctrl+Win, lift Win and press it again."} <= set(app.read("Transcripts"))
+    assert ({"No transcripts yet", "To start one, hold Ctrl+Win, lift Win and press it again."}
+            <= set(app.read("Transcripts")))
 
 
 def test_cancelling_delete_keeps_it(start):
@@ -200,7 +197,8 @@ def test_cancelling_delete_keeps_it(start):
 def test_with_no_transcripts_it_says_how_to_make_one(start):
     app = opened(start)
 
-    assert {"No transcripts yet", "To start one, hold Ctrl+Win, lift Win and press it again."} <= set(app.read("Transcripts"))
+    assert ({"No transcripts yet", "To start one, hold Ctrl+Win, lift Win and press it again."}
+            <= set(app.read("Transcripts")))
     assert "Open folder" in app.read("Transcripts")
     assert "Delete" not in app.read("Transcripts")
 
@@ -217,7 +215,8 @@ def recording(start, *transcripts):
 
 def rows(app):
     """The dates listed, top to bottom."""
-    return [t for t in app.read("Transcripts") if t.count("·") == 1 and t[:3] in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")]
+    return [t for t in app.read("Transcripts")
+            if t.count("·") == 1 and t[:3] in ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")]
 
 
 def test_a_new_recording_appears_at_the_top_of_the_transcripts_and_is_shown(start):

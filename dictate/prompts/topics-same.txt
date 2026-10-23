@@ -1,0 +1,1 @@
+Two topics from the list of topics of a meeting or call, each with what was said on it. Are they one subject that came up twice (so they should be one topic), rather than two different things, however related or close together in the conversation? Different options, versions or things tried in turn are different things.

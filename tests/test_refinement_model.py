@@ -1,5 +1,8 @@
 """The refinement model: what it's told, when it's loaded and unloaded, and what happens when it misbehaves."""
-import os, signal, time
+import os
+import signal
+import time
+
 from conftest import needs_session
 from harness.client import refinement
 

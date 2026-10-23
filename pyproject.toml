@@ -23,8 +23,35 @@ build-backend = "hatchling.build"
 packages = ["dictate"]
 
 [dependency-groups]
-dev = ["pytest"]
+dev = ["pytest", "ruff"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = ["models: needs the downloaded speech models (skipped when models/ is missing)"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "RUF"]
+ignore = [
+    "B905",    # zip() without strict=: the code zips equal-length sequences by construction
+    "E731",    # small named lambdas are used for local helpers
+    "SIM108",  # ternaries aren't always clearer than if/else
+    "RUF001", "RUF002", "RUF003",  # typographic characters in user-facing text are intended
+    "SIM223",  # `callback() and False`: a GLib source callback that runs once returns False
+    "SIM105",  # try/except/pass reads as plainly as contextlib.suppress
+    "RUF005", "RUF007",  # list concatenation and zip(a, a[1:]) are clear enough
+    "RUF012",  # class-level constants (sets, dicts) aren't meant to be typed ClassVar
+    "RUF059",  # unpacking a whole tuple documents its shape
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dictate", "harness", "conftest"]
+
+[tool.ruff.lint.per-file-ignores]
+# scripts and the test harness put the project on sys.path (and swap parts of the app) before importing it
+"scripts/*" = ["E402"]
+"docs/*" = ["E402"]
+"tests/*" = ["E402", "B008", "RUF015", "SIM114"]  # (and test doubles favour plain, explicit code)

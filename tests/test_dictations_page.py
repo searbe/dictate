@@ -1,7 +1,11 @@
 """Dictations, in the Dictate window: browsing, searching, copying, playing back and deleting past dictations,
 grouped by day; each one's actions (icon buttons, found by their tooltips) show on hover."""
-import json, os, time
+import json
+import os
+import time
+
 import pytest
+
 from conftest import needs_session
 from harness.client import eventually
 
@@ -125,8 +129,9 @@ def test_keeping_recordings_for_less_time_deletes_older_ones_and_hides_their_pla
 
 
 
-REFINEMENTD = {"t": "2026-10-20T16:00:00", "text": "SO, THE MEETING IS AT THREE.", "raw": "um so the meeting is at three",
-          "cleaned": "So, the meeting is at three.", "app": "Slack", "cleanup": True, "refinement": "Chat"}
+REFINEMENTD = {"t": "2026-10-20T16:00:00", "text": "SO, THE MEETING IS AT THREE.",
+               "raw": "um so the meeting is at three", "cleaned": "So, the meeting is at three.", "app": "Slack",
+               "cleanup": True, "refinement": "Chat"}
 
 
 def test_clicking_a_step_shows_what_it_changed(start):

@@ -3,9 +3,13 @@ following the desktop's preference, live), a small icon set drawn in cairo, and 
 built from. Use these names, never raw colours or sizes; add to DESIGN.md first."""
 import math
 from pathlib import Path
-import cairo, gi
+from string import Template
+
+import cairo
+import gi
+
 gi.require_version("PangoCairo", "1.0")
-from gi.repository import Gdk, Gio, GLib, Gtk, Pango, PangoCairo
+from gi.repository import Gdk, Gio, GLib, Gtk, Pango, PangoCairo  # noqa: E402
 
 # --- tokens ---
 SCHEMES = {
@@ -79,185 +83,19 @@ def animations():
     return Gtk.Settings.get_default().get_property("gtk-enable-animations")
 
 
+STYLE = Template(Path(__file__).with_name("style.css").read_text())
+
+
 def css():
+    """The stylesheet (style.css) for the scheme in use: its $tokens filled in from SCHEMES, TYPE and the radii."""
     t = SCHEMES[scheme]
-    size = lambda k: f"font-size: {TYPE[k][0]}px; font-weight: {TYPE[k][1]};"
-    topics = "".join(f".topic-edge-{i} {{ border-left: 3px solid {c}; }}\n.topic-text-{i} {{ color: {c}; }}\n"
-                     for i, c in enumerate(t["topics"]))
-    return f"""
-* {{ font-family: {FONT}; }}
-window.dictate, window.dictate .page {{ background-color: {t['bg']}; color: {t['text']}; {size('body')} }}
-window.dictate headerbar {{ background-color: {t['bg']}; border: none; box-shadow: none; min-height: 40px; padding: 0 8px;
-  background-image: linear-gradient(to right, {t['surface-1']} 199px, {t['line']} 199px, {t['line']} 200px, transparent 200px); }}
-window.dictate.compact headerbar {{
-  background-image: linear-gradient(to right, {t['surface-1']} 55px, {t['line']} 55px, {t['line']} 56px, transparent 56px); }}
-window.dictate headerbar .title {{ color: {t['text']}; {size('body-strong')} }}
-window.dictate headerbar button.titlebutton {{ border: none; box-shadow: none; }}
-scrollbar {{ background: transparent; border: none; box-shadow: none; }}
-scrollbar trough {{ background: transparent; border: none; box-shadow: none; }}
-scrollbar button {{ min-width: 0; min-height: 0; padding: 0; margin: 0; border: none; background: none; box-shadow: none;
-  -gtk-icon-source: none; opacity: 0; }}
-scrollbar slider {{ border: none; border-radius: {R_FULL}px; background: {t['line-strong']}; margin: 3px;
-  transition: min-width 120ms ease-out, min-height 120ms ease-out, background-color 120ms ease-out; }}
-scrollbar.vertical slider {{ min-width: 3px; min-height: 32px; }}
-scrollbar.horizontal slider {{ min-height: 3px; min-width: 32px; }}
-scrollbar.vertical:hover slider, scrollbar.vertical.dragging slider {{ min-width: 6px; background: {t['text-3']}; }}
-scrollbar.horizontal:hover slider, scrollbar.horizontal.dragging slider {{ min-height: 6px; background: {t['text-3']}; }}
-window.dictate list, window.dictate row {{ background: transparent; }}
-window.dictate textview, window.dictate textview text {{ background: transparent; color: {t['text']}; }}
-window.dictate selection, window.dictate text selection {{ background: {t['accent-weak']}; color: {t['text']}; }}
-window.dictate tooltip, tooltip {{ background: {t['surface-4']}; color: {t['text']}; border-radius: {R_SM}px; border: 1px solid {t['line']}; }}
-tooltip * {{ color: {t['text']}; {size('small')} }}
-
-/* type */
-.headline {{ {size('headline')} color: {t['text']}; }}
-.title {{ {size('title')} color: {t['text']}; }}
-.body {{ {size('body')} color: {t['text']}; }}
-.strong {{ {size('body-strong')} color: {t['text']}; }}
-.small {{ {size('small')} color: {t['text-2']}; }}
-.caption {{ {size('caption')} color: {t['text-3']}; }}
-.muted {{ color: {t['text-2']}; }}
-.faint {{ color: {t['text-3']}; }}
-.label-strong {{ font-weight: 600; }}
-.tabular {{ font-feature-settings: "tnum"; }}
-.danger-text {{ color: {t['danger']}; }}
-.accent-text {{ color: {t['accent']}; }}
-.warning-text {{ color: {t['warning']}; }}
-
-/* buttons */
-button.btn {{ min-height: 28px; padding: 0 12px; border-radius: {R_SM}px; border: none; box-shadow: none;
-  background: {t['surface-3']}; color: {t['text']}; {size('body-strong')} -gtk-icon-shadow: none; outline: none;
-  transition: background-color 120ms ease-out, color 120ms ease-out, opacity 120ms ease-out; }}
-button.btn:hover {{ background: {t['surface-4']}; }}
-button.btn label {{ color: inherit; }}
-button.btn.primary {{ background: {t['accent']}; color: {t['on-accent']}; }}
-button.btn.primary:hover {{ background: {t['accent-hover']}; }}
-button.btn.quiet {{ background: transparent; color: {t['text-2']}; }}
-button.btn.quiet:hover {{ background: {t['surface-3']}; color: {t['text']}; }}
-button.btn.danger {{ background: transparent; color: {t['danger']}; }}
-button.btn.danger:hover {{ background: {t['danger-weak']}; }}
-button.btn.small {{ min-height: 24px; padding: 0 8px; }}
-button.btn.icon {{ min-width: 28px; min-height: 28px; padding: 0; background: transparent; color: {t['text-2']}; }}
-button.btn.icon:hover {{ background: {t['surface-3']}; color: {t['text']}; }}
-button.btn.icon.danger:hover {{ background: {t['danger-weak']}; color: {t['danger']}; }}
-button.btn.icon.on {{ color: {t['accent']}; }}
-button.btn .keyhint {{ {size('caption')} color: {t['text-3']}; margin-left: 6px; }}
-button.btn.primary .keyhint {{ color: rgba(255,255,255,0.7); }}
-
-/* a segmented control */
-.segmented {{ background: {t['surface-3']}; border-radius: {R_SM}px; padding: 2px; }}
-.segmented button.segment {{ min-height: 24px; padding: 0 12px; border-radius: 4px; background: transparent; border: none;
-  box-shadow: none; background-image: none; color: {t['text-2']}; outline: none;
-  transition: background-color 120ms ease-out, color 120ms ease-out; }}
-.segmented button.segment label {{ color: inherit; {size('small')} font-weight: 600; }}
-.segmented button.segment:hover {{ color: {t['text']}; }}
-.segmented button.segment.on {{ background: {t['raised']}; color: {t['text']}; box-shadow: 0 1px 2px rgba(0,0,0,0.25); }}
-
-/* chips, badges, pills */
-.chip {{ {size('caption')} background: {t['surface-3']}; color: {t['text-2']}; border-radius: {R_SM}px; padding: 2px 7px; }}
-.chip.accent {{ background: {t['accent-weak']}; color: {t['accent']}; }}
-button.chip {{ min-height: 0; border: none; box-shadow: none; background-image: none; -gtk-icon-shadow: none; outline: none;
-  transition: background-color 120ms ease-out, color 120ms ease-out; }}
-button.chip label {{ color: inherit; {size('caption')} }}
-button.chip:hover {{ background: {t['surface-4']}; color: {t['text']}; }}
-button.chip.on, button.chip.on:hover {{ background: {t['accent-weak']}; color: {t['accent']}; }}
-.step {{ background: {t['surface-2']}; border: 1px solid {t['line']}; border-radius: {R_MD}px; padding: 10px 12px; }}
-.key {{ {size('caption')} font-weight: 600; background: {t['surface-3']}; color: {t['text']}; border-radius: {R_XS}px;
-  min-width: 18px; min-height: 18px; padding: 0 4px; }}
-.pill {{ {size('caption')} font-weight: 600; background: {t['surface-3']}; color: {t['text']}; border-radius: {R_FULL}px; padding: 3px 10px; }}
-
-/* rows and lists */
-.row-item {{ border-radius: {R_MD}px; padding: 8px 12px; transition: background-color 120ms ease-out; }}
-row:hover .row-item {{ background: {t['surface-2']}; }}
-.row-item .actions {{ opacity: 0; transition: opacity 120ms ease-out; }}
-row:hover .row-item .actions, .row-item .actions.shown {{ opacity: 1; }}
-.group-header {{ {size('caption')} font-weight: 600; color: {t['text-3']}; margin: 16px 12px 4px 12px; }}
-.hairline {{ background: {t['line']}; min-height: 1px; min-width: 1px; }}
-list.nav, list.pick {{ background: transparent; }}
-flowbox flowboxchild {{ padding: 0; background: none; border: none; }}
-list.pick row {{ border-radius: {R_SM}px; margin: 1px 8px; padding: 0; transition: background-color 120ms ease-out; }}
-list.pick row:hover {{ background: {t['surface-2']}; }}
-list.pick row:selected {{ background: {t['surface-3']}; color: {t['text']}; }}
-
-/* the sidebar */
-.sidebar {{ background: {t['surface-1']}; border-right: 1px solid {t['line']}; }}
-.sidebar .app-name {{ {size('title')} color: {t['text']}; margin: 4px 16px 12px 16px; }}
-list.nav row {{ min-height: 32px; border-radius: {R_SM}px; margin: 1px 8px; padding: 0 8px; color: {t['text-2']};
-  transition: background-color 120ms ease-out, color 120ms ease-out; }}
-list.nav row:hover {{ background: {t['surface-2']}; color: {t['text']}; }}
-list.nav row:selected {{ background: {t['surface-3']}; color: {t['text']}; }}
-list.nav row label {{ color: inherit; {size('body')} }}
-list.nav row:selected label {{ font-weight: 600; }}
-
-/* fields */
-.field-label {{ {size('small')} font-weight: 600; color: {t['text-2']}; }}
-window.dictate entry, .hud entry {{ min-height: 32px; border-radius: {R_SM}px; background: {t['surface-2']}; color: {t['text']};
-  border: 1px solid {t['line']}; box-shadow: none; padding: 0 10px; caret-color: {t['accent']}; }}
-window.dictate entry:focus, .hud entry:focus {{ border-color: {t['accent']}; box-shadow: 0 0 0 3px {t['accent-weak']}; }}
-window.dictate entry image {{ color: {t['text-3']}; }}
-.editor {{ border-radius: {R_SM}px; background: {t['surface-2']}; border: 1px solid {t['line']}; }}
-.editor textview, .editor textview text {{ background: {t['surface-2']}; }}
-window.dictate combobox button, window.dictate combobox button.combo {{ min-height: 28px; border-radius: {R_SM}px;
-  background: {t['surface-3']}; color: {t['text']}; border: none; box-shadow: none; padding: 0 8px; }}
-window.dictate combobox button:hover {{ background: {t['surface-4']}; }}
-window.dictate switch {{ background: {t['surface-4']}; border: none; border-radius: {R_FULL}px; min-width: 36px; min-height: 20px; }}
-window.dictate switch:checked {{ background: {t['accent']}; }}
-window.dictate switch slider {{ background: #ffffff; border: none; border-radius: {R_FULL}px; min-width: 16px; min-height: 16px;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.3); margin: 2px; }}
-window.dictate check {{ border-radius: {R_XS}px; background: {t['surface-3']}; border: 1px solid {t['line-strong']}; color: {t['on-accent']}; }}
-window.dictate check:checked {{ background: {t['accent']}; border-color: {t['accent']}; }}
-
-/* setting rows, pages */
-.setting {{ padding: 12px 0; }}
-.page-header {{ margin: 20px 24px 8px 24px; }}
-.panel {{ background: {t['surface-1']}; }}
-window.dictate paned > separator {{ min-width: 5px; min-height: 5px; border: none; box-shadow: none; padding: 0; margin: 0;
-  -gtk-icon-source: none; background-color: {t['bg']}; background-size: 100% 100%;  /* (Breeze sizes it otherwise) */
-  background-image: linear-gradient(to right, transparent 2px, {t['line']} 2px, {t['line']} 3px, transparent 3px); }}
-window.dictate paned > separator:hover {{
-  background-image: linear-gradient(to right, transparent 2px, {t['line-strong']} 2px, {t['line-strong']} 3px, transparent 3px); }}
-window.dictate paned.after-panel > separator {{
-  background-image: linear-gradient(to right, {t['surface-1']} 2px, {t['line']} 2px, {t['line']} 3px, transparent 3px); }}
-window.dictate paned.after-panel > separator:hover {{
-  background-image: linear-gradient(to right, {t['surface-1']} 2px, {t['line-strong']} 2px, {t['line-strong']} 3px, transparent 3px); }}
-window.dictate paned.before-panel > separator {{
-  background-image: linear-gradient(to right, transparent 2px, {t['line']} 2px, {t['line']} 3px, {t['surface-1']} 3px); }}
-window.dictate paned.before-panel > separator:hover {{
-  background-image: linear-gradient(to right, transparent 2px, {t['line-strong']} 2px, {t['line-strong']} 3px, {t['surface-1']} 3px); }}
-.empty-state {{ margin: 48px 24px; }}
-.status-dot {{ min-width: 6px; min-height: 6px; border-radius: 3px; background: {t['record']}; }}
-.status-dot.paused {{ background: {t['text-3']}; }}
-
-/* warnings */
-.warning-strip {{ background: {t['warning-weak']}; color: {t['warning']}; border-radius: {R_SM}px; padding: 8px 10px; }}
-.warning-strip label {{ color: {t['warning']}; {size('small')} }}
-
-/* topics */
-.topic-card {{ border-radius: {R_MD}px; padding: 10px 12px; margin: 2px 8px; background: transparent; border: none;
-  box-shadow: none; transition: background-color 120ms ease-out; }}
-.topic-card:hover {{ background: {t['surface-2']}; }}
-.topic-card.now {{ background: {t['surface-2']}; }}
-.topic-card label {{ color: {t['text']}; }}
-.topic-card .small {{ color: {t['text-2']}; }}
-.topic-card .caption {{ color: {t['text-3']}; }}
-{topics}
-/* HUDs */
-window.hud-window, window.hud-window > * {{ background: transparent; }}
-.hud {{ background: {t['hud']}; border: 1px solid {t['line-strong']}; border-radius: {R_LG}px; color: {t['text']};
-  box-shadow: inset 0 1px {t['highlight']}, 0 8px 24px {t['shadow']}; padding: 16px; margin: 16px; {size('body')} }}
-.hud.warning-edge {{ border-color: {t['warning-weak']}; }}
-.hud .choice {{ min-height: 36px; border-radius: {R_SM}px; background: transparent; border: none; box-shadow: none;
-  padding: 0 8px; color: {t['text']}; transition: background-color 120ms ease-out; }}
-.hud .choice:hover {{ background: {t['surface-3']}; }}
-.hud .quote {{ background: {t['surface-2']}; border-radius: {R_MD}px; padding: 10px 12px; }}
-menu, .menu {{ background: {t['surface-1']}; border: 1px solid {t['line-strong']}; border-radius: {R_LG}px; padding: 6px; }}
-menu menuitem {{ color: {t['text']}; padding: 6px 12px; border-radius: {R_SM}px; min-height: 18px; {size('body')} }}
-menu menuitem:hover {{ background: {t['surface-3']}; }}
-menu menuitem label {{ color: inherit; }}
-menu menuitem check, menu menuitem radio {{ color: {t['accent']}; }}
-menu separator {{ background: {t['line']}; margin: 4px 6px; min-height: 1px; }}
-menu arrow {{ color: {t['text-3']}; }}
-"""
+    values = {name.replace("-", "_"): value for name, value in t.items() if name != "topics"}
+    values |= {f"size_{k.replace('-', '_')}": f"font-size: {px}px; font-weight: {weight};"
+               for k, (px, weight) in TYPE.items()}
+    values |= {"font": FONT, "r_xs": R_XS, "r_sm": R_SM, "r_md": R_MD, "r_lg": R_LG, "r_full": R_FULL}
+    values["topics"] = "".join(f".topic-edge-{i} {{ border-left: 3px solid {c}; }}\n.topic-text-{i} {{ color: {c}; }}\n"
+                               for i, c in enumerate(t["topics"]))
+    return STYLE.substitute(values)
 
 
 _provider = None
@@ -320,60 +158,67 @@ def _desktop_scheme():
 
 
 # --- icons ---
+def _spokes(inner, outer, n=8):
+    """The settings gear's teeth: n lines from radius inner to outer around (8, 8)."""
+    out = []
+    for k in range(n):
+        a = k * math.pi / (n // 2)
+        out.append(f"m {8 + inner * math.cos(a)!r} {8 + inner * math.sin(a)!r} "
+                   f"l {8 + outer * math.cos(a)!r} {8 + outer * math.sin(a)!r}")
+    return " ".join(out)
+
+
+# Each icon on a 16×16 grid, as path commands: m x y (move), l x y (line), c x1 y1 x2 y2 x y (curve),
+# a cx cy r start end (arc; angles in turns), r x y w h radius (rounded rectangle), n (new sub-path), z (close).
+ICONS = {
+    "mic": "n a 8 4.5 2.5 .5 0 l 10.5 7.5 a 8 7.5 2.5 0 .5 z n a 8 7.5 4.5 0 .5 m 8 12 l 8 14.5",
+    "history": "n a 8 8 6 0 1 m 8 4.5 l 8 8 l 10.5 9.5",
+    "transcript": "m 3 4 l 13 4 m 3 7 l 11 7 m 3 10 l 13 10 m 3 13 l 9 13",
+    "refinements": "m 8 2 c 8.5 5.5 10.5 7.5 14 8 c 10.5 8.5 8.5 10.5 8 14 c 7.5 10.5 5.5 8.5 2 8 "
+                   "c 5.5 7.5 7.5 5.5 8 2 z",
+    "voices": "n a 8 5.5 2.75 0 1 m 2.75 14 c 3 10.5 5.5 9.5 8 9.5 c 10.5 9.5 13 10.5 13.25 14",
+    "settings": f"n a 8 8 2.25 0 1 {_spokes(4.2, 6)} n a 8 8 4.2 0 1",
+    "search": "n a 7 7 4.25 0 1 m 10.2 10.2 l 13.5 13.5",
+    "copy": "r 5.5 5.5 8 8 1.75 m 3.5 10.5 l 3.5 4.25 c 3.5 3.5 3.5 2.5 4.5 2.5 l 10.5 2.5",
+    "play": "m 5 3 l 13 8 l 5 13 z",
+    "stop": "r 4 4 8 8 1.5",
+    "pause": "m 5.5 3.5 l 5.5 12.5 m 10.5 3.5 l 10.5 12.5",
+    "trash": "m 2.5 4.5 l 13.5 4.5 m 6 4.5 l 6 2.5 l 10 2.5 l 10 4.5 m 4 4.5 l 4.75 13.5 l 11.25 13.5 l 12 4.5",
+    "undo": "m 5.5 3 l 2.5 6 l 5.5 9 m 2.5 6 l 9.5 6 c 12 6 13.5 7.5 13.5 9.75 c 13.5 12 12 13.5 9.5 13.5 l 6.5 13.5",
+    "folder": "m 2 4 l 6 4 l 7.5 5.5 l 14 5.5 l 14 12.5 l 2 12.5 z",
+    "open": "m 9 2.5 l 13.5 2.5 l 13.5 7 m 13.5 2.5 l 7.5 8.5 m 11.5 9.5 l 11.5 13.5 l 2.5 13.5 l 2.5 4.5 l 6.5 4.5",
+    "plus": "m 8 3 l 8 13 m 3 8 l 13 8",
+    "check": "m 3 8.5 l 6.5 12 l 13 4.5",
+    "warning": "m 8 2.5 l 14 13 l 2 13 z m 8 6.5 l 8 9.25 m 8 11.25 l 8 11.3",
+    "close": "m 4 4 l 12 12 m 12 4 l 4 12",
+    "record": "n a 8 8 4 0 1",
+}
+_ARGS = {"m": 2, "l": 2, "c": 6, "a": 5, "r": 5, "n": 0, "z": 0}  # how many numbers each command takes
+
+
 def _icon_paths(cr, name):
-    """Draw icon name on a 16×16 grid (strokes; the caller strokes and fills)."""
-    m, l, c, a = cr.move_to, cr.line_to, cr.curve_to, cr.arc
-    pi = math.pi
-    if name == "mic":
-        cr.new_sub_path(); a(8, 4.5, 2.5, pi, 0); l(10.5, 7.5); a(8, 7.5, 2.5, 0, pi); cr.close_path()
-        cr.new_sub_path(); a(8, 7.5, 4.5, 0, pi); m(8, 12); l(8, 14.5)
-    elif name == "history":
-        cr.new_sub_path(); a(8, 8, 6, 0, 2 * pi); m(8, 4.5); l(8, 8); l(10.5, 9.5)
-    elif name == "transcript":
-        for y, w in ((4, 10), (7, 8), (10, 10), (13, 6)):
-            m(3, y); l(3 + w, y)
-    elif name == "refinements":
-        m(8, 2); c(8.5, 5.5, 10.5, 7.5, 14, 8); c(10.5, 8.5, 8.5, 10.5, 8, 14); c(7.5, 10.5, 5.5, 8.5, 2, 8)
-        c(5.5, 7.5, 7.5, 5.5, 8, 2); cr.close_path()
-    elif name == "voices":
-        cr.new_sub_path(); a(8, 5.5, 2.75, 0, 2 * pi); m(2.75, 14); c(3, 10.5, 5.5, 9.5, 8, 9.5); c(10.5, 9.5, 13, 10.5, 13.25, 14)
-    elif name == "settings":
-        cr.new_sub_path(); a(8, 8, 2.25, 0, 2 * pi)
-        for k in range(8):
-            ang = k * pi / 4
-            m(8 + 4.2 * math.cos(ang), 8 + 4.2 * math.sin(ang)); l(8 + 6 * math.cos(ang), 8 + 6 * math.sin(ang))
-        cr.new_sub_path(); a(8, 8, 4.2, 0, 2 * pi)
-    elif name == "search":
-        cr.new_sub_path(); a(7, 7, 4.25, 0, 2 * pi); m(10.2, 10.2); l(13.5, 13.5)
-    elif name == "copy":
-        _round_rect(cr, 5.5, 5.5, 8, 8, 1.75)
-        m(3.5, 10.5); l(3.5, 4.25); c(3.5, 3.5, 3.5, 2.5, 4.5, 2.5); l(10.5, 2.5)
-    elif name == "play":
-        m(5, 3); l(13, 8); l(5, 13); cr.close_path()
-    elif name == "stop":
-        _round_rect(cr, 4, 4, 8, 8, 1.5)
-    elif name == "pause":
-        m(5.5, 3.5); l(5.5, 12.5); m(10.5, 3.5); l(10.5, 12.5)
-    elif name == "trash":
-        m(2.5, 4.5); l(13.5, 4.5); m(6, 4.5); l(6, 2.5); l(10, 2.5); l(10, 4.5)
-        m(4, 4.5); l(4.75, 13.5); l(11.25, 13.5); l(12, 4.5)
-    elif name == "undo":
-        m(5.5, 3); l(2.5, 6); l(5.5, 9); m(2.5, 6); l(9.5, 6); c(12, 6, 13.5, 7.5, 13.5, 9.75); c(13.5, 12, 12, 13.5, 9.5, 13.5); l(6.5, 13.5)
-    elif name == "folder":
-        m(2, 4); l(6, 4); l(7.5, 5.5); l(14, 5.5); l(14, 12.5); l(2, 12.5); cr.close_path()
-    elif name == "open":
-        m(9, 2.5); l(13.5, 2.5); l(13.5, 7); m(13.5, 2.5); l(7.5, 8.5)
-        m(11.5, 9.5); l(11.5, 13.5); l(2.5, 13.5); l(2.5, 4.5); l(6.5, 4.5)
-    elif name == "plus":
-        m(8, 3); l(8, 13); m(3, 8); l(13, 8)
-    elif name == "check":
-        m(3, 8.5); l(6.5, 12); l(13, 4.5)
-    elif name == "warning":
-        m(8, 2.5); l(14, 13); l(2, 13); cr.close_path(); m(8, 6.5); l(8, 9.25); m(8, 11.25); l(8, 11.3)
-    elif name == "close":
-        m(4, 4); l(12, 12); m(12, 4); l(4, 12)
-    elif name == "record":
-        cr.new_sub_path(); a(8, 8, 4, 0, 2 * pi)
+    """Draw icon name's path (ICONS); the caller strokes and fills it."""
+    words = ICONS.get(name, "").split()
+    i = 0
+    while i < len(words):
+        op, n = words[i], _ARGS[words[i]]
+        args = [float(w) for w in words[i + 1:i + 1 + n]]
+        i += 1 + n
+        if op == "m":
+            cr.move_to(*args)
+        elif op == "l":
+            cr.line_to(*args)
+        elif op == "c":
+            cr.curve_to(*args)
+        elif op == "a":
+            cx, cy, r, start, end = args
+            cr.arc(cx, cy, r, start * 2 * math.pi, end * 2 * math.pi)
+        elif op == "r":
+            _round_rect(cr, *args)
+        elif op == "n":
+            cr.new_sub_path()
+        else:
+            cr.close_path()
 
 
 FILLED = {"play", "stop", "record"}
@@ -512,7 +357,8 @@ def text(label, kind="body", wrap=False, xalign=0.0, selectable=False, ellipsize
 
 def button(label, cb, kind="secondary", icon=None, keyhint=None, small=False, tooltip=None):
     """A button: kind primary, secondary, quiet or danger; an icon before the label; a key hint after it."""
-    b = classes(Gtk.Button(tooltip_text=tooltip), "btn", kind if kind != "secondary" else None, "small" if small else None)
+    b = classes(Gtk.Button(tooltip_text=tooltip), "btn", kind if kind != "secondary" else None,
+                "small" if small else None)
     box = Gtk.Box(spacing=6, halign=Gtk.Align.CENTER)
     if icon:
         box.pack_start(Icon(icon), False, False, 0)
@@ -561,7 +407,7 @@ def segmented(options, chosen, on_choose):
             (b.get_style_context().add_class if name == label else b.get_style_context().remove_class)("on")
     for label in options:
         b = buttons[label] = classes(Gtk.Button(label=label), "segment")
-        b.connect("clicked", lambda _, l=label: (choose(l), on_choose(l)))
+        b.connect("clicked", lambda _, lab=label: (choose(lab), on_choose(lab)))
         box.pack_start(b, True, True, 0)
     choose(chosen)
     box.choose = choose
@@ -579,7 +425,8 @@ def step_chip(label, cb, tooltip=None):
 def diff_markup(before, after):
     """Pango markup of after, with what was taken out of before struck through in danger, and what was put in
     highlighted in the accent: a word at a time (spaces and punctuation are words too)."""
-    import difflib, re
+    import difflib
+    import re
     from xml.sax.saxutils import escape
     words = lambda s: re.findall(r"\s+|[\w'’-]+|[^\w\s]", s)
     a, b = words(before), words(after)
@@ -594,7 +441,8 @@ def diff_markup(before, after):
             if new.strip():
                 out.append(" ")  # (so what replaced it doesn't run into it)
         if new.strip():
-            out.append(f'<span background="{tok("accent")}" bgalpha="22%" foreground="{tok("text")}">{escape(new)}</span>')
+            out.append(f'<span background="{tok("accent")}" bgalpha="22%" foreground="{tok("text")}">'
+                       f'{escape(new)}</span>')
         elif new:
             out.append(escape(new))
     return "".join(out)
@@ -718,7 +566,8 @@ class Clamp(Gtk.Bin):
         self.set_allocation(room)
         width = max(min(room.width, self.maximum), self.get_child().get_preferred_width()[0])
         box = Gdk.Rectangle()
-        box.x, box.y, box.width, box.height = room.x + max(0, (room.width - width) // 2), room.y, min(width, room.width), room.height
+        box.x, box.y, box.width, box.height = (room.x + max(0, (room.width - width) // 2), room.y,
+                                               min(width, room.width), room.height)
         self.get_child().size_allocate(box)
 
 
@@ -856,3 +705,38 @@ def layout(cr, words, kind="caption", colour="text", tabular=False):
     lay.set_text(words, -1)
     w, h = lay.get_pixel_size()
     return lay, w, h
+
+
+# --- the Dictate window's pages ---
+def page_box():
+    return classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL), "page")
+
+
+def page_header(title, *actions, subtitle=None, clamp=None):
+    """The page's headline at left, its actions at right; at most clamp px wide (the page's column), centred."""
+    row = classes(Gtk.Box(spacing=8), "page-header")
+    words = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+    words.pack_start(text(title, "headline", ellipsize=True), False, False, 0)
+    if subtitle:
+        words.pack_start(subtitle, False, False, 0)
+    row.pack_start(words, True, True, 0)
+    for a in reversed(actions):
+        row.pack_end(a, False, False, 0)
+    return Clamp(row, clamp) if clamp else row
+
+
+def switch(on, changed):
+    s = Gtk.Switch(active=on)
+    s.connect("notify::active", lambda w, _: changed(w.get_active()))
+    return s
+
+
+def combo(options, current, changed):
+    """A dropdown of options [(value, label)] with current chosen; changed(value) when another is."""
+    c = Gtk.ComboBoxText()
+    for _, label in options:
+        c.append_text(label)
+    values = [v for v, _ in options]
+    c.set_active(values.index(current) if current in values else 0)
+    c.connect("changed", lambda w: changed(values[w.get_active()]))
+    return c

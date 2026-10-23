@@ -3,30 +3,42 @@
 
 Everything is drawn off-screen and saved straight to PNG, so nothing on the screen is captured and no real
 history, refinements or settings are used. Translucent things (the capsule, HUDs) are shown over a backdrop."""
-import json, shutil, sys, tempfile, time, wave
+import json
+import shutil
+import sys
+import tempfile
+import time
+import wave
 from pathlib import Path
 from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
-import dictate  # noqa: E402
+import dictate
+
 dictate.bootstrap()
-import cairo, gi  # noqa: E402
+import cairo
+import gi
+
 gi.require_version("PangoCairo", "1.0")
-from gi.repository import Gdk, GLib, Gtk, PangoCairo  # noqa: E402
-from dictate import capsule, design, huds, hub, osio, refine, summary, topics, transcript, voices  # noqa: E402
-from dictate.app import KEEP_AUDIO, REMOTE_MODES, SAME  # noqa: E402
+from gi.repository import GLib, Gtk, PangoCairo
+
+from dictate import capsule, design, history, hub, huds, osio, refinements, summary, topics, transcript, voices
+from dictate.refinements_page import RefinementsPage
+from dictate.settings import Settings
 
 DOCS = ROOT / "docs"
 SAMPLE = [  # (time, text, raw, app, refinement, has a recording)
     ("09:12:04", "Morning! Can you send me the slides before the 10 o'clock?",
      "um morning can you can you send me the slides before the uh ten o'clock", "Slack", "Slack", True),
     ("11:40:31", "For the release, we need to:\n- fix the login bug\n- write the release notes\n- tell marketing",
-     "so for the release we need to uh fix the login bug write the release notes and then tell marketing", "Slack", "Slack", True),
+     "so for the release we need to uh fix the login bug write the release notes and then tell marketing",
+     "Slack", "Slack", True),
     ("14:05:12", "Run the tests with `pytest -k login` and tell me what fails.",
      "run the tests with pytest dash k login and tell me what fails", "other computer", "AI agent", True),
     ("15:22:47", "running about ten minutes late sorry", None, "firefox", None, False),
-    ("15:48:10", "I think we should move the Tuesday stand-up to 10:30 because half the team is in a different time zone.",
+    ("15:48:10", "I think we should move the Tuesday stand-up to 10:30 because half the team is in a different "
+                 "time zone.",
      "so I think we should like move the the stand up to ten thirty because uh half the team is in the other time zone "
      "sorry Tuesday's stand up not every day", "Slack", "Slack", True),
 ]
@@ -36,9 +48,11 @@ CLEANED = {  # what cleanup made of a dictation, before its refinement (the real
 TRANSCRIPTS = {  # file name: (how long, [(clock, who, text)])
     "2026-10-20 10.00.00": ("32 min", [
         ("10:00:04", "Priya", "Morning, everyone. Shall we start with the roadmap and leave hiring for the end?"),
-        ("10:00:11", "Me", "Sounds good. I'd like to talk about the release date first, because it affects everything else.")]),
-    "2026-10-19 16.30.00": ("1 h 05 min", [("16:30:02", "Speaker 1", "Welcome to the talk. Today I want to show you how "
-                                                                  "speech recognition got small enough to run on a laptop.")]),
+        ("10:00:11", "Me", "Sounds good. I'd like to talk about the release date first, because it affects "
+                           "everything else.")]),
+    "2026-10-19 16.30.00": ("1 h 05 min", [("16:30:02", "Speaker 1",
+                                            "Welcome to the talk. Today I want to show you how speech recognition got "
+                                            "small enough to run on a laptop.")]),
     "2026-10-16 09.15.00": ("12 min", [("09:15:06", "Speaker 1", "Hi, thanks for calling. How can I help?"),
                                        ("09:15:09", "Me", "Hi, I'm calling about my broadband bill.")]),
 }
@@ -112,9 +126,8 @@ def paint_backdrop(cr, w, h):
 
 def fake_app(tmp, session=None):
     return SimpleNamespace(
-        DICTATIONS=tmp / "dictations.jsonl", AUDIO=tmp / "audio", KEEP_AUDIO=KEEP_AUDIO, REMOTE_MODES=REMOTE_MODES, SAME=SAME,
-        cfg={"keep_audio_hours": 24, "keep_call_hours": 168, "refine": True, "remote_mode": "type"},
-        player=osio.Player(), copy=lambda text: None, set_keep_audio=lambda hours: None, set_keep_calls=lambda hours: None, save_state=lambda **kw: None,
+        settings=Settings(tmp / "state.json"), player=osio.Player(), copy=lambda text: None,
+        set_keep_audio=lambda hours: None, set_keep_calls=lambda hours: None,
         set_refine=lambda on: None, autostart=lambda: True, set_autostart=lambda on: None,
         session=session, stop_transcribing=lambda: None)
 
@@ -179,8 +192,10 @@ def main(out):
         design._desktop_scheme = lambda: "light"
     design.install()
     tmp = Path(tempfile.mkdtemp())
-    refine.REFINEMENTS, refine.VOCAB = tmp / "refinements.json", tmp / "vocab.txt"  # the built-in default refinements
-    refine.save_refinements({"cleanup": refine.CLEANUP, "refinements": refine.DEFAULT_REFINEMENTS})
+    # the built-in default refinements
+    refinements.FILE, refinements.VOCAB = tmp / "refinements.json", tmp / "vocab.txt"
+    history.FILE, history.AUDIO = tmp / "dictations.jsonl", tmp / "audio"
+    refinements.save({"cleanup": refinements.CLEANUP, "refinements": refinements.DEFAULTS})
     (tmp / "audio").mkdir()
     today, lines = transcript.datetime.now().strftime("%Y-%m-%d"), []
     for when, text, raw, app_name, refinement, has_audio in SAMPLE:
@@ -203,7 +218,7 @@ def main(out):
 
     for page in ("dictations", "settings", "voices"):
         hub_shot(tmp, page, out / f"{page}.png")
-    hub_shot(tmp, "refinements", out / "refinements.png", row=hub.RefinementsPage.FIXED)  # (the first of yours: Slack)
+    hub_shot(tmp, "refinements", out / "refinements.png", row=RefinementsPage.FIXED)  # (the first of yours: Slack)
     hub_shot(tmp, "dictations", out / "cleanup-step.png", (1120, 420), step="Cleanup")
     hub_shot(tmp, "dictations", out / "refinement-step.png", (1120, 420), step="Slack")
 
@@ -231,8 +246,8 @@ def main(out):
     hub_shot(tmp, "transcripts", out / "transcripts.png", (1180, 600), session=live)
     hub_shot(tmp, "transcripts", out / "summary.png", (1180, 600), session=live, tab="Summary")
 
-    picker = huds.RefinementPicker("So for the release, we need to fix the login bug, write the release notes, and then "
-                              "tell marketing.", lambda *a: None)
+    picker = huds.RefinementPicker("So for the release, we need to fix the login bug, write the release notes, "
+                                   "and then tell marketing.", lambda *a: None)
     save(picker.hud.card, out / "picker.png", (-1, -1), ("hud-window",), backdrop=True)
     picker.hud.win.destroy()
     cap = capsule.Capsule()

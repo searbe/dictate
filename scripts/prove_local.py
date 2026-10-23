@@ -16,7 +16,13 @@
 Linux only. Needs bubblewrap and strace (SteamOS has both; Ubuntu: sudo apt install bubblewrap strace) and the
 models from the setup script. Downloading the models in the first place is the only time Dictate goes online.
 """
-import os, re, shutil, socket, subprocess, sys, tempfile
+import os
+import re
+import shutil
+import socket
+import subprocess
+import sys
+import tempfile
 from collections import Counter, defaultdict
 from pathlib import Path
 
@@ -35,7 +41,8 @@ def main():
     if not Path(PYTHON).exists():
         return fail("Run the setup script first.")
     if live and dictate_running():
-        return fail("Dictate is already running: choose Quit from its menu first, so the copy in the sandbox is the only one.")
+        return fail("Dictate is already running: choose Quit from its menu first, so the copy in the sandbox is the "
+                    "only one.")
     work = Path(tempfile.mkdtemp(prefix="dictate-proof-"))
     uid = os.getuid()
     sandbox = ["bwrap", "--unshare-net", "--die-with-parent", "--dev-bind", "/", "/",
@@ -46,7 +53,8 @@ def main():
         sandbox += ["--tmpfs", "/tmp", "--perms", "01777", "--dir", "/tmp/.X11-unix",  # for the test desktop's display
                     "--bind", str(work), str(work)]
     try:
-        return subprocess.run([*sandbox, PYTHON, __file__, "--inside", str(work), *(["--live"] if live else [])]).returncode
+        return subprocess.run([*sandbox, PYTHON, __file__, "--inside", str(work),
+                               *(["--live"] if live else [])]).returncode
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
@@ -70,9 +78,11 @@ def inside(live, work):
     print("DICTATE LOCAL-ONLY CHECK\n")
     print("1. The sandbox")
     interfaces = sorted(name for _, name in socket.if_nameindex())  # this sandbox's own (/sys shows the host's)
-    print(f"   Network interfaces: {', '.join(interfaces)}" + ("  (loopback only: this computer)" if interfaces == ["lo"] else ""))
+    print(f"   Network interfaces: {', '.join(interfaces)}"
+          + ("  (loopback only: this computer)" if interfaces == ["lo"] else ""))
     sealed = interfaces == ["lo"]
-    for label, attempt in (("Reaching the internet (1.1.1.1, port 443)", lambda: socket.create_connection(("1.1.1.1", 443), 5)),
+    for label, attempt in (("Reaching the internet (1.1.1.1, port 443)",
+                            lambda: socket.create_connection(("1.1.1.1", 443), 5)),
                            ("Reaching the internet over IPv6 (2606:4700:4700::1111)",
                             lambda: socket.create_connection(("2606:4700:4700::1111", 443), 5)),
                            ("Looking up a name (example.com)", lambda: socket.getaddrinfo("example.com", 443))):
@@ -115,13 +125,15 @@ def inside(live, work):
               f"after {dictations} dictation{'s' * (dictations != 1)}.")
         if not dictations:
             print("   (Nothing was dictated, so this run shows only what Dictate does while idle.)")
-        marker, done = "dictate.py", f"Your Dictate handled {dictations} dictation{'s' * (dictations != 1)} with your own keyboard and microphone"
+        marker, done = "dictate.py", (f"Your Dictate handled {dictations} dictation{'s' * (dictations != 1)} "
+                                      "with your own keyboard and microphone")
     else:
         print("\n2. Dictating inside it: real speech model, real llama-server and refinement model")
         ran = subprocess.run([*strace, PYTHON, str(ROOT / "scripts/test.py"), "-q", "-p", "no:warnings",
                               "-p", "no:cacheprovider",
-                              "tests/test_local_only.py::test_a_real_dictation_is_transcribed_and_refined_on_this_computer"], cwd=ROOT,
-                             capture_output=True, text=True, env={**os.environ, "TMPDIR": str(work)})
+                              "tests/test_local_only.py::"
+                              "test_a_real_dictation_is_transcribed_and_refined_on_this_computer"],
+                             cwd=ROOT, capture_output=True, text=True, env={**os.environ, "TMPDIR": str(work)})
         summary = (ran.stdout.strip().splitlines() or ["(no output)"])[-1]
         worked = ran.returncode == 0 and "passed" in summary and "skipped" not in summary
         print(f"   A sample recording was transcribed, cleaned up and refined: {'yes' if worked else 'NO'} ({summary})")
@@ -142,7 +154,8 @@ for attempt in (lambda: socket.create_connection(("1.1.1.1", 443), 3), lambda: s
 
 def recorder(folder):
     """strace, recording every network call (and which program made it) of a command and everything it starts."""
-    return ["strace", "-f", "-ff", "--seccomp-bpf", "-qq", "-s", "512", "-e", f"trace={TRACED}", "-o", str(folder / "t")]
+    return ["strace", "-f", "-ff", "--seccomp-bpf", "-qq", "-s", "512", "-e", f"trace={TRACED}", "-o",
+            str(folder / "t")]
 
 
 # --- reading the trace ---

@@ -9,8 +9,12 @@ message, if it has no transcript) and the whole user message decides the answer:
   {"op": "error"}              answer HTTP 500
 No rule matches → the transcript comes back unchanged (a model with nothing to fix).
 Each request is appended to $FAKE_LLAMA_LOG as {"system", "text", "args"}; startup is logged as {"started"}."""
-import json, os, re, sys
+import json
+import os
+import re
+import sys
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 
 ARGS = sys.argv[1:]
 LOG = os.environ["FAKE_LLAMA_LOG"]
@@ -22,7 +26,8 @@ def log(entry):
 
 
 def answer(system, text, user=""):
-    rules = json.loads(open(os.environ["FAKE_LLAMA_RULES"]).read()) if os.path.exists(os.environ["FAKE_LLAMA_RULES"]) else []
+    rules_file = Path(os.environ["FAKE_LLAMA_RULES"])
+    rules = json.loads(rules_file.read_text()) if rules_file.exists() else []
     for rule in rules:
         if rule.get("prompt", "") in system and rule.get("text", "") in text and rule.get("user", "") in user:
             if rule.get("op") == "upper":

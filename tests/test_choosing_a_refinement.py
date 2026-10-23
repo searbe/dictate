@@ -5,7 +5,8 @@ from harness.client import refinement
 pytestmark = needs_session
 REFINEMENTS = [refinement("Chat", "c", apps="whatsapp, slack"), refinement("Mail", "m", apps="gmail, thunderbird"),
           refinement("Agent", "a", apps="claude")]
-SHOUT = [{"prompt": f"REFINEMENT:{s['name']}", "op": "upper"} for s in REFINEMENTS]  # any refinement: capitals, so we can tell
+SHOUT = [{"prompt": f"REFINEMENT:{s['name']}", "op": "upper"}
+         for s in REFINEMENTS]  # any refinement: capitals, so we can tell
 
 
 def refined_as(app):

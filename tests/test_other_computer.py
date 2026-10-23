@@ -1,5 +1,6 @@
 """When Synergy (or similar) has moved the keyboard to another computer, the text is typed over there."""
 import json
+
 from conftest import needs_session
 from harness.client import refinement
 

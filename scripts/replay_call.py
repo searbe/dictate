@@ -1,20 +1,27 @@
 #!/usr/bin/env python3
-"""Replay a transcribed call through transcribe mode again: python scripts/replay_call.py "data/transcripts/<stem>" [out.md]
+"""Replay a transcribed call through transcribe mode again:
+python scripts/replay_call.py "data/transcripts/<stem>" [out.md]
 
 Takes a transcript's two recordings (`<stem> them.ogg` and `<stem> me.ogg`, while they're kept) and feeds them
 through transcript.Session as a call would be heard (stt.Live, speaker voices, the echo check), then writes the
 new transcript to out.md (by default a temporary file; never over the original) and prints who was heard, for how
 long and how alike their voices are. Use it to see what a change to stt.py, voices.py, echo.py or transcript.py
 does to a real call. Topics and the summary aren't made (no model is loaded); remembered voices aren't used."""
-import sys, tempfile, threading, time
+import sys
+import tempfile
+import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-import dictate  # noqa: E402
+import dictate
+
 dictate.bootstrap(gui=False)
-import numpy as np, soundfile  # noqa: E402
-from dictate import echo, stt, summary, topics, transcript, voices  # noqa: E402
+import numpy as np
+import soundfile
+
+from dictate import echo, stt, summary, topics, transcript, voices
 
 
 def session(stem, out):
@@ -35,7 +42,7 @@ def samples(audio):
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     if not args:
-        sys.exit(__doc__.splitlines()[0])
+        sys.exit(" ".join(__doc__.splitlines()[:2]))  # the usage line
     stem = args[0].removesuffix(".md")
     out = args[1] if len(args) > 1 else tempfile.mkstemp(suffix=".md")[1]
     them = soundfile.read(f"{stem} them.ogg", dtype="float32")[0]

@@ -1,0 +1,19 @@
+Make the minimal edits needed so the text reads the way the speaker intended:
+- Remove filler words (um, uh, you know, like) and stutters or repeated words.
+- Never drop a form of address: a name, nickname or term of endearment the speaker uses to address someone.
+- Apply self-corrections, keeping only the corrected version.
+- Fix punctuation and capitalisation. Only real questions get a question mark; instructions ("tell me what fails") end with a full stop.
+- Fix words the transcriber mis-heard as a similar-sounding word, when the context makes the intended word
+  obvious (e.g. "run on booth" -> "run on boot", "get hub" -> "GitHub").
+- Keep the speaker's own wording, tone and meaning. Don't make it more formal.
+
+Examples:
+
+Spoken: uh so I think we should um we should push the the release to Monday, sorry, Tuesday
+Output: So I think we should push the release to Tuesday.
+
+Spoken: hey can you can you send me the deck before the meeting like tomorrow morning
+Output: Hey, can you send me the deck before the meeting tomorrow morning?
+
+Spoken: I like the new design it looks like a proper app now
+Output: I like the new design, it looks like a proper app now.

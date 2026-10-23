@@ -12,15 +12,22 @@ With DICTATE_TEST_LLAMA pointing at the real llama-server, refining is real too.
 Commands arrive as JSON lines on stdin (see COMMANDS); each gets a "done" reply with the same id.
 Events go to stdout as lines starting with "EVENT "; anything else on stdout is the app's own log.
 """
-import json, os, sys, time, wave, zlib
+import json
+import os
+import sys
+import time
+import wave
+import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-import dictate  # noqa: E402
+import dictate
+
 dictate.bootstrap()
-from dictate import osio, refine, stt, summary, topics, voices  # noqa: E402
-import numpy as np  # noqa: E402
-from gi.repository import Gdk, GLib, Gtk  # noqa: E402
+import numpy as np
+from gi.repository import Gdk, GLib, Gtk
+
+from dictate import llm, osio, stt, summary, topics, voices
 
 
 def event(kind, **fields):
@@ -123,7 +130,7 @@ osio.Hotkey, osio.Recorder, osio.Paster, osio.Player, osio.notify = Hotkey, Reco
 if not REAL_SPEECH and not REAL_SPEAKERS:
     stt.Live, stt.load = Live, lambda: None
     stt.transcribe = lambda path: heard.get(str(path)) or ""
-refine.SERVER = Path(os.environ["DICTATE_TEST_LLAMA"])
+llm.SERVER = Path(os.environ["DICTATE_TEST_LLAMA"])
 
 
 def fake_voiceprint(name, size=192):
@@ -136,15 +143,15 @@ _voiceprint, _narrowband = voices.voiceprint, voices.narrowband  # the real ones
 voices.voiceprint = lambda s: fake_voiceprint(s[1]) if isinstance(s, tuple) else _voiceprint(s)
 voices.narrowband = lambda s=None, power=None: False if isinstance(s, tuple) else _narrowband(s, power)
 voices.available = lambda: not os.environ.get("DICTATE_TEST_NO_VOICES")
-refine.IDLE = float(os.environ.get("DICTATE_TEST_IDLE", refine.IDLE))
+llm.IDLE = float(os.environ.get("DICTATE_TEST_IDLE", llm.IDLE))
 topics.TICK, topics.EVERY, topics.MOST, topics.FREE_FOR = 0.2, 0, 0, 0.6  # topics as soon as anything is said
 topics.MERGE = 0.5
 summary.EVERY, summary.WORDS = 0.5, 1  # a summary as soon as anything's said
 gpu = {"state": os.environ.get("DICTATE_TEST_GPU", "free")}  # the graphics card: "free", "busy" or "none"
-refine.gpu_ok = lambda: gpu["state"] == "free"
-refine.gpu_present = lambda: gpu["state"] != "none"
+llm.gpu_ok = lambda: gpu["state"] == "free"
+llm.gpu_present = lambda: gpu["state"] != "none"
 
-from dictate import app as dictate_app  # noqa: E402  (after the swaps, like the real launcher's order)
+from dictate import app as dictate_app
 
 dictate_app.QUIET = float(os.environ.get("DICTATE_TEST_QUIET", dictate_app.QUIET))
 dictate_app.QUIET_CHECK = 0.2
@@ -230,8 +237,8 @@ def menu_root():
     choosing an item, GTK is still closing the previous menu and closes the new one too."""
     for _ in range(20):
         ev = Gdk.Event.new(Gdk.EventType.BUTTON_PRESS)
-        ev.button, ev.window, ev.time = 3, app.win.get_window(), Gtk.get_current_event_time()
-        app.win.emit("button-press-event", ev)
+        ev.button, ev.window, ev.time = 3, app.capsule.win.get_window(), Gtk.get_current_event_time()
+        app.capsule.win.emit("button-press-event", ev)
         pump()
         roots = [m for m in open_menus() if not m.get_attach_widget()]  # submenus hang off an item
         if roots:
@@ -241,7 +248,8 @@ def menu_root():
 
 
 def open_menus():
-    return [w.get_child() for w in Gtk.Window.list_toplevels() if isinstance(w.get_child(), Gtk.Menu) and w.get_mapped()]
+    return [w.get_child() for w in Gtk.Window.list_toplevels()
+            if isinstance(w.get_child(), Gtk.Menu) and w.get_mapped()]
 
 
 def close_menus():
@@ -291,7 +299,7 @@ def cmd_gpu(state):
 
 def cmd_hide_icon():
     """The floating icon isn't on screen."""
-    app.win.hide()
+    app.capsule.win.hide()
 
 
 def cmd_notification(button):
@@ -339,7 +347,8 @@ def cmd_opacity(label, window_title=None, hover=None):
     row = next((w for w in iter(lambda b=[button]: (b.append(b[-1].get_parent()), b[-1])[1], None)
                 if isinstance(w, Gtk.ListBoxRow)), None)
     if row and hover is not None:
-        (row.set_state_flags if hover else row.unset_state_flags)(Gtk.StateFlags.PRELIGHT, *(() if not hover else (False,)))
+        (row.set_state_flags if hover else row.unset_state_flags)(Gtk.StateFlags.PRELIGHT,
+                                                                  *(() if not hover else (False,)))
         for _ in range(30):  # (let the fade finish)
             pump()
             time.sleep(0.01)
@@ -373,7 +382,8 @@ def cmd_panes(window_title=None):
             gdk = w.get_window()
             ox, oy = gdk.get_origin()[1:]
             a = w.get_allocation()
-            out.append({"x": ox + a.x + w.get_position(), "y": oy + a.y, "height": a.height, "position": w.get_position()})
+            out.append({"x": ox + a.x + w.get_position(), "y": oy + a.y, "height": a.height,
+                        "position": w.get_position()})
     return {"panes": sorted(out, key=lambda p: p["x"])}
 
 
@@ -408,8 +418,8 @@ def cmd_click_icon():
     """Click the floating icon (press and release without moving)."""
     for kind in (Gdk.EventType.BUTTON_PRESS, Gdk.EventType.BUTTON_RELEASE):
         ev = Gdk.Event.new(kind)
-        ev.button, ev.window, ev.x_root, ev.y_root = 1, app.win.get_window(), 120.0, 120.0
-        app.win.emit("button-press-event" if kind == Gdk.EventType.BUTTON_PRESS else "button-release-event", ev)
+        ev.button, ev.window, ev.x_root, ev.y_root = 1, app.capsule.win.get_window(), 120.0, 120.0
+        app.capsule.win.emit("button-press-event" if kind == Gdk.EventType.BUTTON_PRESS else "button-release-event", ev)
 
 
 def cmd_click(label, window_title=None, nth=0):
@@ -437,7 +447,8 @@ def cmd_field(name, window_title=None):
 
 
 def cmd_select(row, window_title=None):
-    lb = next(w for w in descendants(window(window_title)) if isinstance(w, Gtk.ListBox) and labelled(w, Gtk.ListBoxRow, row))
+    lb = next(w for w in descendants(window(window_title))
+              if isinstance(w, Gtk.ListBox) and labelled(w, Gtk.ListBoxRow, row))
     lb.select_row(labelled(lb, Gtk.ListBoxRow, row)[0])
 
 
