@@ -179,14 +179,16 @@ if LINUX:
     class Hotkey(threading.Thread):
         """Watches every keyboard via evdev (global, works on Wayland). The kernel timestamps each key.
         Keyboards come and go (unplugged, a USB hub dropping out): one that goes is let go of, with any keys it
-        held; one that comes is watched from then on (looked for whenever DIR changes)."""
+        held; one that comes is watched from then on (looked for whenever DIR changes). One not ours to read yet
+        (just after login, before logind lets this session read them) is tried again: DIR doesn't change for that."""
         DIR = "/dev/input"
         RESCAN = 1.0  # seconds between looks at whether DIR has changed
+        RETRY = 1.0, 30.0  # seconds between tries of those not ours to read: while none is watched, and otherwise
 
         def __init__(self, callback, on_again=None, on_other=lambda: None, letters=None):
             super().__init__(daemon=True)
             self.chord, self.sel = Chord(callback, on_again, on_other, letters), selectors.DefaultSelector()
-            self.watching = {}
+            self.watching, self.denied = {}, set()
             self.changed = self.stamp()
             self.scan()
 
@@ -198,14 +200,22 @@ if LINUX:
 
         def scan(self):
             """Watch every keyboard not watched yet."""
-            for path in evdev.list_devices(self.DIR):
+            self.tried, paths = time.monotonic(), evdev.list_devices(self.DIR)
+            self.denied &= set(paths)
+            for path in paths:
                 if path in self.watching:
                     continue
                 try:
                     dev = evdev.InputDevice(path)
                     keyboard = e.KEY_LEFTCTRL in dev.capabilities().get(e.EV_KEY, []) and dev.name != VIRTUAL
-                except OSError:  # gone again already, or not ours to read
+                except PermissionError:  # not ours to read (yet)
+                    if path not in self.denied:
+                        log.info("hotkey: not allowed to read %s yet", path)
+                        self.denied.add(path)
                     continue
+                except OSError:  # gone again already
+                    continue
+                self.denied.discard(path)
                 if keyboard:
                     self.sel.register(dev, selectors.EVENT_READ)
                     self.watching[path] = dev
@@ -236,6 +246,8 @@ if LINUX:
                             self.chord.key(ev.code, KINDS.get(ev.code), ev.value == 1, ev.timestamp())
                 if self.stamp() != self.changed:  # a device was added or removed
                     self.changed = self.stamp()
+                    self.scan()
+                elif self.denied and time.monotonic() - self.tried >= self.RETRY[bool(self.watching)]:
                     self.scan()
 
     _cancellers = itertools.count()

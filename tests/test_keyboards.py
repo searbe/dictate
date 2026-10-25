@@ -21,8 +21,9 @@ class Keyboard:
     """A stand-in keyboard at path: keys pressed on it are read as from a real one."""
 
     def __init__(self, folder, n, name="USB keyboard",
-                 keys=(e.KEY_LEFTCTRL,) if sys.platform.startswith("linux") else ()):
+                 keys=(e.KEY_LEFTCTRL,) if sys.platform.startswith("linux") else (), denied=False):
         self.path, self.name, self.keys, self.queued, self.gone = str(folder / f"event{n}"), name, keys, [], False
+        self.denied = denied  # not this session's to read (yet)
         self.r, self.w = os.pipe()
         open(self.path, "w").close()  # the device's node appearing
 
@@ -59,6 +60,8 @@ def plugged(tmp_path, monkeypatch):
     def device(path):
         if path not in devices:  # (another test's)
             raise OSError(2, "No such device")
+        if devices[path].denied:
+            raise PermissionError(13, "Permission denied")
         return devices[path]
     monkeypatch.setattr(osio.evdev, "InputDevice", device)
     monkeypatch.setattr(osio.evdev, "list_devices",
@@ -78,7 +81,7 @@ def hotkey(plugged):
     (False) and other apps' shortcuts ("other") go to. (Each test's has its own folder: the hotkeys of earlier tests are
     still running.)"""
     class Hotkey(osio.Hotkey):
-        DIR, RESCAN = plugged.folder, 0.05
+        DIR, RESCAN, RETRY = plugged.folder, 0.05, (0.05, 0.05)
     calls = []
     hk = Hotkey(lambda down, alt, letter: calls.append(down), on_other=lambda: calls.append("other"))
     hk.start()
@@ -145,6 +148,20 @@ def test_unplugged_mid_dictation_it_counts_as_let_go(plugged):
     kb.unplug()
 
     eventually(lambda: calls == [True, False])  # not left recording, with Ctrl+Win held for ever
+
+
+def test_a_keyboard_not_ours_to_read_at_first_works_once_it_is(plugged):
+    """Started at login, before logind lets this session read the keyboards: nothing in the folder changes
+    when it does."""
+    kb = plugged(1, denied=True)
+    _, calls = hotkey(plugged)
+    time.sleep(0.2)
+
+    kb.denied = False
+    time.sleep(0.3)
+    chord(kb, True)
+
+    eventually(lambda: calls == [True])
 
 
 def test_dictates_own_virtual_keyboard_is_not_watched(plugged):
