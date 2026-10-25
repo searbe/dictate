@@ -15,6 +15,10 @@ ROOT = Path(__file__).resolve().parent.parent  # the project folder
 MODELS, BIN = ROOT / "models", ROOT / "bin"
 SHERPA = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"
 HF = "https://huggingface.co/unsloth"
+# Parakeet in full precision: the int8 build leaves out most of a stretch's words now and then (bench_calls.py)
+PARAKEET = "https://huggingface.co/csukuangfj/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3/resolve/main"
+PARAKEET_FILES = ("encoder.onnx", "encoder.weights", "decoder.onnx", "joiner.onnx", "tokens.txt",
+                  *(f"test_wavs/{lang}.wav" for lang in ("en", "de", "es", "fr")))
 LLAMA = "b11755"  # llama.cpp release
 LLAMA_BUILD = {  # Vulkan builds run on AMD, NVIDIA and Intel GPUs (or the CPU); macOS builds use Metal
     "linux": "ubuntu-vulkan-x64.tar.gz",
@@ -57,11 +61,11 @@ def main():
     BIN.mkdir(exist_ok=True)
     # speech recognition: Parakeet TDT 0.6B v3 + the Silero speech detector
     if not (MODELS / "parakeet").exists():
-        name = "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
-        download(f"{SHERPA}/{name}.tar.bz2", MODELS / f"{name}.tar.bz2")
-        unpack(MODELS / f"{name}.tar.bz2", MODELS)
-        (MODELS / name).rename(MODELS / "parakeet")
-        (MODELS / f"{name}.tar.bz2").unlink()
+        part = MODELS / "parakeet.part"  # (renamed once every file has arrived)
+        (part / "test_wavs").mkdir(parents=True, exist_ok=True)
+        for name in PARAKEET_FILES:
+            download(f"{PARAKEET}/{name}", part / name)
+        part.rename(MODELS / "parakeet")
     download(f"{SHERPA}/silero_vad.onnx", MODELS / "silero_vad.onnx")
     # telling voices apart in transcripts: TitaNet small (see voices.py; compare with bench_voices.py)
     download("https://github.com/k2-fsa/sherpa-onnx/releases/download/speaker-recongition-models/"  # sic

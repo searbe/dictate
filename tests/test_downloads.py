@@ -65,6 +65,30 @@ def test_rerunning_setup_downloads_nothing_that_is_already_there(tmp_path, monke
     fetch.main()
 
 
+def test_the_speech_model_is_only_in_place_once_all_of_it_has_arrived(server, tmp_path, monkeypatch):
+    """Its files come one by one: setup stopped halfway mustn't leave a models/parakeet that's then skipped."""
+    models, bin_ = tmp_path / "models", tmp_path / "bin"
+    (bin_ / "llama").mkdir(parents=True)
+    models.mkdir()
+    for name in ("silero_vad.onnx", "titanet_small.onnx", "segmentation.onnx", "qwen3.5-4b-q4_k_m.gguf",
+                 "qwen3.5-9b-q4_k_m.gguf"):
+        (models / name).write_bytes(b"x")
+    monkeypatch.setattr(fetch, "MODELS", models)
+    monkeypatch.setattr(fetch, "BIN", bin_)
+    monkeypatch.setattr(fetch, "PARAKEET", f"{server}/parakeet")
+    real = fetch.download
+    monkeypatch.setattr(fetch, "download", lambda url, dest: real(
+        f"{server}/broken" if dest.name == "encoder.weights" else f"{server}/file", dest))
+    with pytest.raises(OSError):
+        fetch.main()
+    assert not (models / "parakeet").exists()
+
+    monkeypatch.setattr(fetch, "download", lambda url, dest: real(f"{server}/file", dest))
+    fetch.main()  # re-running setup finishes the job
+    assert sorted(p.relative_to(models / "parakeet").as_posix() for p in (models / "parakeet").rglob("*.*")) == \
+        sorted(fetch.PARAKEET_FILES)
+
+
 @pytest.mark.parametrize("kind", ["zip", "tar.gz"])
 def test_archives_are_unpacked(tmp_path, kind):
     archive = tmp_path / f"llama.{kind}"

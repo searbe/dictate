@@ -1,4 +1,4 @@
-"""Speech-to-text: Silero VAD strips non-speech, then Parakeet TDT 0.6B v3 (int8, CPU).
+"""Speech-to-text: Silero VAD strips non-speech, then Parakeet TDT 0.6B v3 (full precision, CPU).
 
 Live transcribes while recording: at each pause, the speech so far is transcribed in the background,
 so when recording stops only the stretch since the last pause is left. transcribe() does a whole file."""
@@ -28,8 +28,8 @@ def load():
         return
     p = MODELS / "parakeet"
     _rec = sherpa_onnx.OfflineRecognizer.from_transducer(
-        encoder=str(p / "encoder.int8.onnx"), decoder=str(p / "decoder.int8.onnx"),
-        joiner=str(p / "joiner.int8.onnx"), tokens=str(p / "tokens.txt"),
+        encoder=str(p / "encoder.onnx"), decoder=str(p / "decoder.onnx"),
+        joiner=str(p / "joiner.onnx"), tokens=str(p / "tokens.txt"),
         model_type="nemo_transducer", num_threads=THREADS)
     _vad_cfg = vad_config(0.4)
 

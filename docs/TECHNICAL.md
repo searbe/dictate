@@ -38,7 +38,7 @@ Each module in `dictate/` explains itself at the top, with what was measured to 
 | **CPU** | Any 64-bit x86 or Apple Silicon from the last ~6 years | 8 cores or more, if refining text on the CPU |
 | **RAM** | 8 GB | 16 GB or more |
 | **GPU** | None: everything can run on the CPU | 8 GB+ of free video memory (12 GB+ card), any Vulkan GPU on Linux, NVIDIA on Windows, or an Apple Silicon Mac with 16 GB+ |
-| **Disk** | ~10 GB for the models | SSD, so the models load quickly |
+| **Disk** | ~12 GB for the models | SSD, so the models load quickly |
 | **Microphone** | Built-in | A headset or close-up mic: the biggest single help in noisy rooms |
 
 Transcription takes 0.1 s or less after you let go. Refining is the slow part: about 0.5–1.5 s with a free GPU
@@ -46,7 +46,7 @@ Transcription takes 0.1 s or less after you let go. Refining is the slow part: a
 
 ## Setup (self-contained)
 Each setup script installs into this folder and nothing anywhere else, and is safe to re-run:
-- `models/`: Parakeet TDT 0.6B v3 (~640 MB, speech), Silero VAD, TitaNet small (40 MB, voices), pyannote segmentation (6 MB, where voices change), and Qwen3.5 4B (~2.7 GB, CPU) and 9B (~5.7 GB, GPU) for refinement.
+- `models/`: Parakeet TDT 0.6B v3 (~2.5 GB, speech), Silero VAD, TitaNet small (40 MB, voices), pyannote segmentation (6 MB, where voices change), and Qwen3.5 4B (~2.7 GB, CPU) and 9B (~5.7 GB, GPU) for refinement.
 - `bin/llama/`: a llama.cpp release (Vulkan on Linux/Windows, Metal on macOS), used for refinement.
 - `.venv/`: Python packages.
 - `data/`: your dictations, recordings, transcripts, settings, refinements and vocabulary.
