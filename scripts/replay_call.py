@@ -41,19 +41,14 @@ def samples(audio):
     return (np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes()
 
 
-def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    if not args:
-        sys.exit(" ".join(__doc__.splitlines()[:2]))  # the usage line
-    stem = args[0].removesuffix(".md")
-    out = args[1] if len(args) > 1 else tempfile.mkstemp(suffix=".md")[1]
-    them = soundfile.read(f"{stem} them.ogg", dtype="float32")[0]
-    me = soundfile.read(f"{stem} me.ogg", dtype="float32")[0]
+def replay(stem, them, me, out, remembered=()):
+    """The Session that hearing them (the speakers) and me (the microphone), 16 kHz float samples, makes;
+    finished, and saved to out. stem: a transcript's, for the time it started."""
     stt.load()
     lock = threading.Lock()
     transcript.GLib.idle_add = lambda f, *a: (lock.acquire(), f(*a), lock.release()) and False  # (no GTK loop here)
     echo.KEEP = len(them)  # (the speakers are given all at once, not as they play: keep all of it)
-    s = session(stem, out, voices.remembered() if "--remembered" in sys.argv else ())
+    s = session(stem, out, remembered)
     voices.remembering = lambda: False  # (so nothing is written beside out.md)
     s.echo.played(samples(them))
     s.recent = transcript.Recent(len(them) / stt.RATE + 1)  # (all of it: it's given at once, not as it plays)
@@ -66,6 +61,18 @@ def main():
     s.finish_settling()
     s.now = lambda: len(them) / stt.RATE
     s.save()
+    return s
+
+
+def main():
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    if not args:
+        sys.exit(" ".join(__doc__.splitlines()[:2]))  # the usage line
+    stem = args[0].removesuffix(".md")
+    out = args[1] if len(args) > 1 else tempfile.mkstemp(suffix=".md")[1]
+    them = soundfile.read(f"{stem} them.ogg", dtype="float32")[0]
+    me = soundfile.read(f"{stem} me.ogg", dtype="float32")[0]
+    s = replay(stem, them, me, out, voices.remembered() if "--remembered" in sys.argv else ())
 
     names = [who for _, who, _ in s.paragraphs()]
     print(f"{len(names)} paragraphs, written to {out}")
