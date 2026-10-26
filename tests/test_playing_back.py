@@ -101,7 +101,9 @@ def test_play_above_plays_the_whole_call_and_the_highlight_follows_it(start):
 
 def test_another_paragraph_while_one_plays_plays_that_one_instead(start):
     app = opened(start)
+    first = app.mark()
     play_paragraph(app, "Yes, the roadmap first.")
+    app.wait_for("playing", after=first)  # (it's highlighted from the click, before it's ready and plays)
     eventually(lambda: highlighted(app) == ["10:00:03 Me  Yes, the roadmap first."])
     mark = app.mark()
 

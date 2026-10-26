@@ -346,7 +346,9 @@ def cmd_hover_text(text, window_title=None):
         ev.window = view.get_window(Gtk.TextWindowType.TEXT)
         ev.x, ev.y = at_text(view, text)
         view.emit("motion-notify-event", ev)
-    pump()
+    for _ in range(10):  # (its button is shown at the next layout: under load, a few frames later)
+        pump()
+        time.sleep(0.01)
 
 
 def cmd_highlighted(window_title=None):
