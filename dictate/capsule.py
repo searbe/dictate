@@ -60,6 +60,7 @@ class Capsule:
         self.state, self.session, self.since, self.level = "idle", None, None, lambda: 0.0
         self.hovered, self.anchor = False, "left"
         self.flashing = False  # the paused dot lit up (see flash)
+        self.waiting = False  # a stopped call's final pass is waiting for the GPU: a sand timer, not the mic
         self.width = self.start_width = self.target = float(DOT)
         self.morph_at, self.loud, self.t0, self.ticking = 0.0, 0.0, time.monotonic(), None
         d.on_scheme.append(self.win.queue_draw)
@@ -303,7 +304,7 @@ class Capsule:
             cr.restore()
         else:
             ic = d.rgba("text" if self.hovered else "text-2")
-            d.draw_icon(cr, "mic", x + (DOT - 16) / 2, y + (H - 16) / 2, 16, ic)
+            d.draw_icon(cr, "hourglass" if self.waiting else "mic", x + (DOT - 16) / 2, y + (H - 16) / 2, 16, ic)
 
     def draw_dot(self, cr, cx, cy, colour, alpha):
         c = d.rgba(colour, alpha)
@@ -327,14 +328,15 @@ class Capsule:
         return Gdk.pixbuf_get_from_surface(surface, int(self.left() - PAD), 0, int(self.width + 2 * PAD), height)
 
 
-def draw_tray(cr, px, state, session, flashing=False):
-    """The tray icon: the app icon while idle; a dot with the mic, red while recording, ringed in the accent while
-    transcribing a call (grey while it's paused, red when flashing)."""
+def draw_tray(cr, px, state, session, flashing=False, waiting=False):
+    """The tray icon: the app icon while idle (a dot with a sand timer, while a call's final pass waits for the
+    GPU); a dot with the mic, red while recording, ringed in the accent while transcribing a call (grey while it's
+    paused, red when flashing)."""
     cr.set_operator(cairo.OPERATOR_SOURCE)
     cr.set_source_rgba(0, 0, 0, 0)
     cr.paint()
     cr.set_operator(cairo.OPERATOR_OVER)
-    if state == "idle" and not session:
+    if state == "idle" and not session and not waiting:
         return d.draw_app_icon(cr, px)
     cr.scale(px / 32, px / 32)
     fill = d.rgba("record") if state == "rec" else d.rgba("surface-3") if d.scheme == "dark" else d.rgba("#2a2c33")
@@ -355,4 +357,5 @@ def draw_tray(cr, px, state, session, flashing=False):
         cr.set_line_width(2.5)
         cr.set_line_cap(cairo.LINE_CAP_ROUND)
         cr.stroke()
-    d.draw_icon(cr, "mic", 8, 8, 16, Gdk.RGBA(1, 1, 1, 0.95))
+    d.draw_icon(cr, "hourglass" if waiting and state == "idle" and not session else "mic", 8, 8, 16,
+                Gdk.RGBA(1, 1, 1, 0.95))

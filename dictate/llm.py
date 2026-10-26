@@ -141,7 +141,8 @@ class Server:
         self._proc: subprocess.Popen | None = None
         self._mode: str | None = None
         self._hold = False  # a dictation is using it
-        self._keep = False  # a call is being transcribed
+        self._keep = 0  # calls being transcribed, or finished (keep(True) each, keep(False) when they're done)
+        self._busy = 0  # requests being answered (never unloaded mid-answer: on the CPU one can take minutes)
         self._last = 0.0  # when it was last used (monotonic)
         self._port: int | None = None  # chosen at first start: per instance, so bench.py never talks to another's
         self._started = False
@@ -191,12 +192,20 @@ class Server:
         self._hold, self._last = False, time.monotonic()
 
     def keep(self, on: bool) -> None:
-        """Keep the server loaded while on (while transcribing, for its topics), however long it's unused."""
-        self._keep, self._last = on, time.monotonic()
+        """Keep the server loaded (while transcribing, for its topics), however long it's unused, until as many
+        keep(False) as keep(True)."""
+        with self._lock:
+            self._keep, self._last = max(0, self._keep + (1 if on else -1)), time.monotonic()
+
+    def busy(self, on: bool) -> None:
+        """A request is being answered (on), or has been."""
+        with self._lock:
+            self._busy, self._last = max(0, self._busy + (1 if on else -1)), time.monotonic()
 
     def stop(self, if_idle: bool = False) -> None:
         with self._lock:
-            if not self._proc or (if_idle and (self._hold or self._keep or time.monotonic() - self._last < IDLE)):
+            if not self._proc or (if_idle and (self._hold or self._keep or self._busy
+                                               or time.monotonic() - self._last < IDLE)):
                 return
             self._proc.terminate()
             try:
@@ -274,7 +283,11 @@ def chat(system: str, user: str, *, max_tokens: int, temperature: float = 0.0, s
     }
     if schema:
         body["response_format"] = {"type": "json_schema", "json_schema": {"schema": schema}}
-    choice = server.post("/v1/chat/completions", body, timeout=timeout)["choices"][0]
+    server.busy(True)
+    try:
+        choice = server.post("/v1/chat/completions", body, timeout=timeout)["choices"][0]
+    finally:
+        server.busy(False)
     if choice.get("finish_reason") == "length":
         raise Cut(f"the answer was cut off after {max_tokens} tokens: …{choice['message']['content'][-60:]!r}")
     return choice["message"]["content"].strip()

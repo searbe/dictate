@@ -36,6 +36,10 @@ Dictate does, see the [README](../README.md).
     has read everything once, and fits the model's context however long the call. A request that wouldn't leave room
     for the answer isn't sent as it is, and an answer cut off at its limit isn't kept.
     `scripts/resummarise.py` writes a saved transcript's summary again the same way.
+  - **Waiting for the graphics card:** the slices and the final pass (the last topics and the final summary) are
+    written by the larger model on the graphics card. While it's busy (a game), they wait, the capsule shows a
+    sand timer, and clicking it offers to use the CPU instead (slower, rougher). The live topics and summary don't
+    wait. A final pass still waiting when Dictate quits is done the next time it starts.
   - **Left running by mistake:** closing the window during a call brings up a reminder (once a day) that it's still
     transcribing. After five minutes with nothing transcribed, it's paused: nothing is transcribed, and the
     recordings get silence instead of what's heard. An alert stays above other windows until you choose Resume or

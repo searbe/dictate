@@ -374,6 +374,11 @@ def cmd_screenshot(path, window_title=None):
     Gdk.pixbuf_get_from_window(gdk, 0, 0, gdk.get_width(), gdk.get_height()).savev(path, "png", [], [])
 
 
+def cmd_icon():
+    """What the capsule and the tray icon say: whether the capsule shows the sand timer, and the tray's tooltip."""
+    return {"waiting": app.capsule.waiting, "status": app.status()}
+
+
 def cmd_microphones(connected):
     """These microphones are connected now ([[name, description]], the default one first)."""
     microphones[:] = [tuple(m) for m in connected]

@@ -42,6 +42,7 @@ from . import (  # noqa: E402
     stt,
     transcript,
     tray,
+    waiting,
 )
 from .history import Dictation  # noqa: E402
 from .menu import Menu  # noqa: E402
@@ -81,6 +82,8 @@ class App:
             for sig in (signal.SIGTERM, signal.SIGINT):
                 GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, lambda sig=sig: self.quit(f"got {sig.name}"))
         self.menu = Menu(self)
+        self.waiting = waiting.Waiting(self.waiting_changed)  # stopped calls' final passes, waiting for the GPU
+        self.waiting_hud = None  # what's waiting, and Use the CPU, while it's shown
         self.tray = tray.Tray(self.menu.widget, self.render_icon, self.menu.refresh, self.status)  # the same menu
         self.clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         # the menu is an XWayland popup: a click on a Wayland app never reaches it, so it can't tell it
@@ -107,13 +110,18 @@ class App:
 
     def show_state(self):
         """Tell the capsule and the tray what's happening."""
+        if self.capsule.waiting != bool(self.waiting.jobs):
+            self.capsule.waiting = bool(self.waiting.jobs)
+            self.capsule.win.queue_draw()
         level = lambda: capsule.wav_level(self.wav) if self.wav and self.rec else 0.0
         self.capsule.update(self.state, self.session, self.since, level)
         self.tray.update()
 
     def status(self):
         """What Dictate's doing, for the tray icon's tooltip: while transcribing, for how long, and the topic."""
-        session = self.session
+        session, n = self.session, len(self.waiting.jobs)
+        if not session and n:
+            return f"Waiting for the graphics card to summarise {n} call{'s' if n > 1 else ''}"
         if not session:
             return "Hold Ctrl+Win to dictate"
         text = f"{'Transcribing, paused' if session.paused else 'Transcribing'} · {transcript.length(session.now())}"
@@ -123,7 +131,8 @@ class App:
     def render_icon(self, px):
         """The tray icon in the current state, px by px."""
         surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, px, px)
-        capsule.draw_tray(cairo.Context(surface), px, self.state, self.session, self.capsule.flashing)
+        capsule.draw_tray(cairo.Context(surface), px, self.state, self.session, self.capsule.flashing,
+                          bool(self.waiting.jobs))
         return surface
 
     def capsule_clicked(self):
@@ -132,6 +141,24 @@ class App:
             self.draw_attention(focus=True)
         elif self.session:
             self.show_transcripts(recording=True)
+        elif self.waiting.jobs:
+            self.show_waiting()
+
+    def show_waiting(self):
+        """What's waiting for the graphics card, and how long it's been, with Use the CPU and Keep waiting."""
+        if self.waiting_hud and self.waiting_hud.open:
+            self.waiting_hud.close()
+        calls = [(datetime.strptime(j.path.stem, transcript.STAMP), self.waiting.waited(j)) for j in self.waiting.jobs]
+        self.waiting_hud = huds.WaitingForGpu(calls, self.capsule.rect(), self.waiting.use_cpu)
+
+    def waiting_changed(self):
+        """A final pass started waiting for the GPU, or stopped waiting."""
+        if self.waiting_hud and self.waiting_hud.open and not self.waiting.jobs:
+            self.waiting_hud.close()
+        self.show_state()
+        self.transcripts_changed()
+        if self.hub and not self.hub.closed and "transcripts" in self.hub.pages:
+            self.hub.pages["transcripts"].waiting_changed()
 
     def capsule_moved(self):
         self.settings.update(pos=self.capsule.position(), anchor=self.capsule.anchor)
@@ -363,7 +390,9 @@ class App:
         if self.reminder:
             self.reminder.close()
 
-        def saved():
+        def saved(kept):
+            if kept:
+                self.waiting.add(session)  # its final pass: now, or once the graphics card is free
             if self.settings["keep_call_hours"] == 0:
                 for path in session.recordings:
                     Path(path).unlink(missing_ok=True)
@@ -483,7 +512,7 @@ class App:
             self.rec = None
         if self.session:  # save what's still to be transcribed
             session, self.session = self.session, None
-            session.stop(Gtk.main_quit, last_topics=False)
+            session.stop(lambda kept: Gtk.main_quit())  # (its final pass, next time: it's saved as waiting)
             return
         Gtk.main_quit()
 

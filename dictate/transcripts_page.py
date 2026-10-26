@@ -551,19 +551,33 @@ class TranscriptsPage:
             buf.apply_tag(tag, buf.get_iter_at_mark(begins), buf.get_iter_at_mark(ends) if ends else buf.get_end_iter())
 
     def show_summary(self, found, live, heard):
-        """The summary of the transcript shown: its sections and bullets, and whether it's still being written."""
+        """The summary of the transcript shown: its sections and bullets, and whether it's still being written (or
+        its final pass is waiting for the graphics card: waiting.py)."""
         text, final = (found.text, found.final) if found else ("", False)
-        shown = (self.shown_item["path"], text, final, live, heard, d.scheme)
+        path, wait = self.shown_item["path"], self.app.waiting
+        pending = None if live else ("waiting" if any(j.path == path for j in wait.jobs) else
+                                     "writing" if wait.running and wait.running.path == path else None)
+        shown = (path, text, final, live, heard, pending, d.scheme)
         if shown == self.summary.shown:
             return
         self.summary.shown = shown
         for kid in self.summary.get_children():
             kid.destroy()
-        if not text:
+        if pending == "waiting":
+            box = Gtk.Box(spacing=8)
+            box.pack_start(d.text("Waiting for the graphics card to write the final summary.", "small", wrap=True,
+                                  max_chars=26), True, True, 0)
+            box.pack_end(d.button("Use the CPU", wait.use_cpu, small=True, tooltip="Slower, and a little rougher"),
+                         False, False, 0)
+            self.summary.pack_start(box, False, False, 0)
+        elif pending == "writing":
+            self.summary.pack_start(d.text("Writing the final summary…", "small", wrap=True, max_chars=34),
+                                    False, False, 0)
+        if not text and not pending:
             hint = ("A summary of the conversation appears here a few minutes in, and is kept up to date as it goes on."
                     if live else "No summary for this one." if heard else "Nothing was heard.")
             self.summary.pack_start(d.text(hint, "small", wrap=True, max_chars=34), False, False, 0)
-        else:
+        elif text:
             top = Gtk.Box(spacing=6)
             status = ("Kept up to date as it goes on" if live else "The final summary" if final else
                       "As it was when it stopped")
@@ -588,6 +602,12 @@ class TranscriptsPage:
                 self.summary.pack_start(lab, False, False, 0)
                 first = False
         self.summary.show_all()
+
+    def waiting_changed(self):
+        """The saved transcript shown may have started or stopped waiting for its final pass (waiting.py)."""
+        it = self.shown_item
+        if it and not it.get("recording") and not self.closed:
+            self.show_summary(transcript.read_summary(it["path"]), False, bool(it.get("paragraphs")))
 
     def go_to_topic(self, i):
         """Scroll the transcript to where topic i is first talked about."""
@@ -673,6 +693,7 @@ class TranscriptsPage:
                                "Its recordings are deleted too. This can't be undone.", "Delete"):
             if self.app.playback.playing(it["path"]):
                 self.app.playback.stop()
+            self.app.waiting.forget(it["path"])  # (its final pass, if it's still to do)
             transcript.delete(it["path"])
             self.shown_item = None
             self.changed()

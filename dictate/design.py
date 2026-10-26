@@ -193,6 +193,8 @@ ICONS = {
     "close": "m 4 4 l 12 12 m 12 4 l 4 12",
     "record": "n a 8 8 4 0 1",
     "up": "m 3.5 10.5 l 8 6 l 12.5 10.5",
+    "hourglass": "m 4 2.5 l 12 2.5 m 4 13.5 l 12 13.5 m 5 2.5 l 5 4.5 l 8 8 l 11 4.5 l 11 2.5 "
+                 "m 5 13.5 l 5 11.5 l 8 8 l 11 11.5 l 11 13.5",
     "down": "m 3.5 5.5 l 8 10 l 12.5 5.5",
 }
 _ARGS = {"m": 2, "l": 2, "c": 6, "a": 5, "r": 5, "n": 0, "z": 0}  # how many numbers each command takes

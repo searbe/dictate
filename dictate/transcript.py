@@ -82,7 +82,7 @@ def read_summary(path):
     """The summary of the saved transcript at path, or None."""
     try:
         data = json.loads(summary_file(path).read_text())
-        return summary.Summary(data["text"], data.get("final", False), data.get("slices", ()))
+        return summary.Summary(data["text"], data.get("final", False), data.get("slices", ()), data.get("waiting"))
     except (OSError, ValueError, KeyError):
         return None
 
@@ -192,6 +192,48 @@ def offsets(item):
         h, m, s = map(int, clock.split(":"))
         out.append((h * 3600 + m * 60 + s - first) % 86400)
     return out
+
+
+def waiting():
+    """[(since, path)]: the saved transcripts whose final pass is still to do (Dictate quit first), oldest first;
+    since: when the call stopped (time.time)."""
+    found = []
+    for f in FOLDER.glob("* summary.json"):
+        path = f.with_name(f.name.removesuffix(" summary.json") + ".md")
+        s = read_summary(path)
+        if s and s.waiting and path.exists():
+            found.append((s.waiting, path))
+    return sorted(found)
+
+
+def final_summary(path):
+    """Write a saved transcript's final summary (slow: not on the GTK thread), from its paragraphs, as a call's
+    final pass does: a long one from its slices' summaries (those saved, and the rest made now), merged. Its
+    topics are left as they are. Replaces the summary (and the Summary section of its Markdown). Returns whether
+    there was one (an error from the model is raised)."""
+    item, before = read(path), read_summary(path) or summary.Summary()
+    if not item or not item["paragraphs"]:
+        return False
+    # (a saved transcript has paragraphs, not stretches: one line each, by when they started, which is close
+    # enough to the stretches' times the saved slices end at)
+    lines = [(at + i * 1e-6, who, text) for i, (at, (_, who, text))
+             in enumerate(zip(offsets(item), item["paragraphs"]))]
+    s = summary.Summary(slices=before.slices)
+    reply, slices = s.ask_final(lines, read_topics(path) or topics.Topics())
+    if not s.take(reply, lines, final=True, slices=slices):
+        raise ValueError(f"the model's answer isn't a summary: {reply[:100]}")
+    if not path.exists():  # deleted meanwhile
+        return False
+    store.write_json(summary_file(path), s.data())
+    section = re.compile(r"\n## Summary\n.*?(?=\n## )", re.S)
+    text, new = path.read_text(), summary.markdown(s.text).rstrip("\n")
+    if section.search(text):
+        text = section.sub(lambda _: new, text, count=1)
+    else:  # (none yet: above the rest, after the heading and how long it lasted)
+        head, _, rest = text.partition("\n## ")
+        text = f"{head.rstrip()}\n{new}\n\n## {rest}" if rest else f"{text.rstrip()}\n{new}\n"
+    store.write_text(path, text)
+    return True
 
 
 def voiceprints(path):
@@ -353,7 +395,7 @@ class Session:
         self.previewing = {}  # who: (start, text) of what they're saying, before it's transcribed whole
         self.echo = echo.Echo()  # what the speakers played, to tell the microphone's echoes of it
         self.muted = {who: [] for who, _ in SOURCES}  # [start, end] (end None: still muted)
-        self.paused = self.stopped = False
+        self.paused = self.stopped = self.deleted = False
         self.resumed = 0.0  # when it was last resumed
         self.topics, self.asked, self.asking, self.last_topics = topics.Topics(), set(), False, self.now()
         self.last_merge = self.now()
@@ -537,11 +579,10 @@ class Session:
             self.mute(who, on)
         self.on_change()
 
-    def stop(self, on_done, last_topics=True):
-        """Stop recording, transcribe what's left, save, sort what's left into topics, merge any that are one
-        subject and write the final summary (unless not last_topics: quitting doesn't wait for the model), then
-        on_done() on the GTK thread. If nothing was heard, nothing is kept: the transcript and its recordings are
-        deleted."""
+    def stop(self, on_done):
+        """Stop recording, transcribe what's left and save it, then on_done(kept) on the GTK thread. If nothing was
+        heard, nothing is kept: the transcript and its recordings are deleted. Otherwise its final pass is still to
+        do (final_pass): it's saved as waiting for it, so it's done even if Dictate quits first."""
         self.stopped = True
         def finish():
             for rec in self.recorders:
@@ -551,22 +592,30 @@ class Session:
             self.finish_settling()
             GLib.idle_add(saved)
         def saved():
+            llm.server.keep(False)
             if not self.kept():
                 delete(self.path)
                 self.on_change()
-                return done()
+                return on_done(False)
+            self.summary.waiting = self.summary.waiting or time.time()
             self.save()
             self.on_change()
-            final = lambda: self.summarise(final=True, then=done) or done()
-            tidy = lambda: self.merge_topics(then=final) or final()
-            if not last_topics:
-                done()
-            elif not self.sort_topics(then=tidy):
-                tidy()
-        def done():
-            llm.server.keep(False)
-            on_done()
+            on_done(True)
         threading.Thread(target=finish, daemon=True).start()
+
+    def final_pass(self, then):
+        """Once it's stopped: sort what's left into topics, merge any that are one subject, and write the final
+        summary, then then() (on the GTK thread). On the larger model on the GPU, unless that's busy and you've
+        said not to wait for it (waiting.py)."""
+        def done():
+            self.summary.waiting = None
+            self.save()
+            self.on_change()
+            then()
+        final = lambda: self.summarise(final=True, then=done) or done()
+        tidy = lambda: self.merge_topics(then=final) or final()
+        if not self.sort_topics(then=tidy):
+            tidy()
 
     def quiet_for(self):
         """Seconds since anything was last added to the transcript (or since it started, or was last resumed)."""
@@ -588,7 +637,8 @@ class Session:
             self.sort_topics()
         elif not self.asking and self.now() - self.last_merge >= topics.MERGE:
             self.merge_topics()
-        elif not self.asking and (part := self.summary.slice_due(self.lines())):
+        elif not self.asking and llm.server.mode == "gpu" and (part := self.summary.slice_due(self.lines())):
+            # (on the GPU only: the smaller model's slices would be rough, and they can wait for the final pass)
             self.summarise_slice(part)
         elif not self.asking and self.summary.due(self.lines(), self.now() - self.last_summary, slow):
             self.summarise()
@@ -770,11 +820,15 @@ class Session:
         return head + "".join(f"\n**{clock} {who}:** {text}\n" for clock, who, text in self.paragraphs())
 
     def save(self):
+        if self.deleted:  # (while its final pass was waiting, or being done)
+            return
         store.write_text(self.path, self.markdown())
         if self.topics.topics:
             marks = self.topic_view()[1]  # saved by paragraph: a saved transcript has no stretches
             store.write_json(topics_file(self.path), {**self.topics.data(), "of": list(marks.items())})
-        if self.summary.text:
+        if self.summary.text or self.summary.waiting:
             store.write_json(summary_file(self.path), self.summary.data())
+        else:  # (one that was only there to say it was waiting)
+            summary_file(self.path).unlink(missing_ok=True)
         if self.voices and voices.remembering():  # so its voices can be named, and remembered, later
             store.write_json(voiceprints(self.path), self.voices.labelled())

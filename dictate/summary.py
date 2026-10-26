@@ -52,10 +52,11 @@ def save_prompt(text):
 class Summary:
     """text: the summary so far (Markdown), "" until there is one; read: the keys of the lines it has read (lines
     as topics.py has them: (key, who, text), in order); final: whether it's the final pass's; slices: the slices
-    summarised so far, in order: {"until": the key of its last line, "text": its summary}."""
+    summarised so far, in order: {"until": the key of its last line, "text": its summary}; waiting: when (time.time)
+    its call stopped, while its final pass is still to do, else None."""
 
-    def __init__(self, text="", final=False, slices=()):
-        self.text, self.read, self.final = text, set(), final
+    def __init__(self, text="", final=False, slices=(), waiting=None):
+        self.text, self.read, self.final, self.waiting = text, set(), final, waiting
         self.slices = [dict(sl) for sl in slices]
 
     def new(self, lines):
@@ -163,7 +164,8 @@ class Summary:
         return True
 
     def data(self):
-        return {"text": self.text, "final": self.final, "slices": self.slices}
+        return {"text": self.text, "final": self.final, "slices": self.slices,
+                **({"waiting": self.waiting} if self.waiting else {})}
 
 
 def titles(found):

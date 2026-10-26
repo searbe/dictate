@@ -211,6 +211,43 @@ class Paused:
         return self.hud.open
 
 
+def waited(seconds):
+    """How long, as "12 min 40 s" (or "40 s", or "1 h 05 min")."""
+    m, sec = divmod(int(seconds), 60)
+    h, m = divmod(m, 60)
+    return f"{h} h {m:02d} min" if h else f"{m} min {sec} s" if m else f"{sec} s"
+
+
+class WaitingForGpu:
+    """A HUD beside the capsule: the calls whose final summary is waiting for the graphics card, and for how long,
+    with Use the CPU (slower) and Keep waiting."""
+
+    def __init__(self, calls, beside, on_cpu):
+        """calls: [(when it started (a datetime), seconds waited)]; beside: (x, y, width, height) of the capsule."""
+        self.hud = d.Hud("Waiting for the graphics card", width=400)
+        self.hud.heading("Waiting for the graphics card", "hourglass")
+        n = len(calls)
+        self.hud.box.pack_start(d.text(
+            f"The final summary of {'this call' if n == 1 else f'these {n} calls'} is written on the graphics card, "
+            "which is busy. It's done as soon as the graphics card is free.", "body", wrap=True, max_chars=52),
+            False, False, 0)
+        for when, seconds in calls:
+            line = f"•  The call at {when:%H:%M} on {when:%a %-d %b}: waiting {waited(seconds)}"
+            self.hud.box.pack_start(d.text(line, "small", wrap=True, max_chars=52), False, False, 0)
+        self.hud.box.pack_start(d.text("Summarise on the CPU now instead? It's slower, and a little rougher.", "body",
+                                       wrap=True, max_chars=52), False, False, 0)
+        self.hud.buttons(d.button("Keep waiting", self.close),
+                         d.button("Use the CPU", lambda: (self.close(), on_cpu()), "primary"))
+        self.hud.show(near=beside)
+
+    def close(self):
+        self.hud.close()
+
+    @property
+    def open(self):
+        return self.hud.open
+
+
 class StillTranscribing:
     """A HUD beside the capsule saying a call is still being transcribed, with a picture of the capsule as it looks
     while it is (picture: a pixbuf), every way to stop, and Stop now / Keep going."""
