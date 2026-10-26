@@ -165,6 +165,7 @@ window.hud-window, window.hud-window > * { background: transparent; }
   padding: 0 8px; color: ${text}; transition: background-color 120ms ease-out; }
 .hud .choice:hover { background: ${surface_3}; }
 .hud .quote { background: ${surface_2}; border-radius: ${r_md}px; padding: 10px 12px; }
+.hud .pinned { background: ${surface_1}; border-bottom: 1px solid ${line}; padding: 0 0 4px 0; }  /* a heading kept in sight */
 menu, .menu { background: ${surface_1}; border: 1px solid ${line_strong}; border-radius: ${r_lg}px; padding: 6px; }
 menu menuitem { color: ${text}; padding: 6px 12px; border-radius: ${r_sm}px; min-height: 18px; ${size_body} }
 menu menuitem:hover { background: ${surface_3}; }

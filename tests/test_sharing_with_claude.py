@@ -77,19 +77,65 @@ def test_it_is_off_until_turned_on_and_then_refused_without_asking(start):
     assert WINDOW not in app.send("windows")["titles"]
 
 
-def test_it_asks_what_to_share_saying_what_for_with_nothing_chosen(start):
+def test_it_asks_saying_what_for_and_that_it_is_sent_to_anthropic(start):
     app = opened(start)
 
-    ask(app, "the demo budget")
+    ask(app, "quarterly hiring plans")
 
     app.wait_window(WINDOW)
     texts = app.read(WINDOW)
-    assert "the demo budget" in texts
+    assert "quarterly hiring plans" in texts
     assert any("sent to Anthropic" in t for t in texts)
-    assert texts.index(MON) < texts.index(TUE)
-    assert "Mentions budget, demo" in texts  # (what it's looking for: those that mention it first)
+    assert texts.index(TUE) < texts.index(MON)  # (nothing mentions it: one list, newest first, no headings)
+    assert not any(t.startswith(("Mentions", "Other transcripts")) for t in texts)
+    assert "Nothing chosen to share." in texts
     app.send("click", label="Share", window_title=WINDOW)  # not yet: nothing's chosen
     assert WINDOW in app.send("windows")["titles"]
+
+
+def test_those_that_mention_it_come_first_set_to_share_their_summary(start):
+    app = opened(start)
+
+    asked = ask(app, "the demo budget")
+
+    app.wait_window(WINDOW)
+    texts = app.read(WINDOW)
+    assert texts.index("Mentions what Claude is looking for (1)") < texts.index(MON) \
+        < texts.index("Other transcripts (1)") < texts.index(TUE)
+    assert "Mentions budget, demo" in texts
+    assert "Sharing the summary of Mon 19 Oct 10:00." in texts
+    app.click("Share", WINDOW)
+    said = answer(*asked)
+    assert "They went through the demo budget." in said and "Lovely weather" not in said
+
+
+def test_none_sets_a_group_back_to_not_shared(start):
+    app = opened(start)
+    asked = ask(app, "the demo budget")
+    app.wait_window(WINDOW)
+
+    app.click("None", WINDOW)  # (the first group's: those that mention it)
+
+    assert "Nothing chosen to share." in app.read(WINDOW)
+    app.click("Refuse", WINDOW)
+    answer(*asked)
+
+
+def test_a_groups_heading_stays_in_sight_while_its_transcripts_are_scrolled_through(start):
+    app = opened(start)
+    for day in range(1, 13):  # (enough to scroll)
+        (app.data / "transcripts" / f"2026-09-{day:02d} 09.00.00.md").write_text(
+            f"# Transcript\n\n**09:00:00 Speaker 1:** Notes for day {day}.\n")
+    ask(app, "the demo budget")
+    app.wait_window(WINDOW)
+    assert app.read(WINDOW).count("Other transcripts (13)") == 1
+
+    app.send("scroll_list", to="end", window_title=WINDOW)
+
+    eventually(lambda: app.read(WINDOW).count("Other transcripts (13)") == 2)  # its own, and pinned at the top
+    app.send("scroll_list", to="top", window_title=WINDOW)
+    eventually(lambda: app.read(WINDOW).count("Other transcripts (13)") == 1)
+    app.click("Refuse", WINDOW)
 
 
 def test_only_what_is_chosen_is_shared(start):
@@ -98,7 +144,7 @@ def test_only_what_is_chosen_is_shared(start):
     app.wait_window(WINDOW)
 
     choose(app, MON, "Its summary")
-    app.click("Share 1", WINDOW)
+    app.click("Share", WINDOW)
 
     said = answer(*asked)
     assert "They went through the demo budget." in said and "(Its summary.)" in said
@@ -113,7 +159,8 @@ def test_the_whole_transcript_can_be_shared(start):
 
     choose(app, MON, "Whole transcript")
     choose(app, TUE, "Whole transcript")  # (it has no summary: the whole transcript is the only choice)
-    app.click("Share 2", WINDOW)
+    assert "Sharing the whole transcripts of Mon 19 Oct 10:00 and Tue 20 Oct 16:30." in app.read(WINDOW)
+    app.click("Share", WINDOW)
 
     said = answer(*asked)
     assert "Shall we go through the demo budget?" in said and "Lovely weather today." in said
@@ -206,3 +253,29 @@ def test_claude_codes_settings_are_left_alone_if_they_are_not_json(start):
 
     app.wait_window("Couldn't change Claude Code's settings")
     assert (claude / "settings.json").read_text() == "{ not json"
+
+
+REAL = ("Recent meetings where you or the team talked about the level editor, custom arena shapes (donut, figure 8), "
+        "or feedback on the camera and debug-menu experiments, so I can act on any decisions or requests.")
+
+
+def test_everyday_words_and_what_was_only_said_in_passing_do_not_make_a_match(start):
+    app = opened(start)  # (its budget call: "They went through the demo budget.")
+    folder = app.data / "transcripts"
+    for name, summary, said in (
+            ("2026-10-21 09.00.00", "## Overview\nThe team talked about recent meetings and what was decided.",
+             "We talked about it."),
+            ("2026-10-22 09.00.00", "## Overview\nThey reviewed the level editor and the new arena shapes.",
+             "The level editor is in."),
+            ("2026-10-23 09.00.00", "## Overview\nThey planned the trip.", "Mind the camera on the way.")):
+        (folder / f"{name}.md").write_text(f"# Transcript\n\n**09:00:00 Speaker 1:** {said}\n")
+        (folder / f"{name} summary.json").write_text(json.dumps({"text": summary, "final": True}))
+
+    asked = ask(app, REAL)
+
+    app.wait_window(WINDOW)
+    texts = app.read(WINDOW)
+    assert "Mentions what Claude is looking for (1)" in texts and "Mentions arena, editor, level, shapes" in texts
+    assert "Sharing the summary of Thu 22 Oct 09:00." in texts  # (not those with only everyday words, or "camera"
+    app.click("Refuse", WINDOW)  # said in passing, not in its summary)
+    answer(*asked)

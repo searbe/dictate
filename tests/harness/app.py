@@ -381,6 +381,16 @@ def cmd_icon():
     return {"waiting": app.capsule.waiting, "status": app.status()}
 
 
+def cmd_scroll_list(to, window_title=None):
+    """Scroll the window's (first) scrolled list to "top" or "end", as dragging its scroll bar there would."""
+    scroll = next(w for w in descendants(window(window_title)) if isinstance(w, Gtk.ScrolledWindow) and shown(w))
+    adj = scroll.get_vadjustment()
+    adj.set_value(0 if to == "top" else adj.get_upper() - adj.get_page_size())
+    for _ in range(20):
+        pump()
+        time.sleep(0.01)
+
+
 def cmd_microphones(connected):
     """These microphones are connected now ([[name, description]], the default one first)."""
     microphones[:] = [tuple(m) for m in connected]
