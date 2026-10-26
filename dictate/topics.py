@@ -36,6 +36,8 @@ WORDS = 80
 SLOWER = 3  # times as long between updates on the smaller model on the CPU (it's slow, and the CPU's transcribing)
 BEFORE = 6  # lines already sorted shown before the new ones, for context
 RECENT = 8  # the latest topics are given with their last points; earlier ones by title only (a short prompt)
+ANSWER = 1200  # tokens: the topics of an update at most
+POINTS = 3  # a topic's latest points, when asking which topics are one subject (all of them don't fit)
 MERGE = 600  # seconds between asking which topics are the same subject
 MERGE_FROM = 4  # topics: fewer aren't worth asking about
 COLOURS = ("#7c8cff", "#ff9f43", "#2ed1a2", "#ff6b9a", "#f9d65c", "#b18cff", "#5ec8ff", "#9be15d")
@@ -122,14 +124,23 @@ class Topics:
         return bool(lines) and self.apply(lines, self.ask(lines, before))
 
     def ask(self, lines, before=()):
-        """The model's answer for lines (slow: not on the GTK thread)."""
+        """The model's answer for lines (slow: not on the GTK thread): (reply, how many of the lines it's for),
+        as many as fit in the model's context with room for the answer (the rest are for next time; if even one
+        doesn't, without the lines before it)."""
         known = "\n".join(f"{i}. {t['title']}"
                           + (f": {' '.join(t['points'][-2:])}" if i > len(self.topics) - RECENT else "")
                           for i, t in enumerate(self.topics, 1)) or "(none yet)"
         context = "".join(f"(before) {who}: {text}\n" for _, who, text in before[-BEFORE:])
-        numbered = "".join(f"{n}. {who}: {text}\n" for n, (_, who, text) in enumerate(lines, 1))
-        return llm.ask(PROMPT, f"Topics so far:\n{known}\n\nWhat was said since:\n<transcript>\n{context}{numbered}"
-                                  f"</transcript>", schema(len(lines), len(self.topics)), max_tokens=1200)
+        n = len(lines)
+        while True:
+            numbered = "".join(f"{k}. {who}: {text}\n" for k, (_, who, text) in enumerate(lines[:n], 1))
+            user = f"Topics so far:\n{known}\n\nWhat was said since:\n<transcript>\n{context}{numbered}</transcript>"
+            if llm.fits(PROMPT, user, ANSWER) or (n == 1 and not context):
+                return llm.ask(PROMPT, user, schema(n, len(self.topics)), max_tokens=ANSWER), n
+            if n > 1:
+                n //= 2
+            else:
+                context = ""  # (the lines before, for context, last)
 
     def apply(self, lines, reply):
         """Take the model's answer for lines. Returns whether there were any topics in it."""
@@ -183,8 +194,10 @@ class Topics:
         """The model's answer on which topics are one subject (slow: not on the GTK thread). Asked about the
         whole list, it's quick to group things that were only talked about together; so each topic in a
         group it gives is asked about again, beside the group's first, and left out unless it's the same."""
-        about = lambda i: f"{self.topics[i]['title']}: {' '.join(self.topics[i]['points'])}"
+        about = lambda i: f"{self.topics[i]['title']}: {' '.join(self.topics[i]['points'][-POINTS:])}"
         listed = "\n".join(f"{i}. {about(i - 1)}" for i in range(1, len(self.topics) + 1))
+        if not llm.fits(MERGE_PROMPT, f"Topics:\n{listed}", 500):  # (a long call's: by their titles)
+            listed = "\n".join(f"{i}. {t['title']}" for i, t in enumerate(self.topics, 1))
         try:
             groups = json.loads(llm.ask(MERGE_PROMPT, f"Topics:\n{listed}", merge_schema(len(self.topics)),
                                            max_tokens=500))["groups"]

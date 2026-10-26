@@ -6,7 +6,7 @@ it."""
 import json
 import time
 
-from conftest import needs_session
+from conftest import ROOT, needs_session
 from harness.client import eventually
 
 pytestmark = needs_session
@@ -260,3 +260,25 @@ def test_the_less_reliable_model_does_not_merge_topics(start, model):
     time.sleep(1)
 
     assert not any(MERGING in r["system"] for r in model.requests())
+
+
+def test_what_was_said_since_is_sent_in_parts_when_it_does_not_all_fit(start, model):
+    long = [f"Point {n}: " + " ".join(["budget"] * 30) for n in range(1, 5)]  # 32 words each
+    prompt = len((ROOT / "dictate/prompts/topics.txt").read_text().split())
+    room = prompt + 1200 + 64 + 20 + 2 * 33  # the prompt, the answer, the request around it, and two of them
+    model.rules({"prompt": TOPICS, "op": "error"})  # (the model's busy: they pile up)
+    app = start(refinements=[], env={"DICTATE_TEST_CONTEXT": str(room)})
+    app.ctrl_win_win()
+    app.wait_window("Transcripts")
+    for line in long:
+        app.hear(line)
+    time.sleep(1)
+    asked = len(model.requests())
+
+    model.rules(answer("budget", ("The budget", "Lots on the budget.", [1])))
+
+    eventually(lambda: all(any(line in r["text"] for r in model.requests()[asked:] if TOPICS in r["system"])
+                           for line in long))
+    sent = [r["text"] for r in model.requests()[asked:] if TOPICS in r["system"] and "error" not in r]
+    assert all(sum(line in text for line in long) <= 2 for text in sent)  # never more than fit
+    eventually(lambda: "The budget" in app.read("Transcripts"))

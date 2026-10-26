@@ -82,7 +82,7 @@ def read_summary(path):
     """The summary of the saved transcript at path, or None."""
     try:
         data = json.loads(summary_file(path).read_text())
-        return summary.Summary(data["text"], data.get("final", False))
+        return summary.Summary(data["text"], data.get("final", False), data.get("slices", ()))
     except (OSError, ValueError, KeyError):
         return None
 
@@ -588,6 +588,8 @@ class Session:
             self.sort_topics()
         elif not self.asking and self.now() - self.last_merge >= topics.MERGE:
             self.merge_topics()
+        elif not self.asking and (part := self.summary.slice_due(self.lines())):
+            self.summarise_slice(part)
         elif not self.asking and self.summary.due(self.lines(), self.now() - self.last_summary, slow):
             self.summarise()
         self.back_to_gpu()
@@ -619,18 +621,19 @@ class Session:
         self.asking, self.last_topics = True, self.now()
         def ask():
             try:
-                reply = self.topics.ask(new, before)
+                reply, n = self.topics.ask(new, before)
             except (OSError, ValueError, KeyError) as err:
                 log.warning("topics: couldn't ask the model: %s", err)
-                reply = None
-            GLib.idle_add(answered, reply, llm.server.mode)
-        def answered(reply, model):
+                reply, n = None, 0
+            GLib.idle_add(answered, reply, n, llm.server.mode)
+        def answered(reply, n, model):
             self.asking = False
             if model == "cpu":
                 self.topics.small = True
+            self.asked.difference_update(line[0] for line in new[n:])  # (those that didn't fit: next time)
             if reply is None:
                 self.asked.difference_update(line[0] for line in new)  # try again next time
-            elif self.topics.apply(new, reply):
+            elif self.topics.apply(new[:n], reply):
                 self.save()
                 self.on_change()
             if then:
@@ -649,21 +652,42 @@ class Session:
 
         def ask():
             try:
-                reply = self.summary.ask_final(lines, self.topics) if final else self.summary.ask(lines, self.topics)
+                reply, slices = (self.summary.ask_final(lines, self.topics) if final
+                                 else (self.summary.ask(lines, self.topics), None))
             except (OSError, ValueError, KeyError) as err:
                 log.warning("summary: couldn't ask the model: %s", err)
-                reply = None
-            GLib.idle_add(answered, reply)
+                reply = slices = None
+            GLib.idle_add(answered, reply, slices)
 
-        def answered(reply):
+        def answered(reply, slices):
             self.asking = False
-            if reply is not None and self.summary.take(reply, lines, final):
+            if reply is not None and self.summary.take(reply, lines, final, slices):
                 self.save()
                 self.on_change()
             if then:
                 then()
         threading.Thread(target=ask, daemon=True).start()
         return True
+
+    def summarise_slice(self, part):
+        """Ask the model (on a thread) for the summary of one slice of the conversation, part (its lines), and
+        keep it, for the final summary."""
+        self.asking = True
+
+        def ask():
+            try:
+                text = self.summary.ask_slice(part)
+            except (OSError, ValueError, KeyError) as err:
+                log.warning("summary: couldn't summarise a slice: %s", err)
+                text = None
+            GLib.idle_add(answered, text)
+
+        def answered(text):
+            self.asking = False
+            if text:
+                self.summary.take_slice(part, text)
+                self.save()
+        threading.Thread(target=ask, daemon=True).start()
 
     def merge_topics(self, then=None):
         """Ask the larger model (on a thread) which topics turned out to be one subject, and merge them, then

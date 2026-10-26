@@ -103,3 +103,73 @@ def test_the_summarys_prompt_can_be_changed_in_refinements(start, model):
     app.click("Reset to default", window="Refinements")
     app.click("Save", window="Refinements")
     assert not (app.data / "summary.txt").exists()  # back to following the default
+
+
+PART = "Summarise just this part"  # (asked of each slice)
+MERGE = "summaries of its parts"  # (the final pass of a long conversation)
+SLICED = {"DICTATE_TEST_SLICE": "5"}  # a slice every 5 words, and longer than that is a long conversation
+
+
+def sliced(start, model, *rules, env=None):
+    model.rules(*rules)
+    app = start(refinements=[], env={**SLICED, **(env or {})})
+    app.ctrl_win_win()
+    app.wait_window("Transcripts")
+    return app
+
+
+def asked(model, user):
+    return [r for r in model.requests() if user in r["user"]]
+
+
+def test_a_long_conversation_is_summarised_a_slice_at_a_time_and_the_final_pass_merges_them(start, model):
+    app = sliced(start, model, summary_rule("## Discussed\n- The budget.", text="budget", user=PART),
+                 summary_rule("## Discussed\n- Hiring a designer.", text="designer", user=PART),
+                 summary_rule(FINAL, user=MERGE), summary_rule(FIRST))
+    app.hear("Shall we look at the budget today?")
+    eventually(lambda: asked(model, PART))
+    app.hear("And we need to hire a designer soon.")
+
+    app.click("Stop", "Transcripts")
+
+    eventually(lambda: "They agreed the budget and to hire a designer." in (app.transcript_file() or ""))
+    merge = asked(model, MERGE)[-1]["user"]
+    assert merge.index("Part 1:\n## Discussed\n- The budget.") < merge.index("Part 2:\n## Discussed\n- Hiring a")
+    assert "Shall we look" not in merge  # from the slices' summaries, not the transcript
+    first_slice = asked(model, PART)[0]["text"]
+    assert "budget" in first_slice and "designer" not in first_slice
+    saved = json.loads(next((app.data / "transcripts").glob("* summary.json")).read_text())
+    assert [s["text"] for s in saved["slices"]] == ["## Discussed\n- The budget.", "## Discussed\n- Hiring a designer."]
+
+
+def test_if_the_parts_summaries_do_not_fit_together_the_earliest_are_condensed_first(start, model):
+    long = "## Discussed\n- " + " ".join(["word"] * 300)
+    app = sliced(start, model, summary_rule("## Discussed\n- Earlier things.", user="Combine them"),
+                 summary_rule(long, user=PART), summary_rule(FINAL, user=MERGE), summary_rule(FIRST),
+                 env={"DICTATE_TEST_CONTEXT": "3100"})  # (3 parts don't fit, 2 do)
+    for line in ("Shall we look at the budget today?", "And we need to hire a designer soon.",
+                 "Then the office move next month."):
+        app.hear(line)
+        eventually(lambda n=len(asked(model, PART)): len(asked(model, PART)) > n)
+
+    app.click("Stop", "Transcripts")
+
+    eventually(lambda: "They agreed the budget and to hire a designer." in (app.transcript_file() or ""))
+    merge = asked(model, MERGE)[-1]["user"]
+    assert "Part 1:\n## Discussed\n- Earlier things." in merge and "Part 2:\n" + long in merge
+    assert "Part 3:" not in merge
+
+
+def test_a_summary_cut_off_by_the_model_is_not_taken(start, model):
+    app = recording(start, model, {"prompt": SUMMARY, "text": "hire", "op": "cut", "reply": "## Overview\nThey're lo"},
+                    summary_rule(FIRST))
+    app.click("Summary", "Transcripts")
+    app.hear("Shall we look at the budget?")
+    eventually(lambda: "They're looking at the budget." in app.read("Transcripts"))
+    mark = len(model.requests())
+
+    app.hear("And we need to hire a designer.")
+
+    eventually(lambda: any("hire" in r["text"] for r in model.requests()[mark:] if SUMMARY in r["system"]))
+    assert "They're looking at the budget." in app.read("Transcripts")  # the summary as it was
+    assert "They're lo" not in app.read("Transcripts")

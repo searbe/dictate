@@ -32,7 +32,8 @@ IDLE = 30  # seconds unused before unloading
 SPARE_VRAM_MB = 2000  # free VRAM needed beyond the model's own size to use the GPU
 MAX_GPU_BUSY = 30  # % busy above which we assume a game/app is using the GPU
 DISCRETE = 8 << 30  # bytes of VRAM: more than this is the discrete card, not the iGPU
-CONTEXT = 8192  # tokens
+CONTEXT = 8192  # tokens: the prompt and the answer together
+OVERHEAD = 64  # tokens the chat template adds around a prompt
 LOAD_TIMEOUT = 60  # seconds to wait for the model to load
 
 
@@ -246,10 +247,26 @@ server = Server()
 
 
 # --- asking it ---
+class Cut(ValueError):
+    """The model's answer stopped at max_tokens, or at the end of the context: it isn't whole."""
+
+
+def tokens(text: str) -> int:
+    """How many tokens text is, to the model loaded."""
+    server.ready(hold=False)
+    return len(server.post("/tokenize", {"content": text}, timeout=10)["tokens"])
+
+
+def fits(system: str, user: str, max_tokens: int) -> bool:
+    """Whether a prompt leaves room in the context for an answer of max_tokens."""
+    return tokens(system) + tokens(user) + OVERHEAD + max_tokens <= CONTEXT
+
+
 def chat(system: str, user: str, *, max_tokens: int, temperature: float = 0.0, schema: dict | None = None,
          timeout: float = 60, hold: bool = True) -> str:
     """The model's answer to user under system (as JSON matching schema, if given). Waits for it to load.
-    hold: the caller is a dictation, which releases the server once it's pasted."""
+    hold: the caller is a dictation, which releases the server once it's pasted. Raises Cut if the answer was cut
+    off (so half an answer is never taken for a whole one)."""
     server.ready(hold=hold)
     body: dict[str, Any] = {
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
@@ -257,7 +274,10 @@ def chat(system: str, user: str, *, max_tokens: int, temperature: float = 0.0, s
     }
     if schema:
         body["response_format"] = {"type": "json_schema", "json_schema": {"schema": schema}}
-    return server.post("/v1/chat/completions", body, timeout=timeout)["choices"][0]["message"]["content"].strip()
+    choice = server.post("/v1/chat/completions", body, timeout=timeout)["choices"][0]
+    if choice.get("finish_reason") == "length":
+        raise Cut(f"the answer was cut off after {max_tokens} tokens: …{choice['message']['content'][-60:]!r}")
+    return choice["message"]["content"].strip()
 
 
 def ask(system: str, user: str, schema: dict, max_tokens: int = 500) -> str:
@@ -265,6 +285,6 @@ def ask(system: str, user: str, schema: dict, max_tokens: int = 500) -> str:
     return chat(system, user, max_tokens=max_tokens, schema=schema, timeout=120, hold=False)
 
 
-def write(system: str, user: str, max_tokens: int = 900) -> str:
+def write(system: str, user: str, max_tokens: int = 1500) -> str:
     """The model's answer as text (the live summary of a call)."""
     return chat(system, user, max_tokens=max_tokens, temperature=0.2, timeout=180, hold=False)

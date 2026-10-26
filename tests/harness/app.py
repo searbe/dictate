@@ -136,6 +136,7 @@ if not REAL_SPEECH and not REAL_SPEAKERS:
     stt.Live, stt.load = Live, lambda: None
     stt.transcribe = lambda path: heard.get(str(path)) or ""
 llm.SERVER = Path(os.environ["DICTATE_TEST_LLAMA"])
+llm.CONTEXT = int(os.environ.get("DICTATE_TEST_CONTEXT", llm.CONTEXT))  # (the fake model's too: its command line)
 if os.environ.get("DICTATE_TEST_SLOW_CUT"):  # preparing a transcript's playback takes a while (a long call)
     _cut = transcript.cut
     transcript.cut = lambda *a: (time.sleep(float(os.environ["DICTATE_TEST_SLOW_CUT"])), _cut(*a))[1]
@@ -155,6 +156,8 @@ llm.IDLE = float(os.environ.get("DICTATE_TEST_IDLE", llm.IDLE))
 topics.TICK, topics.EVERY, topics.MOST, topics.FREE_FOR = 0.2, 0, 0, 0.6  # topics as soon as anything is said
 topics.MERGE = 0.5
 summary.EVERY, summary.WORDS = 0.5, 1  # a summary as soon as anything's said
+if os.environ.get("DICTATE_TEST_SLICE"):  # a long conversation, as far as slices go: this many words each
+    summary.SLICE = summary.WHOLE = int(os.environ["DICTATE_TEST_SLICE"])
 gpu = {"state": os.environ.get("DICTATE_TEST_GPU", "free")}  # the graphics card: "free", "busy" or "none"
 llm.gpu_ok = lambda: gpu["state"] == "free"
 llm.gpu_present = lambda: gpu["state"] != "none"

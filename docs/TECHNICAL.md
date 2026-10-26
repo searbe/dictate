@@ -31,7 +31,11 @@ Dictate does, see the [README](../README.md).
   - **Echo:** without headphones, the microphone hears the speakers too: what it heard is checked against what the
     speakers played (sound and words), so the call isn't written down twice as you.
   - **Topics and summary:** the refinement model updates the topics about every 20 seconds and the summary about
-    every 30, from what's been said since, and makes a careful final pass when you stop.
+    every 30, from what's been said since. Every 1,500 words or so, that slice of the call is also summarised on its
+    own; when you stop, the final summary is made from the slices' summaries (a short call, from all of it), so it
+    has read everything once, and fits the model's context however long the call. A request that wouldn't leave room
+    for the answer isn't sent as it is, and an answer cut off at its limit isn't kept.
+    `scripts/resummarise.py` writes a saved transcript's summary again the same way.
   - **Left running by mistake:** closing the window during a call brings up a reminder (once a day) that it's still
     transcribing. After five minutes with nothing transcribed, it's paused: nothing is transcribed, and the
     recordings get silence instead of what's heard. An alert stays above other windows until you choose Resume or
