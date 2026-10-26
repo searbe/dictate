@@ -55,7 +55,9 @@ class DictationsPage:
         self.stack.add_named(d.scrolled(inner), "list")
         self.stack.add_named(self.empty, "empty")
         self.widget.pack_start(self.stack, True, True, 0)
-        self.hub.win.connect("destroy", lambda *_: self.app.player.stop())
+        self.play_btns = {}  # a row's recording: its Play button (Stop while it plays)
+        unlisten = self.app.playback.listen(self.playback_changed)
+        self.hub.win.connect("destroy", lambda *_: unlisten())
 
 
     FIRST, BATCH = 40, 60  # rows shown at once, then added a batch at a time while idle
@@ -71,6 +73,7 @@ class DictationsPage:
         second to lay out)."""
         for row in self.list.get_children():
             self.list.remove(row)
+        self.play_btns = {}
         lines = history.lines()
         self.pending = list(reversed(lines))
         self.more(self.FIRST)
@@ -124,10 +127,12 @@ class DictationsPage:
         item.pack_start(words, True, True, 0)
 
         actions = d.classes(Gtk.Box(spacing=2, valign=Gtk.Align.START), "actions")
-        play = d.icon_button("play", "Play", lambda: self.play(row, play))
+        play = d.icon_button("play", "Play", lambda: self.play(row))
         play.icon.show()  # (no_show_all: shown only while its recording exists; its icon is shown regardless)
         play.set_no_show_all(True)
         actions.pack_start(play, False, False, 0)
+        if row.audio:
+            self.play_btns[row.audio] = play
         row.refresh_audio = lambda: (play.set_visible(bool(row.audio and row.audio.exists())), play.get_visible())[1]
         row.refresh_audio()
         copy = d.icon_button("copy", "Copy", lambda: (self.app.copy(it["text"]),
@@ -159,24 +164,27 @@ class DictationsPage:
         row.revealer.set_reveal_child(opening)
         row.step = label if opening else None
 
-    def play(self, row, btn):
-        if btn.get_tooltip_text() == "Stop":
-            return self.app.player.stop()
-        if not row.refresh_audio():  # deleted since (e.g. it got too old)
-            return
-        btn.icon.set_icon("stop")
-        btn.set_tooltip_text("Stop")
-        btn.get_parent().get_style_context().add_class("shown")  # keep the Stop button showing while it plays
+    def play(self, row):
+        if self.app.playback.playing(row.audio):
+            return self.app.playback.stop()
+        if row.refresh_audio():  # (not if it's been deleted since, e.g. it got too old)
+            self.app.playback.play_file(row.audio)
 
-        def done():
-            btn.icon.set_icon("play")
-            btn.set_tooltip_text("Play")
-            btn.get_parent().get_style_context().remove_class("shown")
-        self.app.player.play(str(row.audio), done)
+    def playback_changed(self):
+        """Play / Stop on each row, as the playback says (it may be a transcript's that's playing)."""
+        now = self.app.playback.now
+        for audio, btn in self.play_btns.items():
+            on = bool(now) and now.source == audio
+            if (btn.get_tooltip_text() == "Stop") != on:
+                btn.icon.set_icon("stop" if on else "play")
+                btn.set_tooltip_text("Stop" if on else "Play")
+                # keep the Stop button showing while it plays
+                (btn.get_parent().get_style_context().add_class if on else
+                 btn.get_parent().get_style_context().remove_class)("shown")
 
     def delete(self, row):
         """Remove one entry from the history file, and its recording."""
-        self.app.player.stop()
+        self.app.playback.stop()
         history.remove(row.line)
         if row.audio:
             row.audio.unlink(missing_ok=True)
@@ -189,7 +197,7 @@ class DictationsPage:
         if not n or not huds.confirm(self.hub.win, f"Delete all {n} dictations and their recordings?",
                                      "This can't be undone.", "Delete all"):
             return
-        self.app.player.stop()
+        self.app.playback.stop()
         history.clear()
         self.load()
 

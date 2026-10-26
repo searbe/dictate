@@ -17,7 +17,7 @@ PAGES = (("dictations", "Dictations", "history"), ("transcripts", "Transcripts",
 
 
 class Hub:
-    """app: the App (its settings, player, and what it's transcribing)."""
+    """app: the App (its settings, playback, and what it's transcribing)."""
 
     def __init__(self, app):
         self.app, self.pages, self.page = app, {}, None
@@ -27,7 +27,7 @@ class Hub:
         self.win.set_titlebar(bar)
         bar.show_all()  # (else there's no title bar at all: nothing to close or drag the window by)
         self.win.connect("delete-event", lambda *_: not self.may_close())  # (True keeps it open)
-        self.win.connect("destroy", lambda *_: setattr(self, "closed", True))
+        self.win.connect("destroy", lambda *_: (setattr(self, "closed", True), app.playback.stop()))
         self.closed = False
 
         side = self.side = d.classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, width_request=200, hexpand=False),

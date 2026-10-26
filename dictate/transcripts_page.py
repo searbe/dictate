@@ -3,9 +3,9 @@ the selected one in the middle (all the room there is), and its topics in a rail
 are as wide as you drag them, remembered) (the current one marked while it's recorded;
 click one to go to it). The one being recorded (the app's session) is always first in the list and grows as it's
 heard (kept scrolled to the end unless you've scrolled up); while it's shown, the header has its status, Pause /
-Resume and Stop. A saved one has Copy all, Open file, Open folder and Delete. Closing the window doesn't stop it."""
+Resume and Stop. A saved one has Play (while its recordings are kept), Copy all, Open file, Open folder and Delete,
+and each paragraph can be played on its own. Closing the window doesn't stop the recording (it stops playback)."""
 import json
-import threading
 
 from gi.repository import Gdk, Gio, GLib, Gtk, Pango
 
@@ -27,7 +27,8 @@ def style_tags(buf):
     table = buf.get_tag_table()
     for name, props in (("pending", {"foreground": d.tok("text-3"), "style": Pango.Style.ITALIC}),
                         ("who", {"foreground": d.tok("text"), "weight": 600}),
-                        ("clock", {"foreground": d.tok("text-3"), "scale": 0.85})):
+                        ("clock", {"foreground": d.tok("text-3"), "scale": 0.85}),
+                        ("playing", {"paragraph-background-rgba": d.rgba("accent", 0.16)})):
         tag = table.lookup(name) or buf.create_tag(name)
         for k, v in props.items():
             tag.set_property(k, v)
@@ -48,11 +49,12 @@ def topic_tags(buf, i, restyle=False):
     return f"topic{i}", f"name{i}"
 
 
-def show_transcript(view, paragraphs, previews=(), found=None, marks=None):
+def show_transcript(view, paragraphs, previews=(), found=None, marks=None, control=None):
     """paragraphs: [(clock, who, text)]; previews: what's being said and not yet transcribed whole, shown greyed
     out after them. found: the Topics, and marks: {paragraph's place: topic index}: a paragraph on a topic is
-    tinted its colour, with the topic's name above it where the conversation turns to it. Returns {topic index: a
-    mark where it's first talked about}.
+    tinted its colour, with the topic's name above it where the conversation turns to it. control(i): a widget to
+    put before paragraph i's time (e.g. its Play button). Returns {topic index: a mark where it's first talked
+    about}; view.paragraphs is [(mark where each paragraph starts, mark where the next block starts or None)].
     Only what's changed is written again, from the first paragraph that has (usually just the preview at the end):
     emptying the whole text each time made it shrink to nothing for a moment, so it flashed and lost its place."""
     buf, specs, last = view.get_buffer(), [], None
@@ -65,18 +67,18 @@ def show_transcript(view, paragraphs, previews=(), found=None, marks=None):
         specs.append((i, topic, last, title, hue, clock, name, text, pending))
         last = topic
     shown = getattr(view, "shown", None)
-    if not shown or shown["chars"] != buf.get_char_count():  # (something else was written: start again)
-        shown = view.shown = {"blocks": [], "chars": -1}
+    if not shown or shown["chars"] != buf.get_char_count() or shown["control"] != bool(control):  # (start again)
+        shown = view.shown = {"blocks": [], "chars": -1, "control": bool(control)}
     blocks = shown["blocks"]  # [(spec, mark where it starts, its topic's first mark or None)]
-    same = next((k for k, (spec, _, _) in enumerate(blocks) if k >= len(specs) or spec != specs[k]), len(blocks))
+    same = next((k for k, (spec, *_) in enumerate(blocks) if k >= len(specs) or spec != specs[k]), len(blocks))
     if same < len(blocks):
         buf.delete(buf.get_iter_at_mark(blocks[same][1]), buf.get_end_iter())
-        for _, at, first in blocks[same:]:
-            buf.delete_mark(at)
-            if first:
-                buf.delete_mark(first)
+        for _, at, first, begins in blocks[same:]:
+            for mark in (at, first, begins):
+                if mark:
+                    buf.delete_mark(mark)
         del blocks[same:]
-    firsts = {spec[1]: first for spec, _, first in blocks if first}
+    firsts = {spec[1]: first for spec, _, first, _ in blocks if first}
     for spec in specs[same:]:
         i, topic, last, title, hue, clock, name, text, pending = spec
         at, first = buf.create_mark(None, buf.get_end_iter(), True), None
@@ -93,11 +95,18 @@ def show_transcript(view, paragraphs, previews=(), found=None, marks=None):
                 buf.insert_with_tags_by_name(buf.get_end_iter(), "\n\n", tint)
         elif i:
             buf.insert(buf.get_end_iter(), "\n\n")
+        begins = buf.create_mark(None, buf.get_end_iter(), True)
+        if control and not pending:
+            anchor = buf.create_child_anchor(buf.get_end_iter())
+            view.add_child_at_anchor(control(i), anchor)
+            buf.insert_with_tags_by_name(buf.get_end_iter(), " ", "clock", *tags)
         buf.insert_with_tags_by_name(buf.get_end_iter(), f"{clock} ", "clock", *tags)
         buf.insert_with_tags_by_name(buf.get_end_iter(), f"{name}  ", "who", *tags)
         buf.insert_with_tags_by_name(buf.get_end_iter(), text, *tags)
-        blocks.append((spec, at, first))
+        blocks.append((spec, at, first, begins))
     shown["chars"] = buf.get_char_count()
+    view.paragraphs = [(begins, blocks[k + 1][1] if k + 1 < len(blocks) else None)
+                       for k, (_, _, _, begins) in enumerate(blocks)]
     return firsts
 
 
@@ -123,7 +132,10 @@ class TranscriptsPage:
 
     def __init__(self, hub):
         self.hub, self.app = hub, hub.app
-        self.shown_item, self.paths, self.seen, self.firsts, self.playing = None, None, None, {}, False
+        self.shown_item, self.paths, self.seen, self.firsts = None, None, None, {}
+        self.offsets, self.controls, self.hovered, self.drawn = [], {}, None, None  # (see paragraph_control)
+        unlisten = self.app.playback.listen(self.playback_changed)
+        hub.win.connect("destroy", lambda *_: unlisten())
         self.widget = d.classes(Gtk.Box(), "page")
 
         # the list of transcripts
@@ -153,8 +165,7 @@ class TranscriptsPage:
         self.live_actions.pack_start(d.button("Stop", lambda: self.app.stop_transcribing(), "primary", icon="stop"),
                                      False, False, 0)
         self.saved_actions = Gtk.Box(spacing=2)
-        self.play_btn = d.icon_button("play", "Play",
-                                      lambda: self.play_from(0) if not self.playing else self.app.player.stop())
+        self.play_btn = d.icon_button("play", "Play", self.play_all)
         self.saved_actions.pack_start(self.play_btn, False, False, 0)
         copy = d.icon_button("copy", "Copy all", lambda: (
             Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD).set_text(self.shown_item["path"].read_text(), -1),
@@ -175,7 +186,9 @@ class TranscriptsPage:
                                   margin_start=24, margin_end=24, margin_bottom=8, no_show_all=True, homogeneous=False,
                                   max_children_per_line=40)  # (wraps)
         self.text = transcript_view()
-        self.text.connect("button-release-event", self.clicked)
+        self.text.connect("motion-notify-event", lambda _, ev: self.hover(self.paragraph_at(ev.x, ev.y)))
+        self.text.connect("leave-notify-event",  # (not when it's onto a paragraph's own button)
+                          lambda _, ev: ev.detail != Gdk.NotifyType.INFERIOR and self.hover(None))
         self.scroll = d.scrolled(self.text)
         # (a wrapping text view says the width it's laid out at is the narrowest it can be, so with "never" the
         # transcript could only ever get a little narrower than it is: "external" lets it be any width)
@@ -355,8 +368,10 @@ class TranscriptsPage:
             item = transcript.read(item["path"]) or item
         if item is not self.shown_item:
             self.following = bool(session)  # (one being recorded is shown at its end; a saved one, from the start)
-        if self.playing and self.shown_item and item["path"] != self.shown_item["path"]:
-            self.app.player.stop()  # (another transcript: its button mustn't say Stop)
+        if self.shown_item and item["path"] != self.shown_item["path"]:
+            if self.app.playback.playing(self.shown_item["path"]):
+                self.app.playback.stop()  # (another transcript: playing one that isn't shown can't be stopped)
+            self.hovered = None
         self.shown_item = item
         self.heading.set_text(f"{item['started']:%A %-d %B, %H:%M}")
         self.saved_actions.set_visible(not session)
@@ -374,6 +389,7 @@ class TranscriptsPage:
             self.status.text.set_text(transcript.clock(session.now()))
             self.status.set_tooltip_text("Paused" if session.paused else "Recording")
             self.meta.set_text("Nothing is being added" if session.paused else self.LISTENING)
+            self.offsets = []  # (not played back while it's recorded)
             found, marks, people = session.topic_view()
             paragraphs = session.paragraphs()
             self.firsts = show_transcript(self.text, paragraphs, session.previews(), found, marks)
@@ -384,7 +400,10 @@ class TranscriptsPage:
             paragraphs = item.get("paragraphs", [])
             found = transcript.read_topics(item["path"])
             marks, people = (found.of, found.people(transcript.numbered(paragraphs))) if found else ({}, [])
-            self.firsts = show_transcript(self.text, paragraphs, found=found, marks=marks)
+            playable = bool(transcript.recordings(item["path"]))
+            self.offsets = transcript.offsets(item) if playable else []
+            self.firsts = show_transcript(self.text, paragraphs, found=found, marks=marks,
+                                          control=self.paragraph_control if playable else None)
             if not paragraphs:
                 self.text.get_buffer().set_text("Nothing was heard.")
         self.show_topics(found, people, bool(session), bool(item.get("paragraphs")), small_model(session, found))
@@ -393,6 +412,8 @@ class TranscriptsPage:
         nameable = not session or session.voices  # without the voice model, a recording's voices are all "Them"
         self.show_people(transcript.labels(session.paragraphs() if session else item.get("paragraphs", []))
                          if nameable else [])
+        self.drawn = None
+        self.playback_changed()
 
     def show_topics(self, found, people, live, heard, warning=None):
         """The topics of the transcript shown: each a card edged in its colour, with who brought it up and who
@@ -439,43 +460,93 @@ class TranscriptsPage:
         self.topics.show_all()
 
     # --- playing it back ---
-    def clicked(self, view, ev):
-        """A click on a paragraph's time plays the call from there (while its recordings are kept)."""
-        if ev.button != 1 or view.get_buffer().get_has_selection() or not self.play_btn.get_visible():
-            return False
-        x, y = view.window_to_buffer_coords(Gtk.TextWindowType.TEXT, int(ev.x), int(ev.y))
-        found, at = view.get_iter_at_location(x, y)
-        if not found or not any(t.get_property("name") == "clock" for t in at.get_tags()):
-            return False
-        line = view.get_buffer().get_iter_at_line(at.get_line())
-        clock = view.get_buffer().get_text(line, view.get_buffer().get_iter_at_line_offset(at.get_line(), 8), False)
-        try:
-            h, m, s = map(int, clock.split(":"))
-        except ValueError:
-            return False
-        started = self.shown_item["started"]
-        self.play_from((h * 3600 + m * 60 + s - (started.hour * 3600 + started.minute * 60 + started.second)) % 86400)
+    # Everything is drawn from the app's playback (what's playing, and where it's got to), never kept here too: the
+    # Play button above (Stop while any of this transcript plays), and before each paragraph's time a play button,
+    # shown while it's hovered, and while it's the paragraph being played (highlighted, its button Stop): as the
+    # whole call plays, that moves on from paragraph to paragraph.
+    def paragraph_control(self, i):
+        """Paragraph i's play button (show_transcript puts it before its time)."""
+        b = d.classes(d.icon_button("play", "Play this paragraph", lambda: self.play_paragraph(i)), "inline")
+        b.icon.size = 12
+        b.icon.set_size_request(12, 12)
+        b.show_all()
+        b.set_child_visible(False)  # (until it's hovered: it keeps its room, so the text doesn't move)
+        b.connect("enter-notify-event", lambda *_: self.hover(i) and False)
+        self.controls[i] = b
+        return b
+
+    def play_all(self):
+        path = self.shown_item["path"]
+        if self.app.playback.playing(path):
+            self.app.playback.stop()
+        else:
+            self.app.playback.play_transcript(path)
+
+    def play_paragraph(self, i):
+        """Play paragraph i, from its time to the next paragraph's; or, if it's the one playing, stop."""
+        if i == self.playing_paragraph():
+            return self.app.playback.stop()
+        start = self.offsets[i]
+        end = min((o for o in self.offsets if o > start), default=None)
+        self.app.playback.play_transcript(self.shown_item["path"], start, end)
+
+    def playing_paragraph(self):
+        """The paragraph being played (of the transcript shown), or None."""
+        now = self.shown_item and self.offsets and self.app.playback.playing(self.shown_item["path"])
+        if not now:
+            return None
+        at = now.at()
+        before = [(o, i) for i, o in enumerate(self.offsets) if o <= at + 0.01]
+        return max(before)[1] if before else 0
+
+    def paragraph_at(self, x, y):
+        """The paragraph at (x, y) in the text view's window, or None."""
+        if not self.offsets:
+            return None
+        bx, by = self.text.window_to_buffer_coords(Gtk.TextWindowType.TEXT, int(x), int(y))
+        found, at = self.text.get_iter_at_location(bx, by)
+        if not found:
+            return None
+        buf, off = self.text.get_buffer(), at.get_offset()
+        for i, (begins, ends) in enumerate(getattr(self.text, "paragraphs", [])[:len(self.offsets)]):
+            end = buf.get_iter_at_mark(ends).get_offset() if ends else buf.get_char_count()
+            if buf.get_iter_at_mark(begins).get_offset() <= off < end:
+                return i
+        return None
+
+    def hover(self, i):
+        if i != self.hovered:
+            self.hovered = i
+            self.playback_changed()
         return False
 
-    def play_from(self, seconds):
-        """Play the call (both its recordings, mixed) from seconds in; the Play button becomes Stop meanwhile."""
-        path = self.shown_item["path"]
-
-        def mix():
-            out = transcript.mixdown(path, seconds)
-            GLib.idle_add(lambda: out and self.shown_item and self.shown_item["path"] == path and play(out) and False)
-
-        def play(out):
-            self.playing = True
-            self.play_btn.icon.set_icon("stop")
-            self.play_btn.set_tooltip_text("Stop")
-            self.app.player.play(str(out), stopped)
-
-        def stopped():
-            self.playing = False
-            self.play_btn.icon.set_icon("play")
-            self.play_btn.set_tooltip_text("Play")
-        threading.Thread(target=mix, daemon=True).start()
+    def playback_changed(self):
+        """Draw what's playing: the Play button above, and the paragraph being played."""
+        if self.closed or not self.shown_item:
+            return
+        playing = bool(self.app.playback.playing(self.shown_item["path"]))
+        current = self.playing_paragraph()
+        drawn = (self.shown_item["path"], playing, current, self.hovered, len(self.offsets))
+        if drawn == self.drawn:
+            return
+        self.drawn = drawn
+        self.play_btn.icon.set_icon("stop" if playing else "play")
+        self.play_btn.set_tooltip_text("Stop" if playing else "Play")
+        for i in range(len(self.offsets)):
+            b = self.controls.get(i)
+            if not b:
+                continue
+            b.set_child_visible(i in (current, self.hovered))
+            b.icon.set_icon("stop" if i == current else "play")
+            b.set_tooltip_text("Stop" if i == current else "Play this paragraph")
+        buf = self.text.get_buffer()
+        tag = buf.get_tag_table().lookup("playing")
+        buf.remove_tag(tag, buf.get_start_iter(), buf.get_end_iter())
+        paragraphs = getattr(self.text, "paragraphs", [])
+        if current is not None and current < len(paragraphs):
+            begins, ends = paragraphs[current]
+            tag.set_priority(buf.get_tag_table().get_size() - 1)  # (over its topic's tint)
+            buf.apply_tag(tag, buf.get_iter_at_mark(begins), buf.get_iter_at_mark(ends) if ends else buf.get_end_iter())
 
     def show_summary(self, found, live, heard):
         """The summary of the transcript shown: its sections and bullets, and whether it's still being written."""
@@ -598,6 +669,8 @@ class TranscriptsPage:
         it = self.shown_item
         if it and huds.confirm(self.win, f"Delete the transcript from {it['started']:%a %d %b, %H:%M}?",
                                "Its recordings are deleted too. This can't be undone.", "Delete"):
+            if self.app.playback.playing(it["path"]):
+                self.app.playback.stop()
             transcript.delete(it["path"])
             self.shown_item = None
             self.changed()

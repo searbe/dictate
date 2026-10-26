@@ -34,6 +34,7 @@ from . import (  # noqa: E402
     huds,
     llm,
     osio,
+    playback,
     refine,
     refinements,
     remote,
@@ -94,6 +95,7 @@ class App:
         self.paster = osio.Paster()  # created after Hotkey so we don't listen to ourselves
         # plays recordings back in Dictations; not to be transcribed off the speakers
         self.player = osio.Player(lambda playing: self.session and self.session.mute("them", playing))
+        self.playback = playback.Playback(self.player)  # what's playing: everything plays and stops through it
         self.prune_audio()
         GLib.timeout_add_seconds(PRUNE_EVERY, self.prune_audio)
         self.capsule.win.show_all()
@@ -179,6 +181,7 @@ class App:
         store.prune(history.AUDIO.glob("*.wav"), self.settings["keep_audio_hours"], recording)
         calls = [*transcript.FOLDER.glob("*.ogg"), *transcript.FOLDER.glob("*.wav")]
         store.prune(calls, self.settings["keep_call_hours"], recording)
+        transcript.forget_mixes()  # (the copies played back from, of those deleted)
         return True  # keep the timer going
 
     # --- dictating ---
@@ -364,6 +367,7 @@ class App:
             if self.settings["keep_call_hours"] == 0:
                 for path in session.recordings:
                     Path(path).unlink(missing_ok=True)
+                transcript.forget_mixes()
             self.transcripts_changed()
             log.info("transcribing: stopped, %d paragraphs saved to %s", len(session.paragraphs()), session.path.name)
         session.stop(saved)

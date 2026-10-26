@@ -114,25 +114,83 @@ def topics_markdown(found, people):
     return f"\n## Topics\n\n{lines}"
 
 
-def mixdown(path, start=0.0):
-    """The transcript's recordings (this computer's audio and the microphone) mixed into one WAV from start
-    seconds on, to play back; its path, or None if they're gone (they're kept for "keep recordings")."""
+MIXES = 2  # mixed calls kept, to play from again without decoding them again (a WAV is about 115 MB an hour)
+_mixing = threading.Lock()
+
+
+def mixes():
+    """Where mixdown keeps the mixed calls."""
+    return Path(GLib.get_user_cache_dir()) / "dictate" / "mixes"
+
+
+def forget_mixes():
+    """Delete the mixed copies of calls whose recordings have gone, or some of them (the transcript deleted, or its
+    recordings past "keep recordings"): a copy is never kept longer than the recordings it was made from. Each is
+    named by its transcript and how many recordings it was made from."""
+    for mix in mixes().glob("*.wav"):  # (one being made is checked once it's made)
+        stem, _, n = mix.stem.rpartition(" ")
+        if not n.isdigit() or len(recordings(FOLDER / f"{stem}.md")) != int(n):
+            mix.unlink(missing_ok=True)
+
+
+def mixdown(path):
+    """The transcript's recordings (this computer's audio and the microphone) mixed into one WAV, to play back:
+    its path, or None if they're gone (they're kept for "keep recordings"). Made once and kept (the latest MIXES
+    of them), unless the recordings change; deleted with them (forget_mixes)."""
     import soundfile
-    tracks, rate = [], stt.RATE
-    for rec in recordings(path):
-        try:
-            data, rate = soundfile.read(str(rec), dtype="float32")
-        except RuntimeError:
-            continue
-        tracks.append(data.mean(1) if data.ndim > 1 else data)
-    if not tracks:
-        return None
-    mix = np.zeros(max(map(len, tracks)), np.float32)
-    for track in tracks:
-        mix[:len(track)] += track
-    out = Path(GLib.get_user_cache_dir()) / "dictate" / "playback.wav"
-    out.parent.mkdir(parents=True, exist_ok=True)
-    soundfile.write(str(out), np.clip(mix[int(start * rate):], -1, 1), rate, subtype="PCM_16")
+    recs = recordings(path)
+    folder = mixes()
+    out = folder / f"{path.stem} {len(recs)}.wav"
+    with _mixing:  # (two at once would make the same one twice)
+        if out.exists() and recs and out.stat().st_mtime >= max(r.stat().st_mtime for r in recs):
+            return out
+        tracks, rate = [], stt.RATE
+        for rec in recs:
+            try:
+                data, rate = soundfile.read(str(rec), dtype="float32")
+            except RuntimeError:
+                continue
+            tracks.append(data.mean(1) if data.ndim > 1 else data)
+        if not tracks:
+            return None
+        mix = np.zeros(max(map(len, tracks)), np.float32)
+        for track in tracks:
+            mix[:len(track)] += track
+        folder.mkdir(parents=True, exist_ok=True)
+        part = out.with_suffix(".part")
+        soundfile.write(str(part), np.clip(mix, -1, 1), rate, subtype="PCM_16", format="WAV")
+        part.replace(out)
+        if len(recordings(path)) != len(recs):  # deleted while it was being made
+            out.unlink(missing_ok=True)
+            return None
+        for old in sorted(folder.glob("*.wav"), key=lambda f: f.stat().st_mtime)[:-MIXES]:
+            old.unlink(missing_ok=True)
+        return out
+
+
+def cut(path, start, end, out):
+    """Write the transcript's call (mixdown) from start to end seconds (end None: to its end) to the WAV out.
+    False if its recordings are gone."""
+    import soundfile
+    mix = mixdown(path)
+    if not mix:
+        return False
+    with soundfile.SoundFile(str(mix)) as f:
+        f.seek(min(int(start * f.samplerate), f.frames))
+        samples = f.read(-1 if end is None else max(0, int((end - start) * f.samplerate)), dtype="int16")
+        out.parent.mkdir(parents=True, exist_ok=True)
+        soundfile.write(str(out), samples, f.samplerate, subtype="PCM_16")
+    return True
+
+
+def offsets(item):
+    """Where each of a saved transcript's paragraphs starts, in seconds into its call (by their clocks)."""
+    started = item["started"]
+    first = started.hour * 3600 + started.minute * 60 + started.second
+    out = []
+    for clock, _, _ in item["paragraphs"]:
+        h, m, s = map(int, clock.split(":"))
+        out.append((h * 3600 + m * 60 + s - first) % 86400)
     return out
 
 
@@ -186,9 +244,11 @@ def saved():
 
 
 def delete(path):
-    """Delete a saved transcript, its recordings, voiceprints, topics and summary."""
+    """Delete a saved transcript, its recordings (and the copy mixed from them to play back), voiceprints, topics
+    and summary."""
     for f in [path, *recordings(path), voiceprints(path), topics_file(path), summary_file(path)]:
         f.unlink(missing_ok=True)
+    forget_mixes()
 
 
 def forget_voiceprints():

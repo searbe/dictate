@@ -27,7 +27,7 @@ dictate.bootstrap()
 import numpy as np
 from gi.repository import Gdk, GLib, Gtk
 
-from dictate import llm, osio, stt, summary, topics, voices
+from dictate import llm, osio, stt, summary, topics, transcript, voices
 
 
 def event(kind, **fields):
@@ -136,6 +136,9 @@ if not REAL_SPEECH and not REAL_SPEAKERS:
     stt.Live, stt.load = Live, lambda: None
     stt.transcribe = lambda path: heard.get(str(path)) or ""
 llm.SERVER = Path(os.environ["DICTATE_TEST_LLAMA"])
+if os.environ.get("DICTATE_TEST_SLOW_CUT"):  # preparing a transcript's playback takes a while (a long call)
+    _cut = transcript.cut
+    transcript.cut = lambda *a: (time.sleep(float(os.environ["DICTATE_TEST_SLOW_CUT"])), _cut(*a))[1]
 
 
 def fake_voiceprint(name, size=192):
@@ -317,6 +320,55 @@ def cmd_flashing():
 def cmd_destroy(window_title):
     """The window is closed by something other than Dictate (e.g. killed), without asking it first."""
     window(window_title).destroy()
+
+
+def at_text(view, text):
+    """Where text starts in the text view: (x, y) in its window, a little inside the first character."""
+    buf = view.get_buffer()
+    found = buf.get_start_iter().forward_search(text, 0, None)
+    rect = view.get_iter_location(found[0])
+    x, y = view.buffer_to_window_coords(Gtk.TextWindowType.TEXT, rect.x, rect.y)
+    return x + 2, y + rect.height // 2
+
+
+def cmd_hover_text(text, window_title=None):
+    """Move the pointer over text in the big text box (None: off it)."""
+    view = field(window(window_title), "text")
+    if text is None:
+        ev = Gdk.Event.new(Gdk.EventType.LEAVE_NOTIFY)
+        ev.window, ev.detail = view.get_window(Gtk.TextWindowType.TEXT), Gdk.NotifyType.ANCESTOR
+        view.emit("leave-notify-event", ev)
+    else:
+        ev = Gdk.Event.new(Gdk.EventType.MOTION_NOTIFY)
+        ev.window = view.get_window(Gtk.TextWindowType.TEXT)
+        ev.x, ev.y = at_text(view, text)
+        view.emit("motion-notify-event", ev)
+    pump()
+
+
+def cmd_highlighted(window_title=None):
+    """The text in the big text box that's highlighted as being played."""
+    view = field(window(window_title), "text")
+    buf = view.get_buffer()
+    tag = buf.get_tag_table().lookup("playing")
+    it, out = buf.get_start_iter(), []
+    while True:
+        if it.starts_tag(tag):
+            end = it.copy()
+            end.forward_to_tag_toggle(tag)
+            out.append(buf.get_text(it, end, False).replace("\ufffc", "").strip())
+        if not it.forward_to_tag_toggle(tag):
+            break
+    return {"texts": out}
+
+
+def cmd_screenshot(path, window_title=None):
+    """Save what the window looks like now as a PNG (to look at while working on it)."""
+    for _ in range(20):
+        pump()
+        time.sleep(0.01)
+    gdk = window(window_title).get_window()
+    Gdk.pixbuf_get_from_window(gdk, 0, 0, gdk.get_width(), gdk.get_height()).savev(path, "png", [], [])
 
 
 def cmd_microphones(connected):

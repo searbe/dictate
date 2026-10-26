@@ -55,6 +55,7 @@ button.btn.icon { min-width: 28px; min-height: 28px; padding: 0; background: tra
 button.btn.icon:hover { background: ${surface_3}; color: ${text}; }
 button.btn.icon.danger:hover { background: ${danger_weak}; color: ${danger}; }
 button.btn.icon.on { color: ${accent}; }
+button.btn.icon.inline { min-width: 18px; min-height: 18px; margin-right: 4px; }  /* in a line of text */
 button.btn .keyhint { ${size_caption} color: ${text_3}; margin-left: 6px; }
 button.btn.primary .keyhint { color: rgba(255,255,255,0.7); }
 
