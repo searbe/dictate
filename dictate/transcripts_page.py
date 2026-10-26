@@ -67,8 +67,9 @@ def show_transcript(view, paragraphs, previews=(), found=None, marks=None, contr
         specs.append((i, topic, last, title, hue, clock, name, text, pending))
         last = topic
     shown = getattr(view, "shown", None)
-    if not shown or shown["chars"] != buf.get_char_count() or shown["control"] != bool(control):  # (start again)
-        shown = view.shown = {"blocks": [], "chars": -1, "control": bool(control)}
+    if not shown or shown["chars"] != buf.get_char_count() or shown["control"] != bool(control):  # start again,
+        buf.set_text("")  # from nothing (e.g. a recording just stopped: played back, it has buttons; or something else
+        shown = view.shown = {"blocks": [], "chars": -1, "control": bool(control)}  # was written)
     blocks = shown["blocks"]  # [(spec, mark where it starts, its topic's first mark or None)]
     same = next((k for k, (spec, *_) in enumerate(blocks) if k >= len(specs) or spec != specs[k]), len(blocks))
     if same < len(blocks):
@@ -136,6 +137,7 @@ class TranscriptsPage:
         self.offsets, self.controls, self.hovered, self.drawn = [], {}, None, None  # (see paragraph_control)
         unlisten = self.app.playback.listen(self.playback_changed)
         hub.win.connect("destroy", lambda *_: unlisten())
+        GLib.timeout_add(1000, self.tick)  # (the recording's clock: it runs whether or not anything's heard)
         self.widget = d.classes(Gtk.Box(), "page")
 
         # the list of transcripts
@@ -281,6 +283,16 @@ class TranscriptsPage:
         self.changed()
         if recording:
             self.show_recording()
+
+    def tick(self):
+        """Every second: the clock of the transcript being recorded, if it's shown (the rest changes only as
+        something's heard: a quiet stretch, or a microphone switched off, mustn't stop the clock)."""
+        if self.closed:
+            return False
+        session = self.current()
+        if session and self.shown_item and self.shown_item.get("recording"):
+            self.status.text.set_text(transcript.clock(session.now()))
+        return True
 
     def items(self):
         """The one being recorded first, then the saved transcripts, newest first."""

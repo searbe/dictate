@@ -389,3 +389,25 @@ def drag(x, y, by, meanwhile):
         time.sleep(0.05)
     xdo("mouseup", 1)
     time.sleep(0.3)
+
+
+def test_the_recordings_clock_runs_while_nothing_is_heard(start):
+    app = recording(start)
+    clock = lambda: next(t for t in app.read("Transcripts") if t[:1].isdigit() and t[1:2] == ":")
+
+    first = clock()
+    time.sleep(2.2)  # (nothing heard meanwhile: e.g. the microphone's switched off)
+
+    assert clock() != first
+
+
+def test_once_it_is_stopped_the_transcript_is_shown_once(start):
+    app = recording(start)
+    app.hear("Shall we look at the budget?")
+    eventually(lambda: "Shall we look at the budget?" in app.transcript())
+
+    app.click("Stop", "Transcripts")
+
+    eventually(lambda: app.stopped())
+    eventually(lambda: "Play" in app.read("Transcripts"))  # (saved, with its recordings: it can be played back)
+    assert app.transcript().count("Shall we look at the budget?") == 1
