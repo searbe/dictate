@@ -255,7 +255,8 @@ if LINUX:
 
     def microphones():
         """The microphones connected now, the default one first: [(name, description)]. Names are PipeWire's,
-        which stay the same when a microphone is plugged in again."""
+        which stay the same when a microphone is plugged in again. A wireless headset that's off doesn't count,
+        though its dongle's still plugged in, where its dongle can say so (headsets.py)."""
         try:
             sources = json.loads(subprocess.run(["pactl", "-f", "json", "list", "sources"], capture_output=True,
                                                 text=True, timeout=2).stdout)
@@ -263,9 +264,20 @@ if LINUX:
                                      timeout=2).stdout.strip()
         except (OSError, ValueError, subprocess.TimeoutExpired):
             return []
+        from . import headsets
+        off = {}  # sound card: whether it's a wireless headset's dongle, and the headset's off
+
+        def connected(s):
+            card = s.get("properties", {}).get("alsa.card")
+            if card is None:
+                return True
+            if card not in off:
+                off[card] = headsets.off(card)
+            return not off[card]
         mics = [(s["name"], s.get("description") or s["name"]) for s in sources
                 if s.get("properties", {}).get("media.class") == "Audio/Source"
-                and not s["name"].startswith("dictate-")]  # (not our echo canceller's)
+                and not s["name"].startswith("dictate-")  # (not our echo canceller's)
+                and connected(s)]  # (a headset that's off, its dongle still plugged in, isn't: headsets.py)
         return sorted(mics, key=lambda m: m[0] != default)
 
     class Recorder:
