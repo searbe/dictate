@@ -591,22 +591,56 @@ def grayscale(widget):
     return widget
 
 
+def rounded_region(x, y, w, h, r):
+    """A rounded rectangle as rectangles (x, y, width, height): the middle, then a row of pixels at a time for
+    its corners."""
+    rects = [(x, y + r, w, h - 2 * r)]
+    for i in range(r):
+        inset = round(r - math.sqrt(max(0.0, r * r - (r - i - 0.5) ** 2)))
+        rects += [(x + inset, y + i, w - 2 * inset, 1), (x + inset, y + h - 1 - i, w - 2 * inset, 1)]
+    return rects
+
+
 def blur_behind(win, card):
     """Ask KWin to blur what's behind card, a translucent window's card (X11/XWayland: KWin's
-    _KDE_NET_WM_BLUR_BEHIND_REGION, rectangles of x, y, width, height; ignored where there's no KWin)."""
+    _KDE_NET_WM_BLUR_BEHIND_REGION, rectangles of x, y, width, height; ignored where there's no KWin). Only behind
+    the card itself, rounded: not its margin, where its shadow is (blurred, that showed as a box around it)."""
     try:
         gi.require_version("GdkX11", "3.0")
         from gi.repository import GdkX11
         gdk_win = win.get_window()
         if not isinstance(gdk_win, GdkX11.X11Window):
             return
-        a = card.get_allocation()
-        import subprocess
-        subprocess.Popen(["xprop", "-id", str(gdk_win.get_xid()), "-f", "_KDE_NET_WM_BLUR_BEHIND_REGION", "32c",
-                          "-set", "_KDE_NET_WM_BLUR_BEHIND_REGION", f"{a.x},{a.y},{a.width},{a.height}"],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        a, ctx = card.get_allocation(), card.get_style_context()
+        m = ctx.get_margin(ctx.get_state())  # (inside the allocation, in GTK 3)
+        rects = rounded_region(a.x + m.left, a.y + m.top, a.width - m.left - m.right, a.height - m.top - m.bottom,
+                               R_LG)
+        set_cardinals(gdk_win.get_xid(), "_KDE_NET_WM_BLUR_BEHIND_REGION", [v for rect in rects for v in rect])
     except (ImportError, ValueError, OSError, AttributeError):
         pass
+
+
+def set_cardinals(xid, name, values):
+    """Set an X11 window's property name to values, CARDINALs, through libX11 (xprop stops at 64 values: the
+    rounded corners' rows past that weren't blurred, a gap below each top corner)."""
+    import ctypes
+    import ctypes.util
+    x11 = ctypes.CDLL(ctypes.util.find_library("X11") or "libX11.so.6")
+    x11.XOpenDisplay.restype, x11.XOpenDisplay.argtypes = ctypes.c_void_p, [ctypes.c_char_p]
+    x11.XInternAtom.restype = ctypes.c_ulong
+    x11.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+    x11.XChangeProperty.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_int,
+                                    ctypes.c_int, ctypes.c_void_p, ctypes.c_int]
+    x11.XFlush.argtypes = x11.XCloseDisplay.argtypes = [ctypes.c_void_p]
+    display = x11.XOpenDisplay(None)
+    if not display:
+        return
+    try:
+        data = (ctypes.c_long * len(values))(*values)  # (format 32 is C longs)
+        x11.XChangeProperty(display, xid, x11.XInternAtom(display, name.encode(), 0), 6, 32, 0, data, len(values))
+        x11.XFlush(display)  # (6: XA_CARDINAL; 0: PropModeReplace)
+    finally:
+        x11.XCloseDisplay(display)
 
 
 class Hud:
@@ -631,6 +665,8 @@ class Hud:
         self.win.connect("draw", self._clear)
         self.win.connect("map-event", lambda w, _: blur_behind(w, self.card) and False)
         self.win.connect("key-press-event", self._key)
+        self.win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK)
+        self.win.connect("button-press-event", self._drag)  # (presses on its buttons and lists stay theirs)
         self.on_escape = self.close
 
     def _clear(self, widget, cr):
@@ -638,6 +674,13 @@ class Hud:
         cr.set_source_rgba(0, 0, 0, 0)
         cr.paint()
         cr.set_operator(cairo.OPERATOR_OVER)
+        return False
+
+    def _drag(self, win, ev):
+        """Pressed on its background: move it with the pointer, as a window's title bar would."""
+        if ev.button == 1 and ev.type == Gdk.EventType.BUTTON_PRESS:
+            win.begin_move_drag(ev.button, int(ev.x_root), int(ev.y_root), ev.time)
+            return True
         return False
 
     def _key(self, _, ev):
