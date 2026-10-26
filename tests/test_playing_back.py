@@ -214,3 +214,13 @@ def test_the_copy_mixed_to_play_from_goes_when_its_recordings_do(start):
     app.send("choose", option="Don't keep", window_title="Settings", setting="Keep transcript recordings")
 
     eventually(lambda: mixes(app) == [])
+
+
+def test_a_paragraph_played_to_its_end_stays_highlighted_not_the_next(start):
+    app = opened(start)
+    play_paragraph(app, "Shall we start with the roadmap?")
+    eventually(lambda: highlighted(app) == ["10:00:00 Them  Shall we start with the roadmap?"])
+
+    time.sleep(3.5)  # past its end, at 10:00:03 (the stand-in player never finishes by itself)
+
+    assert highlighted(app) == ["10:00:00 Them  Shall we start with the roadmap?"]

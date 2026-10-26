@@ -496,6 +496,8 @@ class TranscriptsPage:
         if not now:
             return None
         at = now.at()
+        if now.end is not None:  # (its end is where the next paragraph starts: that one isn't being played)
+            at = min(at, now.end - 0.05)
         before = [(o, i) for i, o in enumerate(self.offsets) if o <= at + 0.01]
         return max(before)[1] if before else 0
 
