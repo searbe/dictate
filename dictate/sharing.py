@@ -79,22 +79,22 @@ class Server:
             conn.settimeout(WAIT + 30)
             try:
                 if peer_uid(conn) != os.getuid():
-                    log.warning("sharing: refused a request from another user")
+                    log.warning("refused a request from another user")
                     return self.reply(conn, {"refused": "Dictate only answers its own user."})
                 request = json.loads(conn.makefile().readline() or "{}")
                 topic = " ".join(str(request.get("topic", "")).split())[:LONGEST]
                 where = str(request.get("from", ""))[:500]
             except (OSError, ValueError, AttributeError):
                 return
-            log.info("sharing: Claude Code (in %s) asked for transcripts about %r", where or "?", topic)
+            log.info("Claude Code (in %s) asked for transcripts about %r", where or "?", topic)
             if not self.allowed():
-                log.info("sharing: refused (asking is turned off in Settings)")
+                log.info("refused (asking is turned off in Settings)")
                 return self.reply(conn, {"refused": "Sharing transcripts with Claude Code is turned off in "
                                                     "Dictate's Settings (Let Claude Code ask for transcripts)."})
             if not topic:
                 return self.reply(conn, {"refused": "The request didn't say what it's looking for."})
             if self.busy:
-                log.info("sharing: refused (another request is being answered)")
+                log.info("refused (another request is being answered)")
                 return self.reply(conn, {"refused": "Dictate is already asking about another request."})
             self.busy = True
             answered, chosen, asking = threading.Event(), [], []
@@ -108,10 +108,10 @@ class Server:
             self.busy = False
             shared = chosen[0] if chosen else None
             if not shared:
-                log.info("sharing: refused%s", "" if chosen else " (no answer in time)")
+                log.info("refused%s", "" if chosen else " (no answer in time)")
                 return self.reply(conn, {"refused": "The user chose not to share any transcripts."})
             out = [part(path, kind) for path, kind in shared]
-            log.info("sharing: shared %s", ", ".join(f"{p.stem} ({k})" for p, k in shared))
+            log.info("shared %s", ", ".join(f"{p.stem} ({k})" for p, k in shared))
             self.reply(conn, {"shared": [o for o in out if o]})
 
     @staticmethod
