@@ -6,6 +6,9 @@ Dictate does, see the [README](../README.md).
 ## How it works
 - **Hotkey:** the keyboard is read directly (evdev on Linux), so **Ctrl+Win** works in every app, and any other key
   pressed with it (e.g. Ctrl+Win+→ to switch desktop) is left to its own shortcut.
+- **Microphone:** the first connected one in the order set on the Settings page, checked each time recording starts.
+  Microphones seen for the first time join the end of the list (the system's default one first), so until you change
+  the order it's the default one.
 - **Speech:** [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) on the CPU, via
   [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), with [Silero VAD](https://github.com/snakers4/silero-vad)
   finding the pauses. Each stretch is transcribed as soon as you pause, so the text is ready 0.1 s or so after you

@@ -275,7 +275,7 @@ class Recent:
 class Session:
     """A transcript being recorded. on_change() runs on the GTK thread whenever the transcript changes."""
 
-    def __init__(self, on_change=lambda: None):
+    def __init__(self, on_change=lambda: None, mic=None):
         FOLDER.mkdir(parents=True, exist_ok=True)
         self.started, self.t0, self.on_change = datetime.now().replace(microsecond=0), time.monotonic(), on_change
         while (FOLDER / f"{self.started:{STAMP}}.md").exists():  # another started within the same second
@@ -304,7 +304,7 @@ class Session:
             live = stt.Live(pause=PAUSE, on_text=lambda *heard, who=who: self.hear(who, *heard),
                             on_preview=lambda *so_far, who=who: self.preview(who, *so_far))
             rec = osio.Recorder()
-            rec.start(path, speakers=speakers, echo_cancel=not speakers,
+            rec.start(path, speakers=speakers, echo_cancel=not speakers, mic=mic,
                       on_audio=(lambda chunk, push=live.push: (self.echo.played(chunk), self.recent.add(chunk),
                                                                push(chunk))) if speakers else live.push)
             self.recorders.append(rec)

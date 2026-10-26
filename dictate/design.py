@@ -192,6 +192,8 @@ ICONS = {
     "warning": "m 8 2.5 l 14 13 l 2 13 z m 8 6.5 l 8 9.25 m 8 11.25 l 8 11.3",
     "close": "m 4 4 l 12 12 m 12 4 l 4 12",
     "record": "n a 8 8 4 0 1",
+    "up": "m 3.5 10.5 l 8 6 l 12.5 10.5",
+    "down": "m 3.5 5.5 l 8 10 l 12.5 5.5",
 }
 _ARGS = {"m": 2, "l": 2, "c": 6, "a": 5, "r": 5, "n": 0, "z": 0}  # how many numbers each command takes
 

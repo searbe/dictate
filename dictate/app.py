@@ -59,6 +59,7 @@ class App:
         DATA.mkdir(parents=True, exist_ok=True)
         design.install()
         self.settings = Settings()
+        self.mic = None  # the microphone recorded last (its name), to log when it changes
         self.state = "idle"  # what the capsule shows: "idle", "rec" (dictating) or "busy" (the model's working)
         self.rec = self.live = self.wav = None  # the dictation being recorded: its recorder, transcriber and file
         self.since = None  # when it started
@@ -151,6 +152,22 @@ class App:
         self.prune_audio()
         self.transcripts_changed()  # (Play, for those whose recordings just went)
 
+    def microphone(self):
+        """The name of the microphone to record: the first connected one in the order set on the Settings page
+        (those seen for the first time are added to its end, the default one first), or None: the default."""
+        connected, order = dict(osio.microphones()), self.settings["microphones"]
+        new = [[name, label] for name, label in connected.items() if name not in {n for n, _ in order}]
+        if new:
+            self.settings.update(microphones=order + new)
+        mic = next((name for name, _ in self.settings["microphones"] if name in connected), None)
+        if mic != self.mic:
+            log.info("microphone: %s", connected.get(mic, "the default"))
+            self.mic = mic
+        return mic
+
+    def set_microphones(self, order):
+        self.settings.update(microphones=order)
+
     def prune_audio(self):
         """Delete recordings older than their setting: dictations' (keep_audio_hours) and calls' (keep_call_hours).
         Their text stays, in Dictations and Transcripts. Never one being recorded."""
@@ -178,7 +195,7 @@ class App:
         history.AUDIO.mkdir(parents=True, exist_ok=True)
         self.wav = str(history.AUDIO / f"{datetime.now():%Y%m%d-%H%M%S-%f}.wav")
         self.rec = osio.Recorder()
-        self.rec.start(self.wav)
+        self.rec.start(self.wav, mic=self.microphone())
         self.live = stt.Live(self.wav)  # transcribes each stretch of speech as soon as you pause
         if self.session:
             self.session.mute("me", True)  # a dictation isn't part of the conversation
@@ -314,7 +331,7 @@ class App:
 
     def start_transcribing(self):
         try:
-            session = transcript.Session()
+            session = transcript.Session(mic=self.microphone())
         except OSError as err:  # e.g. pw-record missing
             log.warning("transcribe mode: can't record (%s)", err)
             return

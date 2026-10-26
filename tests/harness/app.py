@@ -38,6 +38,7 @@ def event(kind, **fields):
 speech = {"next": None}  # what the user will say during the next recording
 heard = {}  # recording path -> what was said during it
 ears = []  # the transcriptions following a recording as it's made (transcribe mode), newest last
+microphones = []  # the microphones connected: [(name, description)], the default one first
 
 
 class Hotkey:
@@ -54,7 +55,7 @@ REAL_SPEECH, REAL_SPEAKERS = os.environ.get("DICTATE_TEST_SPEECH"), os.environ.g
 
 
 class Recorder:
-    def start(self, path, speakers=False, on_audio=None, echo_cancel=False):
+    def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None):
         real = REAL_SPEAKERS if speakers else REAL_SPEECH
         audio = bytes(3200)  # what the microphone or speakers give: silence, or the speech
         if real:
@@ -70,7 +71,7 @@ class Recorder:
                 w.setnchannels(1), w.setsampwidth(2), w.setframerate(16000)
                 w.writeframes(audio)
             heard[path], speech["next"] = speech["next"], None
-        event("recording", path=path, speakers=speakers, echo_cancel=echo_cancel)
+        event("recording", path=path, speakers=speakers, echo_cancel=echo_cancel, mic=mic)
 
     def stop(self):
         event("recording_stopped")
@@ -127,6 +128,7 @@ def notify(title, body, actions=(), on_action=lambda key: None, image=None):
 
 
 osio.Hotkey, osio.Recorder, osio.Paster, osio.Player, osio.notify = Hotkey, Recorder, Paster, Player, notify
+osio.microphones = lambda: list(microphones)
 if not REAL_SPEECH and not REAL_SPEAKERS:
     stt.Live, stt.load = Live, lambda: None
     stt.transcribe = lambda path: heard.get(str(path)) or ""
@@ -290,6 +292,11 @@ def cmd_hear_so_far(text, source, length=1.0):
     for live in reversed(ears):
         if getattr(live, "source", None) == source:
             return live.on_preview(now() - length, text)
+
+
+def cmd_microphones(connected):
+    """These microphones are connected now ([[name, description]], the default one first)."""
+    microphones[:] = [tuple(m) for m in connected]
 
 
 def cmd_gpu(state):

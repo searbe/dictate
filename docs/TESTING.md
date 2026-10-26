@@ -58,6 +58,7 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 | Quit (menu and signal) with the reason logged, the microphone never left recording (quitting mid-dictation, or crashing mid-recording), run at startup, single instance, switching to `.venv` | `test_running_dictate.py` |
 | Tray icon over the StatusNotifierItem protocol: registers, same menu, turns red while recording, its tooltip saying how long it has been transcribing (paused or not) and the topic now | `test_tray.py` |
 | Keyboards coming and going (Linux): Ctrl+Win still works after one is unplugged, one plugged in later (or dropping out and coming back) works, unplugged mid-dictation counts as let go, Dictate's own virtual keyboard not watched | `test_keyboards.py` |
+| Microphone: the system's default one used until the order on the Settings page is changed, moving one up records with it, the next one used while the preferred one is unplugged (and it again once it's back), transcribe mode too, forgetting one that isn't connected | `test_microphones.py` |
 | Keys typed and pasted on US and UK layouts, Shift+Enter for new lines, plain punctuation | `test_typing_and_pasting.py` |
 | Speech-to-text with the real models: English, German, silence and noise, live = whole-file | `test_speech_to_text.py` |
 | Downloads: complete, interrupted, not repeated; unpacking | `test_downloads.py` |

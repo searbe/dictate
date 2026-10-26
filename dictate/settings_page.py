@@ -3,7 +3,7 @@
 from gi.repository import Gtk
 
 from . import design as d
-from . import refinements
+from . import osio, refinements
 from .settings import KEEP_AUDIO, REMOTE_MODES, SAME
 
 
@@ -25,6 +25,7 @@ class SettingsPage:
         names = [r["name"] for r in data["refinements"]]
         here = refinements.default()
         there = data.get("remote_default", SAME)
+        mic = app.microphone()  # (which also adds any microphones seen for the first time)
         rows = [
             ("Dictation",),
             ("Refine text", "Cleanup, then the refinement for the app you're dictating into (or the default), with a "
@@ -33,6 +34,9 @@ class SettingsPage:
             ("Default refinement", "Applied after cleanup to every dictation that no app's refinement matches.",
              d.combo([(None, "None (cleanup only)")] + [(n, n) for n in names], here and here["name"],
                      refinements.set_default)),
+            ("Microphone",),
+            d.text("Dictate records the first of these that's connected.", "small", wrap=True, margin_bottom=8),
+            *self.microphone_rows(mic),
             ("Recordings",),
             ("Keep dictation recordings", "How long each dictation's audio is kept, to play back from Dictations. "
                                           "Its text is kept until you delete it.",
@@ -51,7 +55,11 @@ class SettingsPage:
             ("Run at startup", "Start Dictate when you log in.", d.switch(app.autostart(), app.set_autostart)),
         ]
         first = True
-        for title, *rest in rows:
+        for row in rows:
+            if isinstance(row, Gtk.Widget):
+                self.body.pack_start(row, False, False, 0)
+                continue
+            title, *rest = row
             if not rest:
                 self.body.pack_start(d.classes(Gtk.Label(label=title, xalign=0, margin_top=8 if first else 24,
                                                          margin_bottom=4), "title"), False, False, 0)
@@ -60,3 +68,31 @@ class SettingsPage:
             self.body.pack_start(d.setting_row(title, *rest), False, False, 0)
             self.body.pack_start(d.hairline(), False, False, 0)
         self.body.show_all()
+
+    def microphone_rows(self, mic):
+        """A row for each microphone seen, in the order they're preferred, with buttons to move it up or down,
+        and to forget one that isn't connected."""
+        order, connected = self.app.settings["microphones"], dict(osio.microphones())
+
+        def move(i, by):
+            new = list(order)
+            new.insert(i + by, new.pop(i))
+            self.app.set_microphones(new)
+            self.shown()
+
+        def forget(i):
+            self.app.set_microphones(order[:i] + order[i + 1:])
+            self.shown()
+
+        rows = []
+        for i, (name, label) in enumerate(order):
+            buttons = Gtk.Box(spacing=4)
+            for icon, by, tip in (("up", -1, "Move {} up"), ("down", 1, "Move {} down")):
+                b = d.icon_button(icon, tip.format(label), lambda i=i, by=by: move(i, by))
+                b.set_sensitive(0 <= i + by < len(order))
+                buttons.pack_start(b, False, False, 0)
+            if name not in connected:
+                buttons.pack_start(d.icon_button("trash", f"Forget {label}", lambda i=i: forget(i)), False, False, 0)
+            rows.append((connected.get(name, label),
+                         "In use" if name == mic else "Connected" if name in connected else "Not connected", buttons))
+        return rows

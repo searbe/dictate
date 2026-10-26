@@ -5,6 +5,7 @@ Windows and macOS use pynput for keys and sounddevice for the microphone.
 """
 import ctypes
 import itertools
+import json
 import logging
 import os
 import signal
@@ -252,21 +253,37 @@ if LINUX:
 
     _cancellers = itertools.count()
 
+    def microphones():
+        """The microphones connected now, the default one first: [(name, description)]. Names are PipeWire's,
+        which stay the same when a microphone is plugged in again."""
+        try:
+            sources = json.loads(subprocess.run(["pactl", "-f", "json", "list", "sources"], capture_output=True,
+                                                text=True, timeout=2).stdout)
+            default = subprocess.run(["pactl", "get-default-source"], capture_output=True, text=True,
+                                     timeout=2).stdout.strip()
+        except (OSError, ValueError, subprocess.TimeoutExpired):
+            return []
+        mics = [(s["name"], s.get("description") or s["name"]) for s in sources
+                if s.get("properties", {}).get("media.class") == "Audio/Source"
+                and not s["name"].startswith("dictate-")]  # (not our echo canceller's)
+        return sorted(mics, key=lambda m: m[0] != default)
+
     class Recorder:
-        def start(self, path, speakers=False, on_audio=None, echo_cancel=False):
-            """Record the microphone, or (speakers) whatever this computer is playing: PipeWire's monitor of
-            the default output (still heard while the output is muted). Into a WAV file; or, with on_audio,
-            into an Ogg Opus file (about a tenth of the size) while passing each chunk of 16-bit samples to
-            on_audio as it's recorded (on the recorder's thread). echo_cancel: the microphone with what the
-            speakers are playing taken out of it (see _echo_cancelled), where PipeWire can."""
+        def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None):
+            """Record the microphone (mic: its name from microphones(); None, the default one), or (speakers)
+            whatever this computer is playing: PipeWire's monitor of the default output (still heard while the
+            output is muted). Into a WAV file; or, with on_audio, into an Ogg Opus file (about a tenth of the
+            size) while passing each chunk of 16-bit samples to on_audio as it's recorded (on the recorder's
+            thread). echo_cancel: the microphone with what the speakers are playing taken out of it (see
+            _echo_cancelled), where PipeWire can."""
             self.canceller = None
             if speakers:
                 source = ["-P", "{ stream.capture.sink=true }"]
-            elif echo_cancel and (found := _echo_cancelled()):
+            elif echo_cancel and (found := _echo_cancelled(mic)):
                 self.canceller, name = found
                 source = ["--target", name]
             else:
-                source = []
+                source = ["--target", mic] if mic else []
             cmd = ["pw-record", *source, "--rate", str(RATE), "--channels", "1", "--format", "s16"]
             if not on_audio:
                 self.proc, self.reader = subprocess.Popen([*cmd, path], **TIED), None
@@ -294,15 +311,16 @@ if LINUX:
                 self.canceller.terminate()  # which unloads the echo canceller
                 self.canceller.wait()
 
-    def _echo_cancelled():
-        """(process, node name) of a microphone with the speakers taken out of it, or None if PipeWire can't:
-        its WebRTC echo canceller, comparing the default microphone with what the default output plays. Without
+    def _echo_cancelled(mic=None):
+        """(process, node name) of a microphone (mic, else the default one) with the speakers taken out of it, or
+        None if PipeWire can't: its WebRTC echo canceller, comparing it with what the default output plays. Without
         it, the microphone hears the speakers too (unless it's headphones), as if you'd said it. Loaded by a
         pw-cli that keeps it loaded until it's stopped (or Dictate is), so nothing is left behind."""
         name = f"dictate-echo-cancel-{os.getpid()}-{next(_cancellers)}"
         args = (f'{{ library.name = aec/libspa-aec-webrtc monitor.mode = true audio.rate = {RATE} audio.channels = 1 '
                 f'source.props = {{ node.name = "{name}" node.description = "Dictate: microphone without the speakers" '
-                f'node.passive = true }} capture.props = {{ node.name = "{name}-capture" }} }}')
+                f'node.passive = true }} capture.props = {{ node.name = "{name}-capture" '
+                + (f'target.object = "{mic}" ' if mic else "") + "} }")
         try:
             proc = subprocess.Popen(["pw-cli", "-m", "load-module", "libpipewire-module-echo-cancel", args],
                                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -399,15 +417,24 @@ else:
         def start(self):
             self.listener.start()
 
+    def microphones():
+        """The microphones connected now, the default one first: [(name, name)]."""
+        try:
+            default = sounddevice.default.device[0]
+            mics = [(d["name"], i) for i, d in enumerate(sounddevice.query_devices()) if d["max_input_channels"]]
+        except sounddevice.PortAudioError:
+            return []
+        return [(name, name) for name, _ in sorted(mics, key=lambda m: m[1] != default)]
+
     class Recorder:
-        def start(self, path, speakers=False, on_audio=None, echo_cancel=False):
+        def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None):
             if speakers or on_audio:  # (so echo_cancel doesn't arise)
                 raise NotImplementedError("recording the speakers is Linux-only for now")
             self.wav = wave.open(path, "wb")  # noqa: SIM115 (open until stop())
             self.wav.setnchannels(1)
             self.wav.setsampwidth(2)
             self.wav.setframerate(RATE)
-            self.stream = sounddevice.RawInputStream(samplerate=RATE, channels=1, dtype="int16",
+            self.stream = sounddevice.RawInputStream(samplerate=RATE, channels=1, dtype="int16", device=mic,
                                                      callback=lambda data, *_: self.wav.writeframes(bytes(data)))
             self.stream.start()
 
