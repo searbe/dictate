@@ -12,11 +12,17 @@ from gi.repository import Gdk, Gio, GLib, Gtk, Pango
 from . import design as d
 from . import huds, llm, summary, transcript, voices
 
+GUTTER = 88  # px: a paragraph's play button and time are in a gutter this wide; what was said starts at its edge,
+# and so do its wrapped lines (not under the time)
+
 
 def transcript_view():
     """A read-only text view for a transcript."""
     view = Gtk.TextView(editable=False, cursor_visible=False, wrap_mode=Gtk.WrapMode.WORD_CHAR,
                         left_margin=24, right_margin=24, top_margin=8, bottom_margin=24, pixels_inside_wrap=2)
+    tabs = Pango.TabArray.new(1, True)  # (in pixels)
+    tabs.set_tab(0, Pango.TabAlign.LEFT, GUTTER)
+    view.set_tabs(tabs)
     style_tags(view.get_buffer())
     d.on_scheme.append(lambda: style_tags(view.get_buffer()))
     return view
@@ -28,7 +34,9 @@ def style_tags(buf):
     for name, props in (("pending", {"foreground": d.tok("text-3"), "style": Pango.Style.ITALIC}),
                         ("who", {"foreground": d.tok("text"), "weight": 600}),
                         ("clock", {"foreground": d.tok("text-3"), "scale": 0.85}),
-                        ("playing", {"paragraph-background-rgba": d.rgba("accent", 0.16)})):
+                        ("playing", {"paragraph-background-rgba": d.rgba("accent", 0.16)}),
+                        ("hang", {"indent": -GUTTER})):  # (wrapped lines start at the gutter's edge: GTK
+        # indents a paragraph's lines after its first by a negative indent)
         tag = table.lookup(name) or buf.create_tag(name)
         for k, v in props.items():
             tag.set_property(k, v)
@@ -97,13 +105,15 @@ def show_transcript(view, paragraphs, previews=(), found=None, marks=None, contr
         elif i:
             buf.insert(buf.get_end_iter(), "\n\n")
         begins = buf.create_mark(None, buf.get_end_iter(), True)
-        if control and not pending:
+        widget = control(i) if control and not pending else None
+        if widget:
             anchor = buf.create_child_anchor(buf.get_end_iter())
-            view.add_child_at_anchor(control(i), anchor)
+            view.add_child_at_anchor(widget, anchor)
             buf.insert_with_tags_by_name(buf.get_end_iter(), " ", "clock", *tags)
-        buf.insert_with_tags_by_name(buf.get_end_iter(), f"{clock} ", "clock", *tags)
+        buf.insert_with_tags_by_name(buf.get_end_iter(), f"{clock}\t", "clock", *tags)  # (to the gutter's edge)
         buf.insert_with_tags_by_name(buf.get_end_iter(), f"{name}  ", "who", *tags)
         buf.insert_with_tags_by_name(buf.get_end_iter(), text, *tags)
+        buf.apply_tag_by_name("hang", buf.get_iter_at_mark(begins), buf.get_end_iter())
         blocks.append((spec, at, first, begins))
     shown["chars"] = buf.get_char_count()
     view.paragraphs = [(begins, blocks[k + 1][1] if k + 1 < len(blocks) else None)
@@ -483,9 +493,16 @@ class TranscriptsPage:
         b.icon.set_size_request(12, 12)
         b.show_all()
         b.set_child_visible(False)  # (until it's hovered: it keeps its room, so the text doesn't move)
-        b.connect("enter-notify-event", lambda *_: self.hover(i) and False)
+        b.connect("enter-notify-event", lambda *_: (self.hover(i), self.pointer("pointer")) and False)
+        b.connect("leave-notify-event", lambda *_: self.pointer("text") and False)
         self.controls[i] = b
         return b
+
+    def pointer(self, name):
+        """The pointer over the transcript: "pointer" (a hand) over a play button, else "text" (it's selectable)."""
+        window = self.text.get_window(Gtk.TextWindowType.TEXT)
+        if window:
+            window.set_cursor(Gdk.Cursor.new_from_name(window.get_display(), name))
 
     def play_all(self):
         path = self.shown_item["path"]

@@ -372,7 +372,7 @@ def cmd_highlighted(window_title=None):
         if it.starts_tag(tag):
             end = it.copy()
             end.forward_to_tag_toggle(tag)
-            out.append(buf.get_text(it, end, False).replace("\ufffc", "").strip())
+            out.append(buf.get_text(it, end, False).replace("\ufffc", "").replace("\t", " ").strip())
         if not it.forward_to_tag_toggle(tag):
             break
     return {"texts": out}
@@ -561,7 +561,8 @@ def cmd_fill(name, text, window_title=None):
 
 def cmd_field(name, window_title=None):
     w = field(window(window_title), name)
-    return {"text": w.get_buffer().props.text if isinstance(w, Gtk.TextView) else w.get_text()}
+    return {"text": (w.get_buffer().props.text.replace("\t", " ")  # (a tab shows as space to the gutter's edge)
+                     if isinstance(w, Gtk.TextView) else w.get_text())}
 
 
 def cmd_select(row, window_title=None):
