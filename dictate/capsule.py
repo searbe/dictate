@@ -59,11 +59,17 @@ class Capsule:
         self.win.connect("size-allocate", lambda *_: self.shape())
         self.state, self.session, self.since, self.level = "idle", None, None, lambda: 0.0
         self.hovered, self.anchor = False, "left"
+        self.flashing = False  # the paused dot lit up (see flash)
         self.width = self.start_width = self.target = float(DOT)
         self.morph_at, self.loud, self.t0, self.ticking = 0.0, 0.0, time.monotonic(), None
         d.on_scheme.append(self.win.queue_draw)
 
     # --- what it shows ---
+    def flash(self, on):
+        """Light the paused dot up (on) or not: flashed on and off to draw attention to something."""
+        self.flashing = on
+        self.win.queue_draw()
+
     def update(self, state, session=None, since=None, level=None):
         self.state, self.session, self.since = state, session, since
         if level:
@@ -289,7 +295,7 @@ class Capsule:
                     cr.set_source_rgba(c.red, c.green, c.blue, c.alpha)
                     cr.fill()
         elif self.session:
-            self.draw_dot(cr, x + 18, cy, "text-3" if self.session.paused else "record", 1.0)
+            self.draw_dot(cr, x + 18, cy, "text-3" if self.session.paused and not self.flashing else "record", 1.0)
             cr.save()
             cr.rectangle(x, y, w - 14, H)
             cr.clip()
@@ -321,9 +327,9 @@ class Capsule:
         return Gdk.pixbuf_get_from_surface(surface, int(self.left() - PAD), 0, int(self.width + 2 * PAD), height)
 
 
-def draw_tray(cr, px, state, session):
+def draw_tray(cr, px, state, session, flashing=False):
     """The tray icon: the app icon while idle; a dot with the mic, red while recording, ringed in the accent while
-    transcribing a call."""
+    transcribing a call (grey while it's paused, red when flashing)."""
     cr.set_operator(cairo.OPERATOR_SOURCE)
     cr.set_source_rgba(0, 0, 0, 0)
     cr.paint()
@@ -336,7 +342,7 @@ def draw_tray(cr, px, state, session):
     cr.set_source_rgba(fill.red, fill.green, fill.blue, 1)
     cr.fill()
     if session:
-        ring = d.rgba("text-3") if session.paused else d.rgba("accent")
+        ring = d.rgba("record") if flashing else d.rgba("text-3") if session.paused else d.rgba("accent")
         cr.arc(16, 16, 14.5, 0, 2 * math.pi)
         cr.set_source_rgba(ring.red, ring.green, ring.blue, 1)
         cr.set_line_width(3)

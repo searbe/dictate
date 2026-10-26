@@ -6,9 +6,10 @@ updated every second (shown only: it isn't saved). Voices through the speakers a
 split between voices where the voice changes in it, between words, by when each word was said.
 
 Left out: your dictations (the microphone is muted while you hold Ctrl+Win), Dictate playing a recording
-back, anything said while paused, and the speakers' sound picked up again by the microphone (without
-headphones): PipeWire's echo canceller takes some of it out of the microphone (osio.Recorder's echo_cancel),
-echo.py tells what's left from you speaking, and the same words at the same time as Them are an echo too.
+back, anything said while paused (the recordings get silence instead: see hush), and the speakers' sound picked
+up again by the microphone (without headphones): PipeWire's echo canceller takes some of it out of the
+microphone (osio.Recorder's echo_cancel), echo.py tells what's left from you speaking, and the same words at the
+same time as Them are an echo too.
 
 Saved as Markdown in data/transcripts/, rewritten after every new stretch, with an Ogg Opus recording per
 source beside it (about 12 MB an hour each, kept as long as dictation recordings are). saved() reads them
@@ -45,6 +46,7 @@ ECHO = 0.6  # share of a stretch's words also heard through the speakers at the 
 STAMP = "%Y-%m-%d %H.%M.%S"  # a transcript's file name: when it started
 AHEAD = 10.0  # seconds of the speakers heard after a stretch before it's split between voices (the segmenter
 WINDOW = 60.0  # tells a change better hearing what follows), and how much before it the segmenter hears too
+SOUND = 0.01  # loudness (RMS, full scale 1) of a tenth of a second heard while paused that counts as a sound
 RECENT = 300.0  # seconds of the speakers kept for that: longer than a stretch can be, plus both of those
 PENDING, UNKNOWN = "pending", -1  # a stretch from the speakers still to be split between voices; whose it is so far
 LASTED = re.compile(r"^Lasted (.+), until \d\d:\d\d\.$", re.M)
@@ -273,9 +275,11 @@ class Recent:
 
 
 class Session:
-    """A transcript being recorded. on_change() runs on the GTK thread whenever the transcript changes."""
+    """A transcript being recorded. on_change() runs on the GTK thread whenever the transcript changes; on_sound()
+    whenever something is heard while it's paused."""
 
     def __init__(self, on_change=lambda: None, mic=None):
+        self.on_sound = lambda: None
         FOLDER.mkdir(parents=True, exist_ok=True)
         self.started, self.t0, self.on_change = datetime.now().replace(microsecond=0), time.monotonic(), on_change
         while (FOLDER / f"{self.started:{STAMP}}.md").exists():  # another started within the same second
@@ -290,6 +294,7 @@ class Session:
         self.echo = echo.Echo()  # what the speakers played, to tell the microphone's echoes of it
         self.muted = {who: [] for who, _ in SOURCES}  # [start, end] (end None: still muted)
         self.paused = self.stopped = False
+        self.resumed = 0.0  # when it was last resumed
         self.topics, self.asked, self.asking, self.last_topics = topics.Topics(), set(), False, self.now()
         self.last_merge = self.now()
         self.summary, self.last_summary = summary.Summary(), self.now()
@@ -304,7 +309,7 @@ class Session:
             live = stt.Live(pause=PAUSE, on_text=lambda *heard, who=who: self.hear(who, *heard),
                             on_preview=lambda *so_far, who=who: self.preview(who, *so_far))
             rec = osio.Recorder()
-            rec.start(path, speakers=speakers, echo_cancel=not speakers, mic=mic,
+            rec.start(path, speakers=speakers, echo_cancel=not speakers, mic=mic, hush=self.hush,
                       on_audio=(lambda chunk, push=live.push: (self.echo.played(chunk), self.recent.add(chunk),
                                                                push(chunk))) if speakers else live.push)
             self.recorders.append(rec)
@@ -453,7 +458,20 @@ class Session:
         elif not on and spans and spans[-1][1] is None:
             spans[-1][1] = self.now()
 
+    def hush(self, chunk):
+        """While paused (on the recorder's thread): True, so the recordings get silence instead of what's heard,
+        and nothing is transcribed (the recordings stay as long as the transcript's clock). What's heard is still
+        listened to, and on_sound() runs if it's louder than SOUND."""
+        if not self.paused:
+            return False
+        samples = np.frombuffer(chunk, np.int16).astype(np.float32) / 32768
+        if len(samples) and float(np.sqrt(np.mean(samples ** 2))) > SOUND:
+            GLib.idle_add(lambda: self.on_sound() and False)
+        return True
+
     def pause(self, on):
+        if self.paused and not on:
+            self.resumed = self.now()
         self.paused = on
         for who in self.muted:
             self.mute(who, on)
@@ -491,8 +509,8 @@ class Session:
         threading.Thread(target=finish, daemon=True).start()
 
     def quiet_for(self):
-        """Seconds since anything was last added to the transcript (or since it started)."""
-        return self.now() - max((end for _, _, end, _, _ in self.kept()), default=0.0)
+        """Seconds since anything was last added to the transcript (or since it started, or was last resumed)."""
+        return self.now() - max([self.resumed, *(end for _, _, end, _, _ in self.kept())])
 
     # --- topics ---
     def lines(self):

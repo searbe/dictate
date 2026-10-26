@@ -67,7 +67,7 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 | Transcripts: listed newest first with when and how long, the recording at the top and kept up to date while reading others, reading one, copy, delete (with confirmation) with its recordings, playing the call back (only while its recordings are kept; not while it's recorded), none yet, clicking the capsule while recording | `test_transcripts_window.py` |
 | Echoes: the speakers heard again by the microphone (in made-up rooms, quieter or later) told from you speaking, alone or over them | `test_echo.py` |
 | Topics: listed beside the transcript with who brought each up and who else spoke on it, the current one marked, carried on when the conversation goes back to one, a new paragraph where the topic changes, small talk left out, saved at the top of the transcript (including what was said last, when it's stopped), the transcript carrying on when the model fails, a warning while the less reliable model is used (graphics card busy, or none) and once saved, switching to the better one once the graphics card is free but not mid-dictation, topics that turn out to be one subject merged (only if the model says so again about each pair, and not by the less reliable model) | `test_topics.py` |
-| Still transcribing: closing the window while recording says it carries on and every way to stop it (once a day), Stop now, Keep going, a desktop notification when the capsule isn't on screen, the reminder after a while with nothing heard (not again until something is) | `test_still_transcribing.py` |
+| Still transcribing: closing the window while recording says it carries on and every way to stop it (once a day), Stop now, Keep going, a desktop notification when the capsule isn't on screen, after a while with nothing heard, paused and saying so (beside the capsule, or in the middle of the screen), nothing recorded or transcribed while paused, the icons flashing at a sound meanwhile (and the alert brought to the front by clicking the capsule, or by Ctrl+Win, which doesn't dictate but says why), the alert closed only by Resume (paused again only after another while) or Stop now, and closed any other way, stopped | `test_still_transcribing.py` |
 | Live summary: the Summary tab beside Topics, kept up to date with only what's new sent each time, the final pass when it's stopped saved at the top of the transcript, a saved transcript's summary, its prompt changed and reset in Refinements | `test_summary.py` |
 | Grouping voices into people on a call's worth of made-up voiceprints: one voice each, short parts never someone new, numbers kept when one is named | `test_voice_grouping.py` |
 | Voices: told apart, named live or after the call, merged by naming two the same, remembered only when turned on (live and after the call), listed and forgotten, all forgotten when turned off, "Them" without the voice model | `test_voices.py` |
@@ -105,6 +105,9 @@ model's answers are good can only be judged by reading them. After changing a pr
 - Dictate names and jargon from your vocabulary: spelled as listed.
 - Background music or typing only, no speech: nothing pasted.
 - The log's `recording: N ms after the key was pressed` stays well under 100 ms.
+- With two microphones connected, move the one that isn't the system's default to the top in Settings: the log says
+  `microphone: <its name>` at the next dictation, and the recording is from it (play it back from Dictations).
+  Unplug it: the next dictation records the next one in the list.
 
 ### 3. The real keyboard and pasting (Linux: evdev and uinput)
 

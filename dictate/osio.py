@@ -269,13 +269,14 @@ if LINUX:
         return sorted(mics, key=lambda m: m[0] != default)
 
     class Recorder:
-        def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None):
+        def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None, hush=None):
             """Record the microphone (mic: its name from microphones(); None, the default one), or (speakers)
             whatever this computer is playing: PipeWire's monitor of the default output (still heard while the
             output is muted). Into a WAV file; or, with on_audio, into an Ogg Opus file (about a tenth of the
             size) while passing each chunk of 16-bit samples to on_audio as it's recorded (on the recorder's
             thread). echo_cancel: the microphone with what the speakers are playing taken out of it (see
-            _echo_cancelled), where PipeWire can."""
+            _echo_cancelled), where PipeWire can. hush(chunk), with on_audio: True to save and pass on silence
+            instead of that chunk (it's still heard by hush)."""
             self.canceller = None
             if speakers:
                 source = ["-P", "{ stream.capture.sink=true }"]
@@ -297,6 +298,8 @@ if LINUX:
                 with out:
                     while chunk := self.proc.stdout.read(RATE // 5):  # 0.1 s of samples
                         chunk = chunk[:len(chunk) // 2 * 2]
+                        if hush and hush(chunk):
+                            chunk = bytes(len(chunk))
                         out.write(np.frombuffer(chunk, np.int16))
                         on_audio(chunk)
             self.reader = threading.Thread(target=pump, daemon=True)
@@ -427,7 +430,7 @@ else:
         return [(name, name) for name, _ in sorted(mics, key=lambda m: m[1] != default)]
 
     class Recorder:
-        def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None):
+        def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None, hush=None):
             if speakers or on_audio:  # (so echo_cancel doesn't arise)
                 raise NotImplementedError("recording the speakers is Linux-only for now")
             self.wav = wave.open(path, "wb")  # noqa: SIM115 (open until stop())

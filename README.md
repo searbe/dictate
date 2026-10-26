@@ -82,8 +82,7 @@ voiceprint can identify someone, so ask people first.
 
 On the desktop, Dictate is a small capsule: a dot while idle, a level meter while you speak, three dots while
 the text is processed, and the elapsed time and current topic while a call is transcribed (click it to open the
-transcript). If you close the window during a call, or nothing is heard for ten minutes, a reminder appears
-beside the capsule saying it's still transcribing and how to stop it.
+transcript).
 
 Everything else is in one window: **Dictations** (with recordings to play back), **Transcripts**,
 **Refinements**, **Voices** and **Settings**. It follows your desktop's light or dark theme.

@@ -153,14 +153,62 @@ STOP_WAYS = ("Stop, in Transcripts (click the capsule to open it)", "Ctrl+Win, l
 REMINDERS = {  # why: (heading, what's happening)
     "closed": ("Still transcribing", "Closing the window doesn't stop it: everything said through this computer's "
                                      "speakers and microphone is still being written down."),
-    "quiet": ("Nothing heard for {minutes} minutes", "Dictate is still transcribing. If the call is over, stop it, or "
-                                                     "it will carry on recording whatever is said here."),
 }
 
 
 def reminder_text(why, minutes):
     heading, body = REMINDERS[why]
     return heading.format(minutes=minutes), body
+
+
+def paused_text(minutes):
+    return ("Transcript paused", f"Nothing has been transcribed for {minutes} minutes, so the transcript has been "
+                                 "paused. Resume it if the call is still going: nothing said is written down until "
+                                 "you do.")
+
+
+class Paused:
+    """A HUD saying a transcript has been paused for being quiet, with Resume and Stop now: beside the capsule, or
+    in the middle of the screen, above other windows. Only those close it (or close(), once it's resumed some
+    other way): not Escape, nor the window manager; if it's closed anyway, that's taken as Stop now."""
+
+    def __init__(self, heading, body, beside, on_resume, on_stop):
+        """beside: (x, y, width, height) of the capsule on screen, or None."""
+        self.closed = False
+        self.hud = d.Hud(heading, width=400, warning=True)
+        self.hud.on_escape = lambda: None
+        self.hud.win.connect("delete-event", lambda *_: True)
+        self.hud.win.connect("destroy", lambda *_: self.closed or on_stop())
+        self.hud.heading(heading, "pause", warning=True)
+        self.hud.box.pack_start(d.text(body, "body", wrap=True, max_chars=52), False, False, 0)
+        self.dictating = d.classes(d.text("You pressed Ctrl+Win to dictate. Resume or stop this transcript "
+                                          "first.", "strong", wrap=True, max_chars=52), "warning-text")
+        self.dictating.set_no_show_all(True)
+        self.hud.box.pack_start(self.dictating, False, False, 0)
+        self.hud.buttons(d.button("Stop now", lambda: (self.close(), on_stop())),
+                         d.button("Resume", lambda: (self.close(), on_resume()), "primary"))
+        self.hud.show(near=beside)
+
+    def bring_up(self, focus=False):
+        """Back above other windows, without taking the keyboard from what you're typing in (unless focus)."""
+        self.hud.win.set_keep_above(True)
+        if focus:
+            self.hud.win.present_with_time(Gtk.get_current_event_time())
+        elif self.hud.win.get_window():
+            self.hud.win.get_window().raise_()
+
+    def asked_to_dictate(self):
+        """Ctrl+Win was pressed: say a choice is needed before dictating."""
+        self.dictating.show()
+
+    def close(self):
+        if not self.closed:
+            self.closed = True
+            self.hud.close()
+
+    @property
+    def open(self):
+        return self.hud.open
 
 
 class StillTranscribing:

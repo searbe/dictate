@@ -3,8 +3,9 @@ pipeline (record → transcribe → cleanup → refinement → paste or type) an
 
 Started by dictate.py, after dictate.bootstrap(). Hold Ctrl+Win to dictate; Ctrl+Win, lift Win, Win again starts
 or stops transcribe mode. So a call isn't left being transcribed by mistake, closing the Dictate window while it
-is (the first time each day), or nothing being heard for QUIET seconds, brings up a reminder beside the capsule
-(a desktop notification if the capsule isn't on screen). How it all looks: docs/design/DESIGN.md."""
+is (the first time each day) brings up a reminder beside the capsule, and nothing being added to it for QUIET
+seconds pauses it and says so (desktop notifications if the capsule isn't on screen). How it all looks:
+docs/design/DESIGN.md."""
 
 import logging
 import os
@@ -47,7 +48,8 @@ from .settings import Settings  # noqa: E402
 
 log = logging.getLogger(__name__)
 
-QUIET = 600  # seconds with nothing added to a transcript before reminding that it's still being recorded
+QUIET = 300  # seconds with nothing added to a transcript before it's paused
+FLASH = 3.0  # seconds the icons flash for after a sound while a transcript is paused for being quiet
 QUIET_CHECK = 30  # seconds between checks (and updates of the tray icon's tooltip)
 PRUNE_EVERY = 600  # seconds between deletions of recordings older than their setting
 TERMINALS = ("konsole", "terminal", "kitty", "alacritty", "wezterm", "foot", "ghostty", "yakuake")  # Linux paste
@@ -67,7 +69,7 @@ class App:
         self.session = None  # the call being transcribed
         self.hub = None  # the Dictate window, while open
         self.reminder = None  # the reminder that a transcript is still being recorded, while it's shown
-        self.reminded_quiet = False  # about this stretch of quiet already
+        self.flash_until = 0.0  # while the icons flash: until when
 
         self.capsule = capsule.Capsule()
         self.capsule.place(self.settings["pos"], self.settings["anchor"])
@@ -119,12 +121,14 @@ class App:
     def render_icon(self, px):
         """The tray icon in the current state, px by px."""
         surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, px, px)
-        capsule.draw_tray(cairo.Context(surface), px, self.state, self.session)
+        capsule.draw_tray(cairo.Context(surface), px, self.state, self.session, self.capsule.flashing)
         return surface
 
     def capsule_clicked(self):
-        """While transcribing, a click shows the transcript."""
-        if self.session:
+        """While transcribing, a click shows the transcript; while it's paused for being quiet, the alert."""
+        if self.paused_alert():
+            self.draw_attention(focus=True)
+        elif self.session:
             self.show_transcripts(recording=True)
 
     def capsule_moved(self):
@@ -184,6 +188,11 @@ class App:
         if down and not self.rec:
             if remote.on_remote_screen() and self.settings["remote_mode"] == "ignore":
                 return  # e.g. the other computer runs its own Dictate
+            if self.paused_alert():
+                log.info("not dictating: the paused transcript needs resuming or stopping first")
+                self.reminder.asked_to_dictate()
+                self.draw_attention(focus=True)
+                return
             self.start_recording()
         if down and (self.settings["refine"] or alt):
             llm.server.warm()  # load the model while the user is still speaking
@@ -335,8 +344,9 @@ class App:
         except OSError as err:  # e.g. pw-record missing
             log.warning("transcribe mode: can't record (%s)", err)
             return
-        self.session, self.reminded_quiet = session, False
+        self.session = session
         session.on_change = lambda: (self.transcripts_changed(), self.show_state())
+        session.on_sound = self.sound_while_paused
         GLib.timeout_add(int(QUIET_CHECK * 1000), self.check_quiet, session)
         self.menu.transcribing(True)
         self.show_transcripts(focus=False)  # started from the keyboard, mid-conversation: leave focus where it is
@@ -366,22 +376,63 @@ class App:
             self.hub.pages["transcripts"].changed()
 
     def check_quiet(self, session):
-        """While transcribing: if nothing's been added for QUIET seconds, say it's still going (once until
-        something is heard again)."""
+        """While transcribing: if nothing's been added for QUIET seconds (since it started or was last resumed),
+        pause it and say so."""
         if session is not self.session:
             return False
         self.tray.update()  # how long it's been going, in its tooltip
-        quiet = session.quiet_for() >= QUIET
-        if quiet and not self.reminded_quiet:
-            self.remind("quiet")
-        self.reminded_quiet = quiet
+        if isinstance(self.reminder, huds.Paused) and self.reminder.open and not session.paused:
+            self.reminder.close()  # resumed some other way
+        if not session.paused and session.quiet_for() >= QUIET:
+            session.pause(True)
+            log.info("transcribing: paused, nothing added for %d s", QUIET)
+            self.say_paused()
         return True
+
+    def say_paused(self):
+        """Say a transcript has been paused for being quiet, with Resume and Stop now: beside the capsule, or in
+        the middle of the screen if it isn't on screen."""
+        if self.reminder and self.reminder.open:
+            self.reminder.close()
+        heading, body = huds.paused_text(round(QUIET / 60))
+        self.reminder = huds.Paused(heading, body, self.capsule.rect() if self.capsule.on_screen() else None,
+                                    lambda: self.session and self.session.pause(False), self.stop_transcribing)
+
+    def paused_alert(self):
+        """Whether the alert that the transcript is paused for being quiet is up, waiting for Resume or Stop now."""
+        return isinstance(self.reminder, huds.Paused) and self.reminder.open
+
+    def sound_while_paused(self):
+        """Something was heard while the transcript is paused: if it was paused for being quiet, draw attention
+        to the alert."""
+        if self.paused_alert():
+            self.draw_attention()
+
+    def draw_attention(self, focus=False):
+        """Flash the capsule and the tray icon for FLASH seconds, and bring the paused alert back above other
+        windows (focus: and to the front, for the keyboard: you've just reached for Dictate)."""
+        if focus:
+            self.reminder.bring_up(focus=True)
+        if not self.flash_until:
+            if not focus:
+                self.reminder.bring_up()
+            GLib.timeout_add(300, self.flash)
+        self.flash_until = time.monotonic() + FLASH
+
+    def flash(self):
+        on = (time.monotonic() < self.flash_until and self.session and self.session.paused
+              and self.paused_alert())
+        self.capsule.flash(bool(on) and not self.capsule.flashing)
+        self.tray.update()
+        if not on:
+            self.flash_until = 0.0
+        return bool(on)
 
     def remind(self, why):
         """Say a transcript is still being recorded, and how to stop it: beside the capsule, or, if it isn't on
-        screen, as a desktop notification. why: "quiet" or "closed" (the Dictate window)."""
-        if not self.session:
-            return
+        screen, as a desktop notification. why: "closed" (the Dictate window)."""
+        if not self.session or (isinstance(self.reminder, huds.Paused) and self.reminder.open):
+            return  # (the alert that it's paused stays until it's resumed or stopped)
         if self.reminder and self.reminder.open:
             self.reminder.close()
         minutes = round(QUIET / 60)

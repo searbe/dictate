@@ -32,6 +32,11 @@ Dictate does, see the [README](../README.md).
     speakers played (sound and words), so the call isn't written down twice as you.
   - **Topics and summary:** the refinement model updates the topics about every 20 seconds and the summary about
     every 30, from what's been said since, and makes a careful final pass when you stop.
+  - **Left running by mistake:** closing the window during a call brings up a reminder (once a day) that it's still
+    transcribing. After five minutes with nothing transcribed, it's paused: nothing is transcribed, and the
+    recordings get silence instead of what's heard. An alert stays above other windows until you choose Resume or
+    Stop now; closed any other way, it stops. A sound meanwhile flashes the capsule and tray icon; clicking the
+    capsule brings the alert to the front, and so does Ctrl+Win, which doesn't dictate until you've chosen.
 
 Each module in `dictate/` explains itself at the top, with what was measured to choose how it works.
 

@@ -38,6 +38,7 @@ def event(kind, **fields):
 speech = {"next": None}  # what the user will say during the next recording
 heard = {}  # recording path -> what was said during it
 ears = []  # the transcriptions following a recording as it's made (transcribe mode), newest last
+hushes = {}  # "mic" or "speakers": the hush of the recorder streaming it (transcribe mode)
 microphones = []  # the microphones connected: [(name, description)], the default one first
 
 
@@ -55,7 +56,9 @@ REAL_SPEECH, REAL_SPEAKERS = os.environ.get("DICTATE_TEST_SPEECH"), os.environ.g
 
 
 class Recorder:
-    def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None):
+    def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None, hush=None):
+        if hush:
+            hushes["speakers" if speakers else "mic"] = hush
         real = REAL_SPEAKERS if speakers else REAL_SPEECH
         audio = bytes(3200)  # what the microphone or speakers give: silence, or the speech
         if real:
@@ -292,6 +295,28 @@ def cmd_hear_so_far(text, source, length=1.0):
     for live in reversed(ears):
         if getattr(live, "source", None) == source:
             return live.on_preview(now() - length, text)
+
+
+def cmd_sound(source, loud=True):
+    """A tenth of a second of sound (or, not loud, near silence) reaches the recorder of source ("mic" or
+    "speakers"): whether it's saved as silence instead."""
+    samples = (np.sin(np.arange(1600) / 5) * (8000 if loud else 30)).astype(np.int16)
+    return {"hushed": hushes[source](samples.tobytes())}
+
+
+def cmd_flashing():
+    """Whether the capsule's dot and the tray icon are flashing: watched for a second, is it ever lit up?"""
+    lit = set()
+    for _ in range(100):
+        pump()
+        lit.add(app.capsule.flashing)
+        time.sleep(0.01)
+    return {"flashing": lit == {True, False}}
+
+
+def cmd_destroy(window_title):
+    """The window is closed by something other than Dictate (e.g. killed), without asking it first."""
+    window(window_title).destroy()
 
 
 def cmd_microphones(connected):
