@@ -226,3 +226,81 @@ def test_a_paragraph_played_to_its_end_stays_highlighted_not_the_next(start):
     time.sleep(3.5)  # past its end, at 10:00:03 (the stand-in player never finishes by itself)
 
     assert highlighted(app) == ["10:00:00 Them  Shall we start with the roadmap?"]
+
+
+FROM_HERE, BEFORE_HERE = "Delete from here to the end…", "Delete everything before here…"
+
+
+def right_click(app, text):
+    items = app.send("right_click_text", text=text, window_title="Transcripts")["items"]
+    return {m["label"]: m["enabled"] for m in items}
+
+
+def trimmed(app, text, item):
+    right_click(app, text)
+    app.send("choose_from_menu", label=item)
+    app.wait_window(None)
+    app.click("Delete")
+
+
+def seconds(app, who, name=NAME):
+    audio, rate = soundfile.read(str(app.data / "transcripts" / f"{name} {who}.ogg"))
+    return audio, rate
+
+
+LATER = "2026-10-19 10.00.06"  # (what's left of the call, everything before 10:00:06 deleted, starts then)
+
+
+def test_a_paragraphs_menu_can_delete_from_it_to_the_end_text_and_audio(start):
+    app = opened(start)
+    assert right_click(app, "Yes, the roadmap first.") == {FROM_HERE: True, BEFORE_HERE: True}
+    assert right_click(app, "Shall we start")[BEFORE_HERE] is False  # (nothing's before the first)
+
+    trimmed(app, "Yes, the roadmap first.", FROM_HERE)
+
+    eventually(lambda: "Yes, the roadmap first." not in app.transcript())
+    md = (app.data / "transcripts" / f"{NAME}.md").read_text()
+    assert "Shall we start with the roadmap?" in md and "roadmap first" not in md and "the budget" not in md
+    audio, rate = seconds(app, "me")
+    assert abs(len(audio) / rate - 3) < 0.1  # (cut off at 10:00:03)
+
+
+def test_a_paragraphs_menu_can_delete_everything_before_it_text_and_audio(start):
+    app = opened(start)
+
+    trimmed(app, "Then the budget.", BEFORE_HERE)
+
+    eventually(lambda: "Shall we start" not in app.transcript())
+    folder = app.data / "transcripts"
+    assert sorted(f.name for f in folder.iterdir()) == [f"{LATER} me.ogg", f"{LATER} summary.json", f"{LATER} them.ogg",
+                                                        f"{LATER}.md"]  # (renamed: the call starts later now)
+    md = (folder / f"{LATER}.md").read_text()
+    assert "Then the budget." in md and "Shall we start" not in md and "roadmap first" not in md
+    audio, rate = seconds(app, "them", LATER)
+    assert abs(len(audio) / rate - 4) < 0.1  # (cut off before 10:00:06)
+    mark = app.mark()
+    app.click("Play", "Transcripts")  # (what's left still plays at its times: the last paragraph, from 0 s)
+    audio, rate = soundfile.read(app.wait_for("playing", after=mark)["path"])
+    assert abs(len(audio) / rate - 4) < 0.1
+
+
+def test_deleting_from_the_first_paragraph_deletes_the_transcript(start):
+    app = opened(start)
+
+    trimmed(app, "Shall we start", FROM_HERE)
+
+    eventually(lambda: not list((app.data / "transcripts").glob("*")))
+
+
+def test_after_deleting_part_the_summary_is_written_again_from_what_is_left(start, model):
+    model.rules({"prompt": "running summary of a meeting", "reply": "## Overview\nOnly the budget."})
+    app = opened(start)
+    (app.data / "transcripts" / f"{NAME} summary.json").write_text(
+        '{"text": "## Overview\\nThe roadmap, then the budget.", "final": true}')
+
+    trimmed(app, "Then the budget.", BEFORE_HERE)
+
+    md = app.data / "transcripts" / f"{LATER}.md"
+    eventually(lambda: md.exists() and "Only the budget." in md.read_text())
+    asked = [r for r in model.requests() if "running summary of a meeting" in r["system"]]
+    assert asked and all("roadmap" not in r["user"] for r in asked)  # (what's deleted isn't sent)

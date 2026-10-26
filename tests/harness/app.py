@@ -362,6 +362,29 @@ def cmd_hover_text(text, window_title=None):
         time.sleep(0.01)
 
 
+menus = []  # the right-click menu opened last
+
+
+def cmd_right_click_text(text, window_title=None):
+    """Right-click on text in the big text box: its menu's items, [{"label", "enabled"}] (the menu's kept, to
+    choose from)."""
+    view = field(window(window_title), "text")
+    ev = Gdk.Event.new(Gdk.EventType.BUTTON_PRESS)
+    ev.button, ev.window = 3, view.get_window(Gtk.TextWindowType.TEXT)
+    ev.x, ev.y = at_text(view, text)
+    view.emit("button-press-event", ev)
+    menu = Gtk.Menu()
+    view.emit("populate-popup", menu)
+    menus[:] = [menu]
+    return {"items": [{"label": m.get_label(), "enabled": m.get_sensitive()} for m in menu.get_children()
+                      if isinstance(m, Gtk.MenuItem) and m.get_label()]}
+
+
+def cmd_choose_from_menu(label):
+    """Choose label from the right-click menu opened last."""
+    next(m for m in menus[0].get_children() if isinstance(m, Gtk.MenuItem) and m.get_label() == label).activate()
+
+
 def cmd_highlighted(window_title=None):
     """The text in the big text box that's highlighted as being played."""
     view = field(window(window_title), "text")
@@ -621,7 +644,8 @@ def run(msg):
             replied.append(True)
             event("done", id=cid, **result)
 
-    if name in ("click", "select", "close"):  # one that opens a confirmation dialog only returns once it's answered
+    if name in ("click", "select", "close", "choose_from_menu"):  # one that opens a confirmation dialog only
+        # returns once it's answered
         GLib.timeout_add(200, lambda: reply() or False)
     try:
         result = COMMANDS[name](**msg) or {}

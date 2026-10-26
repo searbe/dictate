@@ -280,6 +280,68 @@ def read(path):
             "paragraphs": PARAGRAPH.findall(text), "changed": changed}
 
 
+def trim(path, i, keep):
+    """Delete part of a saved transcript: from paragraph i to the end (keep "before"), or everything before it (keep
+    "from"), and its recordings' audio of that time, cut off there. Everything before cut off, the call starts at
+    paragraph i's time (its paragraphs' times are whole seconds, rounded down: none of it is cut): the transcript
+    and everything beside it are renamed for that, so what's left still plays at its times. The copy mixed to play
+    back is deleted (it has the old audio). Its topics that are left with no paragraphs go; the voices only heard in
+    what's deleted are forgotten; its summary is written again (it's saved as waiting for its final pass:
+    waiting.py). Returns the transcript's path now, or None if nothing was deleted."""
+    import soundfile
+    item = read(path)
+    if not item or not 0 <= i < len(item["paragraphs"]) or (keep == "from" and i == 0):
+        return None
+    paragraphs, at = item["paragraphs"], offsets(item)[i]
+    places = range(i) if keep == "before" else range(i, len(paragraphs))
+    left = [paragraphs[k] for k in places]
+    total = 0.0
+    for rec in recordings(path):
+        data, rate = soundfile.read(str(rec), dtype="float32")
+        total = max(total, len(data) / rate)
+        data = data[:int(at * rate)] if keep == "before" else data[int(at * rate):]
+        part = rec.with_name(f".{rec.name}.part")
+        soundfile.write(str(part), data, rate, format="OGG", subtype="OPUS")
+        part.replace(rec)
+    for mix in mixes().glob(f"{path.stem} *.wav"):
+        mix.unlink(missing_ok=True)
+    found = read_topics(path)
+    if found:
+        used = sorted({found.of[k] for k in places if k in found.of})
+        found = topics.Topics({"topics": [found.topics[t] for t in used], "small": found.small,
+                               "of": [(new, used.index(found.of[old])) for new, old in enumerate(places)
+                                      if old in found.of]})
+        if found.topics:
+            store.write_json(topics_file(path), found.data())
+        else:
+            topics_file(path).unlink(missing_ok=True)
+    prints = store.read_json(voiceprints(path))
+    if prints:
+        store.write_json(voiceprints(path), {k: v for k, v in prints.items() if k in labels(left)})
+    store.write_json(summary_file(path), summary.Summary(waiting=time.time()).data())
+    lasted = LASTED.search(path.read_text())
+    if total and keep == "before":
+        lasted_line = f"Lasted {length(at)}, until {item['started'] + timedelta(seconds=at):%H:%M}.\n"
+    elif total:
+        lasted_line = f"Lasted {length(total - at)}, until {item['started'] + timedelta(seconds=total):%H:%M}.\n"
+    else:
+        lasted_line = lasted[0] + "\n" if lasted else ""
+    above = topics_markdown(found, found.people(numbered(left))) if found and found.topics else ""
+    started = item["started"] + timedelta(seconds=at if keep == "from" else 0)
+    store.write_text(path, f"# Transcript, {started:%A %-d %B %Y, %H:%M}\n\n{lasted_line}{above}"
+                           + ("\n## Transcript\n" if above else "")
+                           + "".join(f"\n**{clock} {who}:** {text}\n" for clock, who, text in left))
+    if started == item["started"]:
+        return path
+    new = path.with_name(f"{started:{STAMP}}.md")
+    if new.exists():  # (another transcript started then: unlikely, but not to be written over)
+        log.warning("trim: %s exists already: %s keeps its name", new.name, path.name)
+        return path
+    for f in [path, *path.parent.glob(f"{path.stem} *")]:
+        f.rename(f.with_name(new.stem + f.name[len(path.stem):]))
+    return new
+
+
 def saved():
     """Every saved transcript, newest first."""
     return [t for t in map(read, sorted(FOLDER.glob("*.md"), reverse=True)) if t]

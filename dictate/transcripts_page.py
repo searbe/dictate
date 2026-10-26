@@ -199,6 +199,8 @@ class TranscriptsPage:
                                   max_children_per_line=40)  # (wraps)
         self.text = transcript_view()
         self.text.connect("motion-notify-event", lambda _, ev: self.hover(self.paragraph_at(ev.x, ev.y)))
+        self.text.connect("button-press-event", self.pressed)  # (a right-click: what it's on, for its menu)
+        self.text.connect("populate-popup", self.menu)
         self.text.connect("leave-notify-event",  # (not when it's onto a paragraph's own button)
                           lambda _, ev: ev.detail != Gdk.NotifyType.INFERIOR and self.hover(None))
         self.scroll = d.scrolled(self.text)
@@ -498,6 +500,52 @@ class TranscriptsPage:
         self.controls[i] = b
         return b
 
+    # --- deleting part of it ---
+    def pressed(self, view, ev):
+        if ev.button == 3:
+            self.clicked = self.paragraph_at(ev.x, ev.y, any_saved=True)
+        return False
+
+    def menu(self, view, menu):
+        """The text's right-click menu: for a saved transcript's paragraph, also Delete from here to the end, and
+        Delete everything before here."""
+        i, it = getattr(self, "clicked", None), self.shown_item
+        if i is None or not it or it.get("recording"):
+            return
+        menu.append(Gtk.SeparatorMenuItem())
+        for label, keep, allowed in (("Delete from here to the end…", "before", True),
+                                     ("Delete everything before here…", "from", i > 0)):
+            item = Gtk.MenuItem(label=label)
+            item.set_sensitive(allowed)
+            item.connect("activate", lambda _, keep=keep: GLib.idle_add(lambda: self.trim(i, keep) and False))
+            menu.append(item)
+        menu.show_all()
+
+    def trim(self, i, keep):
+        """Delete paragraph i to the end (keep "before"), or everything before it (keep "from"), with its audio,
+        once it's confirmed."""
+        it = self.shown_item
+        clock = it["paragraphs"][i][0]
+        whole = keep == "before" and i == 0
+        question = ("Delete the whole transcript?" if whole else
+                    f"Delete everything from {clock} to the end?" if keep == "before" else
+                    f"Delete everything before {clock}?")
+        if not huds.confirm(self.win, question, "Its text and its recordings of that time are deleted, and its "
+                                                "summary is written again. This can't be undone.", "Delete"):
+            return
+        if self.app.playback.playing(it["path"]):
+            self.app.playback.stop()
+        if whole:
+            self.app.waiting.forget(it["path"])
+            transcript.delete(it["path"])
+        elif now := transcript.trim(it["path"], i, keep):
+            self.app.waiting.add_saved(now)  # (its summary, written again)
+        self.shown_item, self.paths = None, None  # (read it again)
+        self.changed()
+        if not whole:
+            path = now or it["path"]
+            self.list.select_row(next(r for r in self.list.get_children() if r.item["path"] == path))
+
     def pointer(self, name):
         """The pointer over the transcript: "pointer" (a hand) over a play button, else "text" (it's selectable)."""
         window = self.text.get_window(Gtk.TextWindowType.TEXT)
@@ -530,16 +578,18 @@ class TranscriptsPage:
         before = [(o, i) for i, o in enumerate(self.offsets) if o <= at + 0.01]
         return max(before)[1] if before else 0
 
-    def paragraph_at(self, x, y):
-        """The paragraph at (x, y) in the text view's window, or None."""
-        if not self.offsets:
+    def paragraph_at(self, x, y, any_saved=False):
+        """The paragraph at (x, y) in the text view's window, or None (only those played back from, unless
+        any_saved: those of a saved transcript, its recordings kept or not)."""
+        if not self.offsets and not (any_saved and self.shown_item and not self.shown_item.get("recording")):
             return None
         bx, by = self.text.window_to_buffer_coords(Gtk.TextWindowType.TEXT, int(x), int(y))
         found, at = self.text.get_iter_at_location(bx, by)
         if not found:
             return None
         buf, off = self.text.get_buffer(), at.get_offset()
-        for i, (begins, ends) in enumerate(getattr(self.text, "paragraphs", [])[:len(self.offsets)]):
+        count = len(self.shown_item.get("paragraphs", [])) if any_saved else len(self.offsets)
+        for i, (begins, ends) in enumerate(getattr(self.text, "paragraphs", [])[:count]):
             end = buf.get_iter_at_mark(ends).get_offset() if ends else buf.get_char_count()
             if buf.get_iter_at_mark(begins).get_offset() <= off < end:
                 return i

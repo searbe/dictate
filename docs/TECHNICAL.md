@@ -47,6 +47,9 @@ Dictate does, see the [README](../README.md).
     written by the larger model on the graphics card. While it's busy (a game), they wait, the capsule shows a
     sand timer, and clicking it offers to use the CPU instead (slower, rougher). The live topics and summary don't
     wait. A final pass still waiting when Dictate quits is done the next time it starts.
+  - **Deleting part of one:** right-click a paragraph of a saved transcript to delete from it to the end, or
+    everything before it: its text and its recordings of that time (and the copy mixed to play back), its topics
+    left with nothing, and the voices only heard there. Its summary is written again from what's left.
   - **Left running by mistake:** closing the window during a call brings up a reminder (once a day) that it's still
     transcribing. After five minutes with nothing transcribed, it's paused: nothing is transcribed, and the
     recordings get silence instead of what's heard. An alert stays above other windows until you choose Resume or

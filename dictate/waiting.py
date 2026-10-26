@@ -72,6 +72,12 @@ class Waiting:
             log.info("final pass of %s: waiting for the graphics card", session.path.name)
             self.on_change()
 
+    def add_saved(self, path):
+        """The saved transcript at path needs its summary written again (part of it's been deleted)."""
+        self.jobs.append(Job(path))
+        self.check()
+        self.on_change()
+
     def forget(self, path):
         """Its transcript has been deleted: nothing to do for it (and the one being done mustn't save it again)."""
         for job in [*self.jobs, *([self.running] if self.running else [])]:
