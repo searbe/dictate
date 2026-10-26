@@ -31,7 +31,7 @@ def session(stem, out, remembered=()):
     s.started, s.t0, s.on_change = datetime.strptime(Path(stem).name, transcript.STAMP), time.monotonic(), lambda: None
     s.path, s.heard, s.voices, s.known, s.band = Path(out), [], voices.Voices(remembered), {}, (0.0, 0.0)
     s.previewing, s.echo, s.muted = {}, echo.Echo(), {who: [] for who, _ in transcript.SOURCES}
-    s.paused = s.stopped = s.asking = False
+    s.paused = s.stopped = s.asking = s.deleted = False
     s.topics, s.asked, s.summary = topics.Topics(), set(), summary.Summary()
     s.start_settling()
     return s
@@ -39,6 +39,7 @@ def session(stem, out, remembered=()):
 
 def samples(audio):
     return (np.clip(audio, -1, 1) * 32767).astype(np.int16).tobytes()
+
 
 
 def replay(stem, them, me, out, remembered=()):

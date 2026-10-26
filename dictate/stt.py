@@ -117,6 +117,7 @@ class Live:
         self.path, self.data, self.leftover, self.texts, self.done = wav_path, None, b"", [], False
         self.on_text, self.on_preview, self.previewed, self.pushed = on_text, on_preview, 0.0, collections.deque()
         self.pieces = {}  # the stretch being spoken: its pieces' text so far, by where they start (see _preview)
+        self.offset, self.fed, self.fresh = 0, 0, False  # (see anew)
         self.thread = threading.Thread(target=self._follow, daemon=True)
         self.thread.start()
 
@@ -129,6 +130,16 @@ class Live:
             self._feed()
             self._preview()
             time.sleep(0.1)
+
+    def anew(self):
+        """From what's pushed next, listen afresh (from any thread): the audio comes from another microphone now.
+        The speech detector carries on from what it's heard, so after a loud microphone's speech, a quiet one's (a
+        headset's can be 20 times quieter than a webcam's: 26 dB) sounds like background to it, and isn't
+        transcribed at all: tried on a real call moved from a webcam to a headset and back, nothing said on the
+        headset was found; started afresh at each move, all of it was. (Lifting the quiet one's loudness instead
+        brought up other people across the room, from the webcam.) What's being said when it moves is ended
+        there and transcribed; times carry on from the start."""
+        self.fresh = True
 
     def push(self, samples):
         """More audio (bytes of 16-bit mono samples), from any thread."""
@@ -164,8 +175,16 @@ class Live:
         usable = len(new) - len(new) % (2 * self.window)  # whole VAD windows of 16-bit samples
         self.leftover = new[usable:]
         samples = np.frombuffer(new[:usable], dtype=np.int16).astype(np.float32) / 32768
+        if self.fresh:  # (anew)
+            self.fresh = False
+            self.vad.flush()
+            self._decode_ready()
+            self.vad = sherpa_onnx.VoiceActivityDetector(vad_config(self.pause) if self.pause else _vad_cfg,
+                                                         buffer_size_in_seconds=600)
+            self.offset, self.fed = self.offset + self.fed, 0
         for i in range(0, len(samples), self.window):
             self.vad.accept_waveform(samples[i:i + self.window])
+        self.fed += len(samples)
         self._decode_ready()
 
     def _decode_ready(self):
@@ -175,7 +194,8 @@ class Live:
             result = _recognise(samples)
             self.texts.append(text := result.text.strip())
             if self.on_text and text:
-                self.on_text(seg.start / RATE, (seg.start + len(samples)) / RATE, text, samples, words(result))
+                start = self.offset + seg.start
+                self.on_text(start / RATE, (start + len(samples)) / RATE, text, samples, words(result))
             self.vad.pop()
 
     def _preview(self):
@@ -190,8 +210,8 @@ class Live:
         samples = np.array(seg.samples, dtype=np.float32)
         if len(samples) <= RATE // 2:
             return
-        if self.pieces.get("stretch") != seg.start:  # a new stretch
-            self.pieces = {"stretch": seg.start}
+        if self.pieces.get("stretch") != (self.offset, seg.start):  # a new stretch
+            self.pieces = {"stretch": (self.offset, seg.start)}
         pieces = stretches(samples, PREVIEW_PAUSE) or [(0, samples)]
         texts = []
         for k, (at, piece) in enumerate(pieces):
@@ -205,7 +225,7 @@ class Live:
         text = " ".join(t for t in texts if t)
         at, tail = pieces[-1]
         if text:
-            self.on_preview(seg.start / RATE, text, tail, (seg.start + at) / RATE)
+            self.on_preview((self.offset + seg.start) / RATE, text, tail, (self.offset + seg.start + at) / RATE)
 
     def finish(self):
         """Call once recording has stopped and the file is complete. Returns the whole transcript."""

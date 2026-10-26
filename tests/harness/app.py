@@ -27,7 +27,7 @@ dictate.bootstrap()
 import numpy as np
 from gi.repository import Gdk, GLib, Gtk
 
-from dictate import llm, osio, stt, summary, topics, transcript, voices
+from dictate import llm, microphone, osio, stt, summary, topics, transcript, voices
 
 
 def event(kind, **fields):
@@ -56,7 +56,9 @@ REAL_SPEECH, REAL_SPEAKERS = os.environ.get("DICTATE_TEST_SPEECH"), os.environ.g
 
 
 class Recorder:
-    def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None, hush=None):
+    def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None, hush=None,
+              on_move=lambda: None):
+        self.speakers, self.on_move = speakers, on_move
         if hush:
             hushes["speakers" if speakers else "mic"] = hush
         real = REAL_SPEAKERS if speakers else REAL_SPEECH
@@ -76,6 +78,11 @@ class Recorder:
             heard[path], speech["next"] = speech["next"], None
         event("recording", path=path, speakers=speakers, echo_cancel=echo_cancel, mic=mic)
 
+    def move(self, mic):
+        event("recording_moved", mic=mic, speakers=self.speakers)
+        self.on_move()
+        return True
+
     def stop(self):
         event("recording_stopped")
 
@@ -88,6 +95,9 @@ class Live:
 
     def push(self, samples):
         pass
+
+    def anew(self):
+        event("listening_anew", source=getattr(self, "source", None))
 
     def finish(self):
         if self in ears:
@@ -166,6 +176,7 @@ from dictate import app as dictate_app
 
 dictate_app.QUIET = float(os.environ.get("DICTATE_TEST_QUIET", dictate_app.QUIET))
 dictate_app.QUIET_CHECK = 0.2
+microphone.POLL = 0.2
 
 _set_state = dictate_app.App.set_state
 dictate_app.App.set_state = lambda self, s: (_set_state(self, s), event("icon", state=s))[0]  # what the icon shows
@@ -391,9 +402,12 @@ def cmd_scroll_list(to, window_title=None):
         time.sleep(0.01)
 
 
-def cmd_microphones(connected):
-    """These microphones are connected now ([[name, description]], the default one first)."""
+def cmd_microphones(connected, noticed=True):
+    """These microphones are connected now ([[name, description]], the default one first); noticed: at once (else
+    when Dictate next checks, every microphone.POLL seconds)."""
     microphones[:] = [tuple(m) for m in connected]
+    if noticed:
+        app.microphone.refresh()
 
 
 def cmd_gpu(state):

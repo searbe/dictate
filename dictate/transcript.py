@@ -413,7 +413,8 @@ class Session:
             rec = osio.Recorder()
             rec.start(path, speakers=speakers, echo_cancel=not speakers, mic=mic, hush=self.hush,
                       on_audio=(lambda chunk, push=live.push: (self.echo.played(chunk), self.recent.add(chunk),
-                                                               push(chunk))) if speakers else live.push)
+                                                               push(chunk))) if speakers else live.push,
+                      on_move=live.anew)
             self.recorders.append(rec)
             self.recordings.append(path)
             self.lives.append(live)
@@ -559,6 +560,10 @@ class Session:
             spans.append([self.now(), None])
         elif not on and spans and spans[-1][1] is None:
             spans[-1][1] = self.now()
+
+    def mic_recorder(self):
+        """The recorder of the microphone (the one microphone.py moves, if the microphone changes)."""
+        return self.recorders[[who for who, _ in SOURCES].index("me")]
 
     def hush(self, chunk):
         """While paused (on the recorder's thread): True, so the recordings get silence instead of what's heard,

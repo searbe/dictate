@@ -2,7 +2,7 @@
 
 from gi.repository import GLib, Gtk
 
-from . import claude_code, huds, osio, refinements
+from . import claude_code, huds, refinements
 from . import design as d
 from .settings import KEEP_AUDIO, REMOTE_MODES, SAME
 
@@ -12,6 +12,9 @@ class SettingsPage:
 
     def __init__(self, hub):
         self.hub, self.app = hub, hub.app
+        self.mics, self.mics_shown = None, None  # the microphones' rows, and what they show
+        unlisten = self.app.microphone.listen(lambda: self.mics and not self.hub.closed and self.show_mics())
+        hub.win.connect("destroy", lambda *_: unlisten())  # (as microphones are connected and gone, it's shown)
         self.widget = d.page_box()
         self.widget.pack_start(d.page_header("Settings", clamp=640), False, False, 0)
         self.body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, margin_start=24, margin_end=24)
@@ -25,7 +28,8 @@ class SettingsPage:
         names = [r["name"] for r in data["refinements"]]
         here = refinements.default()
         there = data.get("remote_default", SAME)
-        mic = app.microphone()  # (which also adds any microphones seen for the first time)
+        self.mics, self.mics_shown = Gtk.Box(orientation=Gtk.Orientation.VERTICAL), None  # (a new one: empty)
+        self.show_mics()
         rows = [
             ("Dictation",),
             ("Refine text", "Cleanup, then the refinement for the app you're dictating into (or the default), with a "
@@ -36,7 +40,7 @@ class SettingsPage:
                      refinements.set_default)),
             ("Microphone",),
             d.text("Dictate records the first of these that's connected.", "small", wrap=True, margin_bottom=8),
-            *self.microphone_rows(mic),
+            self.mics,
             ("Recordings",),
             ("Keep dictation recordings", "How long each dictation's audio is kept, to play back from Dictations. "
                                           "Its text is kept until you delete it.",
@@ -96,20 +100,34 @@ class SettingsPage:
             huds.message(self.hub.win, "Couldn't change Claude Code's settings", str(err))
             GLib.idle_add(lambda: self.shown() and False)  # (the switch back as it is)
 
-    def microphone_rows(self, mic):
+    def show_mics(self):
+        """The microphones' rows, again if anything they show has changed."""
+        mic, connected = self.app.microphone.current, self.app.microphone.connected
+        shown = (mic, tuple(connected), tuple(map(tuple, self.app.microphone.order())))
+        if shown == self.mics_shown:
+            return
+        self.mics_shown = shown
+        for kid in self.mics.get_children():
+            kid.destroy()
+        for title, description, control in self.microphone_rows(mic, connected):
+            self.mics.pack_start(d.setting_row(title, description, control), False, False, 0)
+            self.mics.pack_start(d.hairline(), False, False, 0)
+        self.mics.show_all()
+
+    def microphone_rows(self, mic, connected):
         """A row for each microphone seen, in the order they're preferred, with buttons to move it up or down,
         and to forget one that isn't connected."""
-        order, connected = self.app.settings["microphones"], dict(osio.microphones())
+        order = self.app.microphone.order()
 
         def move(i, by):
             new = list(order)
             new.insert(i + by, new.pop(i))
-            self.app.set_microphones(new)
-            self.shown()
+            self.app.microphone.set_order(new)
+            self.show_mics()
 
         def forget(i):
-            self.app.set_microphones(order[:i] + order[i + 1:])
-            self.shown()
+            self.app.microphone.set_order(order[:i] + order[i + 1:])
+            self.show_mics()
 
         rows = []
         for i, (name, label) in enumerate(order):

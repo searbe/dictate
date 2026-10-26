@@ -280,23 +280,29 @@ if LINUX:
                 and connected(s)]  # (a headset that's off, its dongle still plugged in, isn't: headsets.py)
         return sorted(mics, key=lambda m: m[0] != default)
 
+    _recordings = itertools.count()
+
     class Recorder:
-        def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None, hush=None):
+        def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None, hush=None,
+                  on_move=lambda: None):
             """Record the microphone (mic: its name from microphones(); None, the default one), or (speakers)
             whatever this computer is playing: PipeWire's monitor of the default output (still heard while the
             output is muted). Into a WAV file; or, with on_audio, into an Ogg Opus file (about a tenth of the
             size) while passing each chunk of 16-bit samples to on_audio as it's recorded (on the recorder's
             thread). echo_cancel: the microphone with what the speakers are playing taken out of it (see
             _echo_cancelled), where PipeWire can. hush(chunk), with on_audio: True to save and pass on silence
-            instead of that chunk (it's still heard by hush)."""
-            self.canceller = None
+            instead of that chunk (it's still heard by hush). A microphone's recording can be moved to another
+            microphone as it's recorded (move); on_move() then, on the thread that moved it."""
+            self.canceller, self.stream = None, None  # self.stream: the PipeWire node that reads the microphone
+            self.on_move = on_move
             if speakers:
                 source = ["-P", "{ stream.capture.sink=true }"]
             elif echo_cancel and (found := _echo_cancelled(mic)):
                 self.canceller, name = found
-                source = ["--target", name]
+                source, self.stream = ["--target", name], f"{name}-capture"
             else:
-                source = ["--target", mic] if mic else []
+                self.stream = f"dictate-recording-{os.getpid()}-{next(_recordings)}"
+                source = ["-P", f"{{ node.name = {self.stream} }}", *(["--target", mic] if mic else [])]
             cmd = ["pw-record", *source, "--rate", str(RATE), "--channels", "1", "--format", "s16"]
             if not on_audio:
                 self.proc, self.reader = subprocess.Popen([*cmd, path], **TIED), None
@@ -316,6 +322,30 @@ if LINUX:
                         on_audio(chunk)
             self.reader = threading.Thread(target=pump, daemon=True)
             self.reader.start()
+
+        def move(self, mic):
+            """Record mic from now on (slow: not on the GTK thread): PipeWire moves the stream that reads the
+            microphone (pw-record's, or the echo canceller's) to it, as it's recorded, as moving it in a volume
+            control would. Returns whether it did."""
+            if not self.stream:
+                return False
+            for _ in range(10):  # (just started, it may not be listed yet)
+                try:
+                    found = json.loads(subprocess.run(["pactl", "-f", "json", "list", "source-outputs"],
+                                                      capture_output=True, text=True, timeout=2).stdout)
+                except (OSError, ValueError, subprocess.TimeoutExpired):
+                    return False
+                index = next((o["index"] for o in found if o.get("properties", {}).get("node.name") == self.stream),
+                             None)
+                if index is not None:
+                    moved = subprocess.run(["pactl", "move-source-output", str(index), mic], capture_output=True,
+                                           timeout=2).returncode == 0
+                    log.info("recording: moved to %s%s", mic, "" if moved else " (couldn't)")
+                    if moved:
+                        self.on_move()
+                    return moved
+                time.sleep(0.1)
+            return False
 
         def stop(self):
             self.proc.terminate()
@@ -442,7 +472,8 @@ else:
         return [(name, name) for name, _ in sorted(mics, key=lambda m: m[1] != default)]
 
     class Recorder:
-        def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None, hush=None):
+        def start(self, path, speakers=False, on_audio=None, echo_cancel=False, mic=None, hush=None,
+                  on_move=None):
             if speakers or on_audio:  # (so echo_cancel doesn't arise)
                 raise NotImplementedError("recording the speakers is Linux-only for now")
             self.wav = wave.open(path, "wb")  # noqa: SIM115 (open until stop())
@@ -452,6 +483,9 @@ else:
             self.stream = sounddevice.RawInputStream(samplerate=RATE, channels=1, dtype="int16", device=mic,
                                                      callback=lambda data, *_: self.wav.writeframes(bytes(data)))
             self.stream.start()
+
+        def move(self, mic):
+            return False  # (sounddevice can't: it carries on with the one it started with)
 
         def stop(self):
             self.stream.stop()

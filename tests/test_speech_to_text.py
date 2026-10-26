@@ -105,3 +105,32 @@ def test_what_is_being_said_is_previewed_growing_from_the_start(stt, monkeypatch
     later = previews[next(i for i, p in enumerate(previews) if p.startswith(ASK_NOT)):]
     assert all(p.startswith(ASK_NOT) for p in later)
     assert any(len(p) > len(ASK_NOT) + 10 for p in later)  # the second, growing behind it
+
+
+def heard(stt, parts):
+    """What Live transcribes from parts pushed in turn as a call's microphone would push them: 16-bit samples, or
+    "anew" (it's moved to another microphone). Returns [(start, text)]."""
+    out = []
+    live = stt.Live(pause=1.2, on_text=lambda start, end, text, *_: out.append((round(start, 1), text)))
+    for part in parts:
+        if isinstance(part, str):
+            while live.pushed:  # (what's been pushed is fed first)
+                time.sleep(0.02)
+            time.sleep(0.3)
+            live.anew()
+            continue
+        for i in range(0, len(part), RATE // 10):
+            live.push(part[i:i + RATE // 10].tobytes())
+    live.finish()
+    return out
+
+
+def test_moved_to_a_much_quieter_microphone_it_listens_afresh_and_still_hears_it(stt):
+    loud, quiet = sample("en"), (sample("en") // 40).astype(np.int16)  # (a headset can be 20-40 times quieter)
+    gap = silence(2)
+
+    assert len(heard(stt, [loud, gap, quiet, gap])) == 1  # (as it was: still tuned to the loud one, it hears
+    # nothing in the quiet one)
+    found = heard(stt, [loud, gap, "anew", quiet, gap])
+    assert [words(text) for _, text in found] == [words(ASK_NOT)] * 2
+    assert found[1][0] == pytest.approx((len(loud) + len(gap)) / RATE, abs=0.5)  # (its time from the start)

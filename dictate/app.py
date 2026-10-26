@@ -33,6 +33,7 @@ from . import (  # noqa: E402
     hub,
     huds,
     llm,
+    microphone,
     osio,
     playback,
     refine,
@@ -65,7 +66,7 @@ class App:
         DATA.mkdir(parents=True, exist_ok=True)
         design.install()
         self.settings = Settings()
-        self.mic = None  # the microphone recorded last (its name), to log when it changes
+        self.microphone = microphone.Microphone(self.settings)  # which one's recorded: decided there, only
         self.state = "idle"  # what the capsule shows: "idle", "rec" (dictating) or "busy" (the model's working)
         self.rec = self.live = self.wav = None  # the dictation being recorded: its recorder, transcriber and file
         self.since = None  # when it started
@@ -190,22 +191,6 @@ class App:
         self.prune_audio()
         self.transcripts_changed()  # (Play, for those whose recordings just went)
 
-    def microphone(self):
-        """The name of the microphone to record: the first connected one in the order set on the Settings page
-        (those seen for the first time are added to its end, the default one first), or None: the default."""
-        connected, order = dict(osio.microphones()), self.settings["microphones"]
-        new = [[name, label] for name, label in connected.items() if name not in {n for n, _ in order}]
-        if new:
-            self.settings.update(microphones=order + new)
-        mic = next((name for name, _ in self.settings["microphones"] if name in connected), None)
-        if mic != self.mic:
-            log.info("microphone: %s", connected.get(mic, "the default"))
-            self.mic = mic
-        return mic
-
-    def set_microphones(self, order):
-        self.settings.update(microphones=order)
-
     def prune_audio(self):
         """Delete recordings older than their setting: dictations' (keep_audio_hours) and calls' (keep_call_hours).
         Their text stays, in Dictations and Transcripts. Never one being recorded."""
@@ -239,7 +224,8 @@ class App:
         history.AUDIO.mkdir(parents=True, exist_ok=True)
         self.wav = str(history.AUDIO / f"{datetime.now():%Y%m%d-%H%M%S-%f}.wav")
         self.rec = osio.Recorder()
-        self.rec.start(self.wav, mic=self.microphone())
+        self.rec.start(self.wav, mic=self.microphone.current)
+        self.microphone.follow(self.rec)  # (moved to another microphone, if it changes meanwhile)
         self.live = stt.Live(self.wav)  # transcribes each stretch of speech as soon as you pause
         if self.session:
             self.session.mute("me", True)  # a dictation isn't part of the conversation
@@ -254,6 +240,7 @@ class App:
         if self.session:
             self.session.mute("me", False)
         rec, self.rec = self.rec, None
+        self.microphone.unfollow(rec)
         # where the text will go, decided now you've stopped: the other computer if Synergy has the keyboard
         # (typed there; started here, its own Dictate never saw the press), else the focused app here (our own
         # windows are ignored, so this is still the app you're in)
@@ -375,7 +362,7 @@ class App:
 
     def start_transcribing(self):
         try:
-            session = transcript.Session(mic=self.microphone())
+            session = transcript.Session(mic=self.microphone.current)
         except OSError as err:  # e.g. pw-record missing
             log.warning("transcribe mode: can't record (%s)", err)
             return
@@ -383,6 +370,7 @@ class App:
         session.on_change = lambda: (self.transcripts_changed(), self.show_state())
         session.on_sound = self.sound_while_paused
         GLib.timeout_add(int(QUIET_CHECK * 1000), self.check_quiet, session)
+        self.microphone.follow(session.mic_recorder())  # (moved to another microphone, if it changes meanwhile)
         self.menu.transcribing(True)
         self.show_transcripts(focus=False)  # started from the keyboard, mid-conversation: leave focus where it is
         session.on_change()
@@ -392,6 +380,7 @@ class App:
         session, self.session = self.session, None
         if not session:
             return
+        self.microphone.unfollow(session.mic_recorder())
         if self.reminder:
             self.reminder.close()
 
