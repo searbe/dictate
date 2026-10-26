@@ -55,6 +55,16 @@ def confirm(parent, question, detail, action="Delete all"):
     return answer == Gtk.ResponseType.OK
 
 
+def message(parent, heading, detail):
+    """Say something went wrong: OK."""
+    dialog = HudDialog(parent, heading)
+    dialog.card.pack_start(d.text(heading, "title", wrap=True, max_chars=40), False, False, 0)
+    dialog.card.pack_start(d.text(detail, "small", wrap=True, max_chars=50), False, False, 0)
+    dialog.finish(dialog.answer("OK", Gtk.ResponseType.OK, "primary", default=True))
+    dialog.run()
+    dialog.destroy()
+
+
 def ask_save(parent, name):
     """Ask before unsaved changes to name are lost: "save", "discard", or None to go back to them (Cancel, Escape)."""
     question = f"Save your changes to {name}?"

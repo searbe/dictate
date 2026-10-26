@@ -46,6 +46,15 @@ Dictate does, see the [README](../README.md).
     Stop now; closed any other way, it stops. A sound meanwhile flashes the capsule and tray icon; clicking the
     capsule brings the alert to the front, and so does Ctrl+Win, which doesn't dictate until you've chosen.
 
+- **Claude Code (`/meeting-notes`):** a skill that lets a Claude Code session ask Dictate for transcripts about
+  something. Dictate asks you in a window which to share, if any, each as its summary or the whole transcript;
+  nothing is shared otherwise, and it's off until you turn on "Let Claude Code ask for transcripts" in Settings.
+  The request comes over a Unix socket in your runtime folder, from your own user only. Installing the skill
+  (Settings, or `scripts/install_meeting_notes.py`) also adds a deny rule to `~/.claude/settings.json` so Claude
+  Code's file tools and file commands can't read `data/` themselves; Settings can turn that off for development.
+  It doesn't stop a program that opens the files itself, unless Claude Code's sandbox is on. What you share is
+  sent to Anthropic as part of that conversation.
+
 Each module in `dictate/` explains itself at the top, with what was measured to choose how it works.
 
 ## Recommended hardware

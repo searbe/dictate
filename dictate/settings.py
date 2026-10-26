@@ -21,6 +21,7 @@ DEFAULTS = {
     "keep_audio_hours": 24,  # how long dictations' recordings are kept: one of KEEP_AUDIO
     "keep_call_hours": 168,  # and transcripts'
     "microphones": [],  # [name, description] of each microphone seen, in the order to prefer them
+    "share_with_claude": False,  # Claude Code may ask for transcripts (you choose, each time): sharing.py
 }
 
 

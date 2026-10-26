@@ -1,9 +1,9 @@
 """The Settings page: everything that's otherwise in the capsule's menu, in one place."""
 
-from gi.repository import Gtk
+from gi.repository import GLib, Gtk
 
+from . import claude_code, huds, osio, refinements
 from . import design as d
-from . import osio, refinements
 from .settings import KEEP_AUDIO, REMOTE_MODES, SAME
 
 
@@ -51,6 +51,19 @@ class SettingsPage:
              d.combo([(SAME, "Same as here"), (None, "None (cleanup only)")] + [(n, n) for n in names],
                    there if there in [SAME, None, *names] else None,
                    lambda v: refinements.set_remote_default(v, same=v is SAME))),
+            ("Claude Code",),
+            ("/meeting-notes", "A skill for every Claude Code session: /meeting-notes asks Dictate for transcripts "
+                               "about something, and you choose which to share, if any. Installing it also turns on "
+                               "the block below.",
+             d.button("Remove" if claude_code.skill_installed() else "Install", self.toggle_skill, small=True)),
+            ("Let Claude Code ask for transcripts", "Each time, a window here asks which to share. Off: every request "
+                                                    "is refused without asking.",
+             d.switch(cfg["share_with_claude"], lambda on: cfg.update(share_with_claude=on))),
+            ("Block Claude Code from reading Dictate's files", "So transcripts reach it only through that window: its "
+                                                               "file tools and commands like cat can't open them (a "
+                                                               "program that opens files itself still could). Turn "
+                                                               "off only to develop Dictate with Claude Code.",
+             d.switch(claude_code.blocked(), self.set_blocked)),
             ("Startup",),
             ("Run at startup", "Start Dictate when you log in.", d.switch(app.autostart(), app.set_autostart)),
         ]
@@ -68,6 +81,20 @@ class SettingsPage:
             self.body.pack_start(d.setting_row(title, *rest), False, False, 0)
             self.body.pack_start(d.hairline(), False, False, 0)
         self.body.show_all()
+
+    def toggle_skill(self):
+        try:
+            claude_code.remove_skill() if claude_code.skill_installed() else claude_code.install_skill()
+        except (OSError, ValueError) as err:
+            huds.message(self.hub.win, "Couldn't change Claude Code's settings", str(err))
+        self.shown()
+
+    def set_blocked(self, on):
+        try:
+            claude_code.set_blocked(on)
+        except (OSError, ValueError) as err:
+            huds.message(self.hub.win, "Couldn't change Claude Code's settings", str(err))
+            GLib.idle_add(lambda: self.shown() and False)  # (the switch back as it is)
 
     def microphone_rows(self, mic):
         """A row for each microphone seen, in the order they're preferred, with buttons to move it up or down,

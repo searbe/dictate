@@ -38,6 +38,8 @@ from . import (  # noqa: E402
     refine,
     refinements,
     remote,
+    share_window,
+    sharing,
     store,
     stt,
     transcript,
@@ -84,6 +86,9 @@ class App:
         self.menu = Menu(self)
         self.waiting = waiting.Waiting(self.waiting_changed)  # stopped calls' final passes, waiting for the GPU
         self.waiting_hud = None  # what's waiting, and Use the CPU, while it's shown
+        # Claude Code asking for transcripts (the /meeting-notes skill): refused unless it's turned on in Settings
+        self.sharing = sharing.Server(lambda: self.settings["share_with_claude"],
+                                      share_window.ShareWindow) if osio.LINUX else None
         self.tray = tray.Tray(self.menu.widget, self.render_icon, self.menu.refresh, self.status)  # the same menu
         self.clip = Gtk.Clipboard.get(Gdk.SELECTION_CLIPBOARD)
         # the menu is an XWayland popup: a click on a Wayland app never reaches it, so it can't tell it
@@ -507,6 +512,8 @@ class App:
     def quit(self, reason):
         """Every way out goes through here, so the log says why Dictate stopped."""
         log.info("quitting: %s", reason)
+        if self.sharing:
+            self.sharing.close()
         if self.rec:  # mid-dictation: don't leave the microphone recording
             self.rec.stop()
             self.rec = None
