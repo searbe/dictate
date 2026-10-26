@@ -309,12 +309,12 @@ def test_clicking_the_icon_while_recording_reopens_the_window(start):
     assert "Recording now" in app.read("Transcripts")
 
 
-def test_clicking_the_icon_otherwise_opens_nothing(start):
+def test_clicking_the_icon_otherwise_shows_the_latest_dictations(start):
     app = start(refinements=[])
 
     app.send("click_icon")
 
-    assert app.send("windows")["titles"] == []
+    app.wait_window("Dictations")
 
 
 def recorded(app, name, seconds=3):

@@ -142,13 +142,16 @@ class App:
         return surface
 
     def capsule_clicked(self):
-        """While transcribing, a click shows the transcript; while it's paused for being quiet, the alert."""
+        """While transcribing, a click shows the transcript; while it's paused for being quiet, the alert; while a
+        call's summary waits for the graphics card, what's waiting; otherwise, your latest dictations."""
         if self.paused_alert():
             self.draw_attention(focus=True)
         elif self.session:
             self.show_transcripts(recording=True)
         elif self.waiting.jobs:
             self.show_waiting()
+        else:
+            self.open_hub("dictations")
 
     def show_waiting(self):
         """What's waiting for the graphics card, and how long it's been, with Use the CPU and Keep waiting."""
