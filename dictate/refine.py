@@ -57,8 +57,22 @@ def complete(text: str, prompt: str, app: str = "") -> str:
     return llm.chat(GUARD + prompt, f"<transcript>\n{text}\n</transcript>", max_tokens=len(text) + 200)
 
 
+_NUMBER = re.compile(r"\d[\d,.:/]*(?:st|nd|rd|th)?$|(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|"
+                     r"twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|"
+                     r"fifty|sixty|seventy|eighty|ninety|hundred|thousand|million|billion|first|second|third|"
+                     r"fourth|fifth|sixth|seventh|eighth|ninth|tenth|eleventh|twelfth|\w+teenth|\w+tieth|"
+                     r"hundredth|thousandth)$")
+
+
 def _words(s: str) -> list[str]:
-    return re.findall(r"[a-z0-9']+", s.lower())
+    """s's words, with numbers however written ("ninety-nine percent", "99%") as one "#" each run of them, so
+    cleanup writing a number in figures doesn't count as changing the words."""
+    words = []
+    for w in re.findall(r"[a-z0-9']+(?:[,.:/][0-9]+)*", s.lower().replace("%", " percent")):
+        w = "#" if _NUMBER.match(w) else w
+        if w != "#" or words[-1:] != ["#"]:
+            words.append(w)
+    return words
 
 
 def suspicious(text: str, out: str, strict: bool) -> str:
@@ -67,7 +81,7 @@ def suspicious(text: str, out: str, strict: bool) -> str:
         return "empty"
     if "?" in text and "?" not in out:
         return "lost the questions"
-    if len(out) < len(text) / 2:
+    if len(" ".join(_words(out))) < len(" ".join(_words(text))) / 2:
         return "cut by over half"
     if "[" in out and "[" not in text:
         return "added a placeholder"
@@ -75,7 +89,7 @@ def suspicious(text: str, out: str, strict: bool) -> str:
     if not strict and sum(w in kept for w in _words(text)) < 0.6 * len(_words(text)):
         return "reworded too much"  # refinements reshape text, but should keep most of the speaker's words
     # compare words, not characters: on long texts the character matcher's autojunk makes near-copies score low
-    alike = difflib.SequenceMatcher(None, text.lower().split(), out.lower().split(), autojunk=False).ratio
+    alike = difflib.SequenceMatcher(None, _words(text), _words(out), autojunk=False).ratio
     if strict and alike() < 0.4:
         return "changed too much for cleanup"
     return ""

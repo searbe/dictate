@@ -90,6 +90,15 @@ def test_a_refinement_that_rewrites_too_much_is_ignored_but_cleanup_is_kept(star
     assert app.dictate("running ten minutes late sorry")["text"] == "Running ten minutes late, sorry."
 
 
+def test_cleanup_writing_numbers_in_figures_is_not_taken_for_changing_too_much(start, model):
+    model.rules({"prompt": "CLEANUP", "text": "fifty", "reply": "10:1 and 50/50."},
+                {"prompt": "CLEANUP", "text": "percent", "reply": "99%"})
+    app = start(refinements=[])
+
+    assert app.dictate("ten to one and fifty fifty")["text"] == "10:1 and 50/50."
+    assert app.dictate("ninety-nine percent")["text"] == "99%"
+
+
 def test_if_the_model_fails_the_transcript_is_still_pasted(start, model):
     model.rules({"prompt": "CLEANUP", "op": "error"})
     app = start(refinements=[])
