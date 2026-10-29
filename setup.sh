@@ -50,8 +50,13 @@ cat > dictate.desktop <<EOD
 [Desktop Entry]
 Type=Application
 Name=Dictate
+Comment=Push-to-talk dictation
+Categories=Utility;
 Exec="$PWD/.venv/bin/python" "$PWD/dictate.py"
 Icon=$PWD/dictate/icon.png
 StartupWMClass=dictate
 EOD
+# In the Start menu: a link, so deleting this folder leaves only a broken link, which menus skip
+mkdir -p "$HOME/.local/share/applications"
+ln -sf "$PWD/dictate.desktop" "$HOME/.local/share/applications/dictate.desktop"
 echo "Done. Run: python dictate.py"

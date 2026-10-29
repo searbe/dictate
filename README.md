@@ -22,9 +22,9 @@ python dictate.py
 ```
 
 Setup downloads the models (about 12 GB) into this folder, and everything stays in it: delete the folder and
-Dictate is gone. Tick **Run at startup** in its menu to have it there every time you log in. Windows and macOS
-setups are included but untested; see [the technical details](docs/TECHNICAL.md) for those, and for the
-recommended hardware.
+Dictate is gone. Setup also adds Dictate to the Start menu. Tick **Run at startup** in its menu to have it there
+every time you log in. Windows and macOS setups are included but untested; see
+[the technical details](docs/TECHNICAL.md) for those, and for the recommended hardware.
 
 ## Automatic cleanup and refinement
 
