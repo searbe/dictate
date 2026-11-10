@@ -1,13 +1,14 @@
-"""The window asking which transcripts to give Claude Code (sharing.py): what it's looking for, a warning that what you
-share is sent to Anthropic, and every transcript, each with a dropdown: Don't share, its summary, or the whole
-transcript. Those that mention what it's looking for come first, under a heading of their own, set to share their
-summary: plain word matching, of the request's words that say what it's about (not everyday ones like "about",
-"recent" or "team": every call has those), in each transcript's summary and topics (not all it said: a long call
-says almost every word somewhere), at least two of them if the request has three or more; the rest under "Other
-transcripts", not shared (dimmed). Each heading has None, to set its group back to Don't share, and stays pinned at
-the top of the list while you scroll through its group. Above the buttons, what will be shared, whatever you've
-scrolled to. Share (once something's chosen) or Refuse; closing it, or Escape, is refusing. Drag it by its
-background to see what's behind it."""
+"""The window asking which transcripts to give Claude Code (sharing.py): what it's looking for, and when, if it said; a
+warning that what you share is sent to Anthropic; and every transcript, each with a dropdown: Don't share, its summary,
+or the whole transcript. Those that mention what it's looking for come first, under a heading of their own, set to share
+their summary. If it said when, only calls during that time (any of it) come first: those that mention it, or if none
+do, all of them. Mentioning is plain word matching, of the request's words that say what it's about (not everyday ones
+like "about", "recent", "team" or "morning": every call has those, and the time is said apart), in each transcript's
+summary and topics (not all it said: a long call says almost every word somewhere), at least two of them if the request
+has three or more; the rest under "Other transcripts", not shared (dimmed). Each heading has None, to set its group back
+to Don't share, and stays pinned at the top of the list while you scroll through its group. Above the buttons, what will
+be shared, whatever you've scrolled to. Share (once something's chosen) or Refuse; closing it, or Escape, is refusing.
+Drag it by its background to see what's behind it."""
 import re
 
 from gi.repository import Gtk
@@ -17,7 +18,7 @@ from . import transcript
 
 TITLE = "Share transcripts with Claude Code?"
 DIM = 0.45  # how a transcript that isn't being shared looks
-MATCHED, OTHERS = "Mentions what Claude is looking for", "Other transcripts"
+MATCHED, DURING, OTHERS = "Mentions what Claude is looking for", "When Claude is looking for", "Other transcripts"
 _EVERYDAY = """
 about above after again against also among another anyone anything around asked back because been before being
 below between both call calls came come could decided decision decisions discuss discussed discussing discussion
@@ -29,6 +30,8 @@ requests right said same says should show since some someone something soon stil
 talking team tell than that their them then there these they thing things think this those though through time
 today told took under until update upon used using very want wanted week well went were what whatever when where
 whether which while whole will with within without work would year yesterday your yours
+morning afternoon evening tonight earlier tomorrow hour hours minutes days weeks month monday tuesday wednesday
+thursday friday saturday sunday
 """
 EVERYDAY = set(_EVERYDAY.split())  # words of 4+ letters too common in a request to say what it's about
 
@@ -58,10 +61,25 @@ def when(it):
     return f"{it['started']:%a %-d %b %H:%M}"
 
 
+def overlaps(it, during):
+    """Whether the call was going on at any time from since to until (either None: no limit that way)."""
+    since, until = during
+    return (since is None or it["ended"] >= since) and (until is None or it["started"] <= until)
+
+
+def describe(during):
+    """The time asked about, in words: e.g. "From Tue 10 Nov 00:00 to 12:00"."""
+    since, until = during
+    if since and until:
+        end = f"{until:%H:%M}" if until.date() == since.date() else f"{until:%a %-d %b %H:%M}"
+        return f"From {since:%a %-d %b %H:%M} to {end}"
+    return f"Since {since:%a %-d %b %H:%M}" if since else f"Until {until:%a %-d %b %H:%M}"
+
+
 class ShareWindow:
     """answer([(path, "summary" | "transcript")]) once you Share, or answer(None) if you refuse (however)."""
 
-    def __init__(self, topic, where, answer):
+    def __init__(self, topic, where, during, answer):
         self.answer, self.answered = answer, False
         self.hud = d.Hud(TITLE, width=560)
         self.hud.on_escape = self.refuse
@@ -72,6 +90,8 @@ class ShareWindow:
                                 False, False, 0)
         self.hud.box.pack_start(d.classes(d.text(topic, "strong", wrap=True, max_chars=64), "quote"),
                                 False, False, 0)
+        if during:
+            self.hud.box.pack_start(d.text(f"{describe(during)}.", "body", wrap=True, max_chars=64), False, False, 0)
         warning = ("Whatever you share is sent to Anthropic as part of that conversation. Nothing is shared unless "
                    "it's chosen below.")
         self.hud.box.pack_start(d.warning_strip(warning), False, False, 0)
@@ -80,7 +100,13 @@ class ShareWindow:
         items = [(it, relevance(it, words)) for it in transcript.saved() if it["paragraphs"]]
         items = [(it, matched if enough(matched, words) else []) for it, matched in items]
         items.sort(key=lambda x: -x[0]["started"].timestamp())
-        groups = [(MATCHED, [x for x in items if x[1]]), (OTHERS, [x for x in items if not x[1]])]
+        first, heading = [x for x in items if x[1]], MATCHED
+        if during:
+            inside = [x for x in items if overlaps(x[0], during)]
+            first = [x for x in inside if x[1]]
+            if not first:
+                first, heading = inside, DURING
+        groups = [(heading, first), (OTHERS, [x for x in items if x not in first])]
         groups = [(title, group) for title, group in groups if group]
         self.rows, self.headers = [], []  # rows: (item, kind(), set_kind(value), group's title)
         self.listing = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2, margin_end=16)  # (clear of the
@@ -91,7 +117,7 @@ class ShareWindow:
                 self.headers.append((title, len(group), header))
                 self.listing.pack_start(header, False, False, 0)
             for it, matched in group:
-                self.listing.pack_start(self.row(it, matched, title), False, False, 0)
+                self.listing.pack_start(self.row(it, matched, title, title != OTHERS), False, False, 0)
         if not items:
             self.listing.pack_start(d.text("There are no transcripts.", "small"), False, False, 0)
         self.scroll = d.scrolled(self.listing)
@@ -121,7 +147,7 @@ class ShareWindow:
         box.pack_end(none, False, False, 0)
         return box
 
-    def row(self, it, matched, group):
+    def row(self, it, matched, group, wanted):
         found = transcript.read_summary(it["path"])
         overview = re.sub(r"^#+ .*$|\*\*", "", found.text, flags=re.M).strip() if found and found.text else ""
         gist = overview or " ".join(t for _, _, t in it["paragraphs"])
@@ -137,7 +163,7 @@ class ShareWindow:
         kinds = [(None, "Don't share")] + ([("summary", "Its summary")] if overview else []) + \
             [("transcript", "Whole transcript")]
         values = [v for v, _ in kinds]
-        start = "summary" if matched and overview else None  # (a summary, not a whole transcript, unasked)
+        start = "summary" if wanted and overview else None  # (a summary, not a whole transcript, unasked)
         kind = d.combo(kinds, start, lambda v: (words.set_opacity(1.0 if v else DIM), self.chosen()))
         words.set_opacity(1.0 if start else DIM)  # (not being shared: plainly so)
         kind.set_valign(Gtk.Align.START)

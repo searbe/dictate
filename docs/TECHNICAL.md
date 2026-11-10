@@ -65,7 +65,8 @@ Dictate does, see the [README](../README.md).
     capsule brings the alert to the front, and so does Ctrl+Win, which doesn't dictate until you've chosen.
 
 - **Claude Code (`/meeting-notes`):** a skill that lets a Claude Code session ask Dictate for transcripts about
-  something, whenever you run it or Claude decides they'd help. Dictate asks you in a window which to share, if any, each as its summary or the whole transcript;
+  something, whenever you run it or Claude decides they'd help, and when they were if you said ("this morning":
+  calls going on then come first). Dictate asks you in a window which to share, if any, each as its summary or the whole transcript;
   nothing is shared otherwise, and it's off until you turn on "Let Claude Code ask for transcripts" in Settings.
   The request comes over a Unix socket in your runtime folder, from your own user only. Installing the skill
   (Settings, or `scripts/install_meeting_notes.py`) also adds a deny rule to `~/.claude/settings.json` so Claude

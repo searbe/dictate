@@ -50,14 +50,16 @@ def choose(app, row, option):
     app.send("choose", option=option, window_title=WINDOW, setting=row)
 
 
-def ask(app, topic="the demo budget"):
-    """Run the skill's script as a Claude Code session would: (thread, output) — output fills once it's answered."""
+def ask(app, topic="the demo budget", *during):
+    """Run the skill's script as a Claude Code session would: (thread, output) — output fills once it's answered.
+    during: more of its arguments, e.g. "--since", "2026-10-19 00:00"."""
     out = []
     env = {**os.environ, "DICTATE_DATA": str(app.data)}
 
     def run():
-        out.append(subprocess.run([sys.executable, str(ROOT / "scripts/meeting_notes.py"), topic], env=env,
-                                  capture_output=True, text=True, timeout=60).stdout)
+        done = subprocess.run([sys.executable, str(ROOT / "scripts/meeting_notes.py"), topic, *during], env=env,
+                              capture_output=True, text=True, timeout=60)
+        out.append(done.stdout + done.stderr)
     thread = threading.Thread(target=run, daemon=True)
     thread.start()
     return thread, out
@@ -107,6 +109,55 @@ def test_those_that_mention_it_come_first_set_to_share_their_summary(start):
     app.click("Share", WINDOW)
     said = answer(*asked)
     assert "They went through the demo budget." in said and "Lovely weather" not in said
+
+
+def test_saying_when_puts_the_calls_then_first_set_to_share_their_summary(start):
+    app = opened(start)
+
+    asked = ask(app, "the notes from Monday morning", "--since", "2026-10-19 00:00", "--until", "2026-10-19 12:00")
+
+    app.wait_window(WINDOW)
+    texts = app.read(WINDOW)
+    assert "From Mon 19 Oct 00:00 to 12:00." in texts
+    assert texts.index("When Claude is looking for (1)") < texts.index(MON) \
+        < texts.index("Other transcripts (1)") < texts.index(TUE)
+    assert "Sharing the summary of Mon 19 Oct 10:00." in texts
+    app.click("Share", WINDOW)
+    assert "They went through the demo budget." in answer(*asked)
+
+
+def test_when_it_is_said_a_call_at_another_time_does_not_come_first_even_if_it_mentions_it(start):
+    app = opened(start)
+
+    ask(app, "the demo budget", "--since", "2026-10-20 12:00", "--until", "2026-10-20 18:00")
+
+    app.wait_window(WINDOW)
+    texts = app.read(WINDOW)
+    assert texts.index("When Claude is looking for (1)") < texts.index(TUE) \
+        < texts.index("Other transcripts (1)") < texts.index(MON)
+    app.click("Refuse", WINDOW)
+
+
+def test_a_call_still_going_on_when_the_time_starts_counts_and_one_after_it_does_not(start):
+    app = opened(start)
+
+    ask(app, "the demo budget", "--since", "2026-10-19 10:20", "--until", "2026-10-20 16:00")
+
+    app.wait_window(WINDOW)
+    texts = app.read(WINDOW)
+    assert "From Mon 19 Oct 10:20 to Tue 20 Oct 16:00." in texts
+    assert texts.index("Mentions what Claude is looking for (1)") < texts.index(MON) \
+        < texts.index("Other transcripts (1)") < texts.index(TUE)
+    app.click("Refuse", WINDOW)
+
+
+def test_a_time_that_is_not_one_is_refused_before_asking(start):
+    app = opened(start)
+
+    said = answer(*ask(app, "the demo budget", "--since", "this morning"))
+
+    assert "isn't a time like" in said
+    assert WINDOW not in app.send("windows")["titles"]
 
 
 def test_none_sets_a_group_back_to_not_shared(start):

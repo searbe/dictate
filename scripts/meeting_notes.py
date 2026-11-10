@@ -1,13 +1,15 @@
 """Ask the running Dictate for transcripts about something (the /meeting-notes skill runs this). Dictate asks you
 which, if any, to share; this prints what you chose, as Markdown, or why there's nothing.
 
-Usage: python3 scripts/meeting_notes.py "<what it's looking for>"
+Usage: python3 scripts/meeting_notes.py "<what it's looking for>" [--since "YYYY-MM-DD HH:MM"] [--until "..."]
+--since and --until (your local time) say when the calls it's looking for were: those during that time come first.
 Only the standard library: it runs with any Python 3, outside Dictate's .venv. See dictate/sharing.py."""
+import argparse
 import hashlib
 import json
 import os
 import socket
-import sys
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -21,15 +23,17 @@ def address():
     return Path(runtime) / f"dictate-{hashlib.sha1(str(data).encode()).hexdigest()[:10]}.sock"
 
 
-def ask(topic):
-    """Dictate's answer: {"shared": [...]} or {"refused": "..."}."""
+def ask(topic, since=None, until=None):
+    """Dictate's answer: {"shared": [...]} or {"refused": "..."}. since, until: datetimes, or None."""
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as sock:
         sock.settimeout(WAIT)
         try:
             sock.connect(str(address()))
         except OSError:
             return {"refused": "Dictate isn't running, so there's no one to ask."}
-        sock.sendall((json.dumps({"topic": topic, "from": os.getcwd()}) + "\n").encode())
+        request = {"topic": topic, "from": os.getcwd(), "since": since and since.isoformat(timespec="minutes"),
+                   "until": until and until.isoformat(timespec="minutes")}
+        sock.sendall((json.dumps({k: v for k, v in request.items() if v}) + "\n").encode())
         try:
             line = sock.makefile().readline()
         except TimeoutError:
@@ -37,11 +41,26 @@ def ask(topic):
     return json.loads(line) if line else {"refused": "Dictate closed the connection without answering."}
 
 
+def moment(text):
+    """A local time, as YYYY-MM-DD HH:MM (or YYYY-MM-DD: its start)."""
+    try:
+        return datetime.fromisoformat(text.strip())
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"{text!r} isn't a time like 2026-11-10 09:00") from None
+
+
 def main():
-    topic = " ".join(sys.argv[1:]).strip()
+    parser = argparse.ArgumentParser(description="Ask Dictate for transcripts about something.")
+    parser.add_argument("topic", nargs="+", help="what you're looking for")
+    parser.add_argument("--since", type=moment, help="calls during or after this local time (YYYY-MM-DD HH:MM)")
+    parser.add_argument("--until", type=moment, help="calls during or before this local time (YYYY-MM-DD HH:MM)")
+    args = parser.parse_args()
+    topic = " ".join(args.topic).strip()
     if not topic:
-        sys.exit('Usage: meeting_notes.py "<what you\'re looking for>"')
-    answer = ask(topic)
+        parser.error("say what you're looking for")
+    if args.since and args.until and args.since >= args.until:
+        parser.error("--since must be before --until")
+    answer = ask(topic, args.since, args.until)
     if "refused" in answer:
         print(f"Nothing shared: {answer['refused']}")
         return

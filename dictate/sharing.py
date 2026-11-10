@@ -10,7 +10,8 @@ request asks again. While "Let Claude Code ask for transcripts" is off in Settin
 every request is refused without asking. Every request is logged: when, from which folder, what for, and what
 was shared.
 
-A request: one JSON line, {"topic": "...", "from": "<the session's folder>"}. The answer: one JSON line,
+A request: one JSON line, {"topic": "...", "from": "<the session's folder>", "since"?, "until"?: "<a local time,
+ISO>"} (when the calls it's looking for were: either or both). The answer: one JSON line,
 {"shared": [{"title", "kind": "summary" | "transcript", "text"}]} or {"refused": "<why>"}."""
 import hashlib
 import json
@@ -19,6 +20,7 @@ import os
 import socket
 import struct
 import threading
+from datetime import datetime
 from pathlib import Path
 
 from gi.repository import GLib
@@ -45,8 +47,8 @@ def peer_uid(conn):
 
 class Server:
     """Listens for requests while Dictate runs. allowed(): whether asking is turned on (Settings); ask(topic,
-    where, answer): on the GTK thread, ask you, then answer(shared or None) (shared: [(path, kind)]); it returns
-    something to close() if you don't answer in time."""
+    where, during, answer): on the GTK thread, ask you, then answer(shared or None) (shared: [(path, kind)]); it
+    returns something to close() if you don't answer in time. during: (since, until), either None, or None."""
 
     def __init__(self, allowed, ask):
         self.allowed, self.ask, self.busy = allowed, ask, False
@@ -84,9 +86,16 @@ class Server:
                 request = json.loads(conn.makefile().readline() or "{}")
                 topic = " ".join(str(request.get("topic", "")).split())[:LONGEST]
                 where = str(request.get("from", ""))[:500]
+                during = [request.get(k) for k in ("since", "until")]
             except (OSError, ValueError, AttributeError):
                 return
-            log.info("Claude Code (in %s) asked for transcripts about %r", where or "?", topic)
+            try:
+                during = [datetime.fromisoformat(str(t)) if t else None for t in during]
+            except ValueError:
+                return self.reply(conn, {"refused": "The request's since or until wasn't a time."})
+            during = tuple(during) if any(during) else None
+            log.info("Claude Code (in %s) asked for transcripts about %r%s", where or "?", topic,
+                     f" from {during[0] or '…'} to {during[1] or '…'}" if during else "")
             if not self.allowed():
                 log.info("refused (asking is turned off in Settings)")
                 return self.reply(conn, {"refused": "Sharing transcripts with Claude Code is turned off in "
@@ -102,7 +111,7 @@ class Server:
             def answer(shared):
                 chosen.append(shared)
                 answered.set()
-            GLib.idle_add(lambda: asking.append(self.ask(topic, where, answer)) and False)
+            GLib.idle_add(lambda: asking.append(self.ask(topic, where, during, answer)) and False)
             if not answered.wait(WAIT):
                 GLib.idle_add(lambda: asking and asking[0].close() and False)  # (too late: refused)
             self.busy = False

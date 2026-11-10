@@ -49,7 +49,7 @@ WINDOW = 60.0  # tells a change better hearing what follows), and how much befor
 SOUND = 0.01  # loudness (RMS, full scale 1) of a tenth of a second heard while paused that counts as a sound
 RECENT = 300.0  # seconds of the speakers kept for that: longer than a stretch can be, plus both of those
 PENDING, UNKNOWN = "pending", -1  # a stretch from the speakers still to be split between voices; whose it is so far
-LASTED = re.compile(r"^Lasted (.+), until \d\d:\d\d\.$", re.M)
+LASTED = re.compile(r"^Lasted (.+), until (\d\d):(\d\d)\.$", re.M)
 PARAGRAPH = re.compile(r"^\*\*(\d\d:\d\d:\d\d) (.+?):\*\* (.*)$", re.M)
 
 
@@ -270,13 +270,17 @@ def rename(path, label, name):
 
 
 def read(path):
-    """A saved transcript: {"path", "started", "length", "paragraphs": [(clock, who, text)], "changed"}, or None."""
+    """A saved transcript: {"path", "started", "ended", "length", "paragraphs": [(clock, who, text)], "changed"}, or
+    None. ended: when it says it lasted until (the next day's, if that's before it started), or when it started."""
     try:
         started, text, changed = datetime.strptime(path.stem, STAMP), path.read_text(), path.stat().st_mtime
     except (ValueError, OSError):
         return None
     lasted = LASTED.search(text)
-    return {"path": path, "started": started, "length": lasted[1] if lasted else "",
+    ended = started.replace(hour=int(lasted[2]), minute=int(lasted[3]), second=0) if lasted else started
+    if ended < started.replace(second=0):
+        ended += timedelta(days=1)
+    return {"path": path, "started": started, "ended": max(ended, started), "length": lasted[1] if lasted else "",
             "paragraphs": PARAGRAPH.findall(text), "changed": changed}
 
 
