@@ -226,11 +226,12 @@ class App:
     def start_recording(self):
         pressed = self.hotkey.chord.pressed_at
         history.AUDIO.mkdir(parents=True, exist_ok=True)
+        self.previous = self.wav
         self.wav = str(history.AUDIO / f"{datetime.now():%Y%m%d-%H%M%S-%f}.wav")
         self.rec = osio.Recorder()
         self.rec.start(self.wav, mic=self.microphone.current)
         self.microphone.follow(self.rec)  # (moved to another microphone, if it changes meanwhile)
-        self.live = stt.Live(self.wav)  # transcribes each stretch of speech as soon as you pause
+        self.live = stt.Whole(self.wav)  # recognises it as you speak, in long pieces, ready at each pause
         if self.session:
             self.session.mute("me", True)  # a dictation isn't part of the conversation
         self.since = time.time()
@@ -286,7 +287,7 @@ class App:
         try:
             rec.stop()  # here, not on the GTK thread: pw-record takes ~0.35 s to finish the file
             try:
-                d.raw = live.finish()  # most of it was transcribed while you were speaking
+                d.raw = live.finish()  # most of it, if not all, was recognised while you were speaking
             except Exception as err:
                 log.warning("live transcription failed (%s), transcribing the whole recording", err)
                 d.raw = stt.transcribe(d.audio)

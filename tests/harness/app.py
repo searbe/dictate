@@ -143,7 +143,7 @@ def notify(title, body, actions=(), on_action=lambda key: None, image=None):
 osio.Hotkey, osio.Recorder, osio.Paster, osio.Player, osio.notify = Hotkey, Recorder, Paster, Player, notify
 osio.microphones = lambda: list(microphones)
 if not REAL_SPEECH and not REAL_SPEAKERS:
-    stt.Live, stt.load = Live, lambda: None
+    stt.Live, stt.Whole, stt.load = Live, Live, lambda: None
     stt.transcribe = lambda path: heard.get(str(path)) or ""
 llm.SERVER = Path(os.environ["DICTATE_TEST_LLAMA"])
 llm.CONTEXT = int(os.environ.get("DICTATE_TEST_CONTEXT", llm.CONTEXT))  # (the fake model's too: its command line)

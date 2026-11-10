@@ -134,3 +134,49 @@ def test_moved_to_a_much_quieter_microphone_it_listens_afresh_and_still_hears_it
     found = heard(stt, [loud, gap, "anew", quiet, gap])
     assert [words(text) for _, text in found] == [words(ASK_NOT)] * 2
     assert found[1][0] == pytest.approx((len(loud) + len(gap)) / RATE, abs=0.5)  # (its time from the start)
+
+
+def follow(stt, audio, **kw):
+    """A dictation's text: audio pushed to stt.Whole as a recording arrives (4x faster than real time)."""
+    whole = stt.Whole(**kw)
+    for i in range(0, len(audio), RATE // 10):
+        whole.push(audio[i:i + RATE // 10].tobytes())
+        time.sleep(0.025)
+    return whole.finish()
+
+
+def test_a_dictation_is_recognised_whole_not_stretch_by_stretch(stt, tmp_path):
+    """Speech, a pause, more speech: one piece, punctuated as one, the same as the file recognised afterwards."""
+    audio = np.concatenate([silence(0.3), sample("en"), silence(1.0), sample("en"), silence(0.3)])
+
+    assert follow(stt, audio) == f"{ASK_NOT} {ASK_NOT}"
+    assert stt.transcribe(save(tmp_path / "a.wav", audio)) == f"{ASK_NOT} {ASK_NOT}"
+
+
+def test_a_quiet_word_after_loud_ones_is_not_dropped(stt):
+    """A sentence said loudly, then one mumbled 40 times quieter: the speech detector, tuned to the loud one,
+    takes the quiet one for background (see test_moved_to_a_much_quieter_microphone...); a dictation still has it."""
+    loud, quiet = sample("en"), (sample("en") // 40).astype(np.int16)
+
+    assert len(heard(stt, [loud, silence(2), quiet, silence(2)])) == 1  # stretch by stretch: lost
+    assert words(follow(stt, np.concatenate([loud, silence(1), quiet, silence(0.5)]))) == words(f"{ASK_NOT} {ASK_NOT}")
+
+
+def test_a_long_dictation_is_recognised_in_pieces_cut_at_its_pauses(stt, monkeypatch):
+    monkeypatch.setattr(stt.Whole, "PIECE", 3.0)  # (the sample's about 5 s)
+    audio = np.concatenate([sample("en"), silence(0.8), sample("en"), silence(0.8), sample("en")])
+
+    assert words(follow(stt, audio)) == words(f"{ASK_NOT} {ASK_NOT} {ASK_NOT}")
+
+
+def test_letting_go_after_a_pause_the_text_is_ready(stt):
+    """Recognised at the pause, while still recording: letting go, nothing's left to recognise."""
+    whole = stt.Whole()
+    audio = np.concatenate([sample("en"), silence(1.0)])
+    for i in range(0, len(audio), RATE // 10):
+        whole.push(audio[i:i + RATE // 10].tobytes())
+    time.sleep(3)  # (the pause, and its recognition)
+    started = time.monotonic()
+
+    assert whole.finish() == ASK_NOT
+    assert time.monotonic() - started < 0.1  # (recognising it would take ~0.15 s)

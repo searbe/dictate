@@ -58,21 +58,6 @@ def stretches(samples, pause=0.4):
     return out
 
 
-def speech_only(samples):
-    """Keep only the segments Silero thinks are speech (stops noise/music becoming text)."""
-    vad = sherpa_onnx.VoiceActivityDetector(_vad_cfg, buffer_size_in_seconds=600)
-    win = _vad_cfg.silero_vad.window_size
-    for i in range(0, len(samples), win):
-        vad.accept_waveform(samples[i:i + win])
-    vad.flush()
-    pad = np.zeros(RATE // 5, dtype=np.float32)  # 200ms gap between segments
-    parts = []
-    while not vad.empty():
-        parts += [np.array(vad.front.samples, dtype=np.float32), pad]
-        vad.pop()
-    return np.concatenate(parts) if parts else None
-
-
 def _decode(samples):
     return _recognise(samples).text.strip()
 
@@ -96,11 +81,12 @@ def words(result):
 
 
 def transcribe(wav_path):
+    """A whole recording's text, recognised as a dictation is (see Whole)."""
     load()
     with wave.open(str(wav_path)) as w:
-        samples = np.frombuffer(w.readframes(w.getnframes()), dtype=np.int16).astype(np.float32) / 32768
-    speech = speech_only(samples)
-    return _decode(speech) if speech is not None else ""
+        whole = Whole()
+        whole.push(w.readframes(w.getnframes()))
+    return whole.finish()
 
 
 class Live:
@@ -238,3 +224,84 @@ class Live:
         self.vad.flush()
         self._decode_ready()
         return " ".join(t for t in self.texts if t)
+
+
+class Whole(Live):
+    """For dictating: follows the recording as Live does, but recognises it in long pieces, all of their sound
+    (pauses and all), rather than each stretch of speech on its own. Cut at every short pause, the model had
+    only a few words to go on at a time, and the speech detector dropped words it took for background (a
+    mumble, a quiet word): today's dictations, recognised whole, fixed "call request branch" (pull request
+    branch), "play spodges" (clay splodges), "when You get And I think" (when you get attacked and I think),
+    and stray capitals at each cut.
+
+    A recording's recognised in one piece up to PIECE seconds; longer, it's cut at the first pause after that
+    (a minute in one piece took 1.4 s, four minutes 12 s), each finished piece recognised in the background.
+    The piece being said is recognised again at each pause, in the background too: let go after a pause, and
+    that's the text, ready; only speech since (or more than TAIL seconds of anything) needs recognising then."""
+    PIECE = 30.0
+    TAIL = 1.5
+    MARGIN = 0.2  # seconds of the pause after a piece's last stretch it keeps (the next one starts there)
+
+    def __init__(self, wav_path=None):
+        self.chunks, self.total = [], 0  # every sample heard so far: float arrays, and how many in all
+        self.cut = 0  # where the piece being said starts (samples)
+        self.ended = 0  # where the last stretch of speech closed off ended (samples)
+        self.closed = 0  # how many stretches of speech have closed off
+        self.guess = None  # (closed, end, text): the piece so far, recognised at the last pause
+        self.finishing = False
+        self.texts_done = []  # the finished pieces' text
+        super().__init__(wav_path)
+
+    def _feed(self):
+        new = self._new()
+        if new is None:
+            return
+        new = self.leftover + new
+        usable = len(new) - len(new) % (2 * self.window)
+        self.leftover = new[usable:]
+        self._hear(np.frombuffer(new[:usable], dtype=np.int16).astype(np.float32) / 32768)
+
+    def _hear(self, samples):
+        self.chunks.append(samples)
+        self.total += len(samples)
+        for i in range(0, len(samples), self.window):
+            self.vad.accept_waveform(samples[i:i + self.window])
+        self._decode_ready()
+
+    def _audio(self, a, b):
+        if len(self.chunks) > 1:
+            self.chunks = [np.concatenate(self.chunks)]
+        return self.chunks[0][a:b] if self.chunks else np.zeros(0, np.float32)
+
+    def _decode_ready(self):
+        closed = False
+        while not self.vad.empty():
+            seg = self.vad.front
+            self.ended, self.closed, closed = seg.start + len(seg.samples), self.closed + 1, True
+            self.vad.pop()
+            if self.ended - self.cut > self.PIECE * RATE:  # a finished piece
+                end = min(self.total, self.ended + int(self.MARGIN * RATE))
+                self.texts_done.append(_decode(self._audio(self.cut, end)))
+                self.cut, self.guess, closed = end, None, False
+        if closed and not self.finishing:
+            end = min(self.total, self.ended + int(self.MARGIN * RATE))
+            self.guess = (self.closed, end, _decode(self._audio(self.cut, end)))
+
+    def finish(self):
+        """Call once recording has stopped and the file is complete. Returns the whole transcript."""
+        self.done = True
+        self.thread.join()
+        self.finishing = True
+        self._feed()
+        tail = self.leftover[:len(self.leftover) // 2 * 2]
+        if tail:
+            self._hear(np.frombuffer(tail, dtype=np.int16).astype(np.float32) / 32768)
+        self.vad.flush()
+        self._decode_ready()
+        if self.guess and self.guess[0] == self.closed and self.total - self.guess[1] < self.TAIL * RATE:
+            last = self.guess[2]  # nothing said since the last pause: recognised already
+        elif self.closed == 0:
+            last = ""  # no speech heard at all (silence, a hiss): the model can make words of noise
+        else:
+            last = _decode(self._audio(self.cut, self.total)) if self.total - self.cut > RATE // 10 else ""
+        return " ".join(t for t in [*self.texts_done, last] if t)

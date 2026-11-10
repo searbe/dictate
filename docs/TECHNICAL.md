@@ -21,8 +21,13 @@ Dictate does, see the [README](../README.md).
   recorded (`dictate/headsets.py`).
 - **Speech:** [Parakeet TDT 0.6B v3](https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3) on the CPU, via
   [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx), with [Silero VAD](https://github.com/snakers4/silero-vad)
-  finding the pauses. Each stretch is transcribed as soon as you pause, so the text is ready 0.1 s or so after you
-  let go.
+  finding the pauses. A dictation is recognised whole, pauses and all, not stretch by stretch: cut at every short
+  pause, the model had only a few words to go on at a time and the speech detector dropped quiet or mumbled words
+  (on a day's dictations, whole fixed "call request branch" → "pull request branch", "play spodges" → "clay
+  splodges" and stray capitals at each cut). Past 30 seconds it's cut at the next pause, each piece recognised in
+  the background as you speak (a minute in one piece took 1.4 s, four minutes 12 s). The piece being said is
+  recognised again at each pause, so after letting go the text is ready at once if you'd paused, otherwise in
+  about 0.2 s (0.8 s for a 36-second dictation). Transcribe mode still recognises each stretch as it ends.
 - **Cleanup and refinements:** [Qwen3.5](https://huggingface.co/Qwen/Qwen3.5-9B) in
   [llama.cpp](https://github.com/ggml-org/llama.cpp): 9B on the GPU (Vulkan on Linux and Windows, Metal on macOS)
   when one's free, 4B on the CPU otherwise. It's loaded while you speak and unloaded after 30 seconds unused, so it
