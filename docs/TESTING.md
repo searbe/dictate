@@ -148,7 +148,7 @@ The automated tests run Dictate's KWin script on a headless KWin; check it on yo
 
 ### 7. Transcribe mode (real speakers, microphone and calls)
 
-- Play a video with speech, start transcribe mode (Ctrl+Win, lift Win, Win again): its words appear under
+- Play a video with speech, start transcribe mode (hold Ctrl and tap Win twice): its words appear under
   "Speaker 1" a moment after each pause, accurately. Speak: under "Me". The Dictate window doesn't take focus.
 - On a call on headphones, and again on the speakers: the other person isn't also written as "Me", and what you
   say (on its own, and over them) still is. While it runs, "Dictate: microphone without the speakers" is listed

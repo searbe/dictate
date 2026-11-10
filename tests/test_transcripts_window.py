@@ -179,7 +179,7 @@ def test_delete_asks_then_deletes_the_transcript_and_its_recordings(start):
     app.click("Delete")
 
     eventually(lambda: not list(folder.iterdir()))
-    assert ({"No transcripts yet", "To start one, hold Ctrl+Win, lift Win and press it again."}
+    assert ({"No transcripts yet", "To start one, hold Ctrl and tap Win twice."}
             <= set(app.read("Transcripts")))
 
 
@@ -197,7 +197,7 @@ def test_cancelling_delete_keeps_it(start):
 def test_with_no_transcripts_it_says_how_to_make_one(start):
     app = opened(start)
 
-    assert ({"No transcripts yet", "To start one, hold Ctrl+Win, lift Win and press it again."}
+    assert ({"No transcripts yet", "To start one, hold Ctrl and tap Win twice."}
             <= set(app.read("Transcripts")))
     assert "Open folder" in app.read("Transcripts")
     assert "Delete" not in app.read("Transcripts")

@@ -158,7 +158,7 @@ class RefinementPicker:
 
 
 # --- still transcribing ---
-STOP_WAYS = ("Stop, in Transcripts (click the capsule to open it)", "Ctrl+Win, lift Win and press it again",
+STOP_WAYS = ("Stop, in Transcripts (click the capsule to open it)", "Hold Ctrl and tap Win twice",
              "Stop transcribing, in the capsule's menu")
 REMINDERS = {  # why: (heading, what's happening)
     "closed": ("Still transcribing", "Closing the window doesn't stop it: everything said through this computer's "

@@ -138,7 +138,7 @@ def open_uri(path):
 
 class TranscriptsPage:
     EMPTY = "No transcripts yet"
-    HOW = "To start one, hold Ctrl+Win, lift Win and press it again."
+    HOW = "To start one, hold Ctrl and tap Win twice."
     LISTENING = "Listening to this computer's speakers and microphone"
 
     def __init__(self, hub):

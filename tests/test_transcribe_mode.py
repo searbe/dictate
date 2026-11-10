@@ -1,4 +1,4 @@
-"""Transcribe mode: Ctrl+Win, lift Win, Win again, and everything said through the speakers (by "Speaker 1",
+"""Transcribe mode: holding Ctrl, two quick taps of Win, and everything said through the speakers (by "Speaker 1",
 "Speaker 2", …: see test_voices.py) and into the microphone ("Me") is written into a transcript as it's heard,
 shown at the top of the Transcripts window, until it's stopped the same way, or with the Stop button."""
 import os
@@ -200,7 +200,7 @@ def test_it_can_be_started_and_stopped_from_the_menu(start):
 
 
 def test_an_ordinary_dictation_is_not_mistaken_for_it(start):
-    """Letting go of Win before Ctrl, or pressing Win again after a moment, is just dictating."""
+    """Letting go of Win before Ctrl, then pressing Win again after a moment, is just dictating."""
     app = start(refinements=[])
     mark = app.mark()
     app.send("say", text="first")
@@ -214,6 +214,56 @@ def test_an_ordinary_dictation_is_not_mistaken_for_it(start):
 
     eventually(lambda: [e["text"] for e in app.dictations()] == ["first", "second"])
     assert "Transcripts" not in app.send("windows")["titles"]
+
+
+def test_pressing_win_again_at_the_end_of_a_dictation_keeps_it(start):
+    """Holding Ctrl, Win let go after a dictation and pressed again at once: the dictation's kept, and the
+    second press is just another dictation (once, this started transcribing and threw the dictation away)."""
+    app = start(refinements=[])
+    mark = app.mark()
+    app.send("say", text="a long note")
+    app.send("keys", down=["ctrl", "meta"])
+    app.wait_for("recording", after=mark)
+    time.sleep(0.7)  # longer than a tap
+    app.send("keys", up=["meta"])
+    app.send("keys", down=["meta"])
+    app.send("keys", up=["meta", "ctrl"])
+
+    eventually(lambda: [e["text"] for e in app.dictations()] == ["a long note"])
+    time.sleep(0.5)
+    assert "Transcripts" not in app.send("windows")["titles"]
+
+
+def test_a_tap_then_holding_win_to_speak_is_a_dictation(start):
+    """A fumbled start: Win tapped, then pressed again and held while speaking. That's dictating."""
+    app = start(refinements=[])
+    app.send("keys", down=["ctrl", "meta"])
+    app.send("keys", up=["meta"])
+    mark = app.mark()
+    app.send("say", text="what I meant to say")
+    app.send("keys", down=["meta"])
+    app.wait_for("recording", after=mark)
+    time.sleep(0.7)
+    app.send("keys", up=["meta", "ctrl"])
+
+    assert app.result(mark)["text"] == "what I meant to say"
+    assert "Transcripts" not in app.send("windows")["titles"]
+
+
+def test_two_taps_keep_nothing_of_either(start):
+    """Whatever was heard during the two taps that start transcribing isn't pasted or kept."""
+    app = start(refinements=[])
+    app.send("say", text="um")
+    app.send("keys", down=["ctrl", "meta"])
+    app.send("keys", up=["meta"])
+    app.send("say", text="er")
+    app.send("keys", down=["meta"])
+    app.send("keys", up=["meta", "ctrl"])
+
+    app.wait_window("Transcripts")
+    time.sleep(1.5)
+    assert app.dictations() == []
+    assert not app.happened("pasted") and not app.happened("typed")
 
 
 def test_a_calls_recordings_follow_their_own_keep_setting(start):

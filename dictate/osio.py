@@ -95,13 +95,18 @@ class Chord:
     on press, on release (alt = Alt was touched during the hold, letter = any A–Z pressed with Alt),
     and once when Alt is first pressed mid-hold (so the app can start loading the model).
 
-    Lifting Win and pressing it again within AGAIN seconds, with Ctrl held throughout, calls on_again()
-    instead of starting another hold (transcribe mode). The first hold has already been reported by then.
+    Two quick taps of Win with Ctrl held throughout (each held under TAP seconds, the second pressed within AGAIN
+    seconds of lifting the first) call on_again() (transcribe mode) when the second is let go, instead of
+    reporting its release: both holds were reported as they were pressed, the first's release too. A first hold
+    longer than a tap is a dictation, so pressing Win again after it is just another one (pressed again by
+    accident at the end of a dictation, it started transcribing and the dictation was thrown away); so is a
+    second hold held longer than a tap (a fumbled start: tapped, then pressed and held to speak).
 
     Any other key with Ctrl+Win (Ctrl+Win+→, Shift, Alt and a letter that's no refinement's: letters() gives the
     refinements' letters) makes it another app's shortcut, not a dictation: on_other() is called, if the hold has
     been reported, and nothing more is said about it. So is Ctrl+Win pressed while another key's held."""
     AGAIN = 1.0
+    TAP = 0.5  # seconds: held for less, a press of Win is a tap (half of the gesture that starts transcribing)
     MODIFIERS = {"ctrl", "meta", "alt"}
 
     def __init__(self, callback, on_again=None, on_other=lambda: None, letters=None):
@@ -109,8 +114,10 @@ class Chord:
         self.active, self.alt, self.letter = False, False, None
         self.on_other, self.letters = on_other, letters  # letters None: any letter is a refinement's
         self.pressed_at = None  # when the chord's key was physically pressed (wall clock), for latency logs
-        self.lifted = None  # when Win was let go with Ctrl still down (monotonic), until Ctrl is let go too
-        self.again = False  # this hold is the "again" press: report nothing about it
+        self.lifted = None  # when a tap of Win was let go with Ctrl still down (monotonic), until Ctrl is let go too
+        self.since = None  # when this hold began (monotonic)
+        self.second = False  # this hold may be the second tap of the gesture that starts transcribing
+        self.going_again = False  # the gesture's been made: on_again() is about to be called
         self.other = False  # this hold is another app's shortcut: report nothing more about it
 
     def key(self, ident, kind, down, at=None):
@@ -125,7 +132,7 @@ class Chord:
         kinds = set(self.held.values())
         if "ctrl" not in kinds:
             self.lifted = None
-        if self.active and down and not (self.again or self.other):
+        if self.active and down and not self.other:
             if kind == "alt":
                 self.alt = True
                 GLib.idle_add(self.callback, True, True, None)
@@ -139,19 +146,21 @@ class Chord:
             return
         self.active = on
         if not on:
-            if self.again:
-                self.again = False  # the next Win press is an ordinary hold again
-            elif self.other:
-                self.other, self.lifted = False, None  # (pressing Win again isn't Ctrl+Win, Win again either)
+            second, self.second, self.lifted = self.second, False, None
+            if self.other:
+                self.other = False  # (pressing Win again isn't the gesture either)
+            elif self.tapped() and second:
+                self.going_again = True
+                GLib.idle_add(self.again)
             else:
-                self.lifted = time.monotonic() if "ctrl" in kinds else None
+                if self.tapped() and "ctrl" in kinds and self.on_again:
+                    self.lifted = time.monotonic()
                 GLib.idle_add(self.callback, False, self.alt, self.letter)
-        elif self.on_again and self.may_go_again():
-            self.again, self.lifted = True, None
-            GLib.idle_add(self.on_again)
         elif kinds - self.MODIFIERS:  # another key was already down: its shortcut, never reported
-            self.other = True
+            self.other, self.lifted = True, None
         else:
+            self.second, self.lifted = self.may_go_again(), None
+            self.since = time.monotonic()
             self.alt, self.letter, self.pressed_at = "alt" in kinds, None, at or time.time()
             GLib.idle_add(self.callback, True, self.alt, self.letter)
 
@@ -160,9 +169,22 @@ class Chord:
         for ident, kind in list(self.held.items()):
             self.key(ident, kind, False)
 
+    def again(self):
+        self.going_again = False
+        self.on_again()
+
+    def tapped(self):
+        """Whether this hold (held now, or just let go) has been a tap so far: under TAP, without Alt."""
+        return not self.alt and time.monotonic() - self.since < self.TAP
+
     def may_go_again(self):
-        """Whether pressing Win now would still be "again": Win was lifted moments ago, Ctrl is still down."""
+        """Whether pressing Win now would be the second tap: a tap was lifted moments ago, Ctrl is still down."""
         return bool(self.lifted) and time.monotonic() - self.lifted < self.AGAIN
+
+    def undecided(self):
+        """Whether the hold just let go may yet be the first tap of the gesture that starts transcribing: it was a
+        tap, and Win may be (or is being) tapped again."""
+        return self.going_again or self.may_go_again() or (self.active and self.second and self.tapped())
 
 
 if LINUX:

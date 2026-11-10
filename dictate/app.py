@@ -1,7 +1,7 @@
 """The app: the capsule (capsule.py) and its menu (menu.py), the Dictate window (hub.py), the dictation
 pipeline (record → transcribe → cleanup → refinement → paste or type) and transcribe mode (transcript.py).
 
-Started by dictate.py, after dictate.bootstrap(). Hold Ctrl+Win to dictate; Ctrl+Win, lift Win, Win again starts
+Started by dictate.py, after dictate.bootstrap(). Hold Ctrl+Win to dictate; holding Ctrl, two quick taps of Win start
 or stops transcribe mode. So a call isn't left being transcribed by mistake, closing the Dictate window while it
 is (the first time each day) brings up a reminder beside the capsule, and nothing being added to it for QUIET
 seconds pauses it and says so (desktop notifications if the capsule isn't on screen). How it all looks:
@@ -70,7 +70,8 @@ class App:
         self.state = "idle"  # what the capsule shows: "idle", "rec" (dictating) or "busy" (the model's working)
         self.rec = self.live = self.wav = None  # the dictation being recorded: its recorder, transcriber and file
         self.since = None  # when it started
-        self.cancelled = None  # the recording of a dictation to drop (it was the start of Ctrl+Win, Win again)
+        self.cancelled = None  # the recording of a dictation to drop (it was the first tap of the transcribe gesture)
+        self.previous = None  # the recording of the dictation before this one
         self.session = None  # the call being transcribed
         self.hub = None  # the Dictate window, while open
         self.reminder = None  # the reminder that a transcript is still being recorded, while it's shown
@@ -256,14 +257,17 @@ class App:
     def on_other_shortcut(self):
         """Another key pressed with Ctrl+Win (e.g. Ctrl+Win+→ switching desktops): another app's shortcut,
         not a dictation. Drop the recording, so nothing said meanwhile is pasted."""
-        if not self.rec:
-            return
+        if self.rec:
+            self.drop_recording()
+            log.info("recording dropped: Ctrl+Win was part of another shortcut")
+
+    def drop_recording(self):
+        """Stop recording and throw it away: nothing said is pasted or kept."""
         if self.session:
             self.session.mute("me", False)
         rec, live, wav, self.rec = self.rec, self.live, self.wav, None
         llm.server.release()
         self.set_state("idle")
-        log.info("recording dropped: Ctrl+Win was part of another shortcut")
 
         def drop():
             rec.stop()
@@ -323,11 +327,11 @@ class App:
         paste or type the text. delay: ms for the clipboard to reach Wayland (and, after the picker, for focus
         to return) before pasting."""
         d = dictation
-        if self.hotkey.chord.may_go_again():  # this hold may be the start of Ctrl+Win, Win again: wait and see
+        if self.hotkey.chord.undecided():  # this hold may be the first tap of the transcribe gesture: wait and see
             GLib.timeout_add(50, lambda: self.paste(d, paste, delay) and False)
             return False
         self.set_state("idle")
-        if d.audio == self.cancelled or not d.text:  # it was the start of Ctrl+Win, Win again; or nothing was heard
+        if d.audio == self.cancelled or not d.text:  # it was the first tap of the transcribe gesture; or nothing heard
             Path(d.audio).unlink(missing_ok=True)
             return False
         keep_audio = self.settings["keep_audio_hours"] != 0
@@ -349,9 +353,11 @@ class App:
 
     # --- transcribe mode ---
     def on_again(self):
-        """Ctrl+Win, lift Win, Win again: start or stop transcribing. The first hold of the gesture was
-        reported as a (very short) dictation; drop it."""
-        self.cancelled = self.wav
+        """Holding Ctrl, two quick taps of Win: start or stop transcribing. Each tap was reported as the start of a
+        dictation, the first one's end too; drop both."""
+        if self.rec:
+            self.drop_recording()
+        self.cancelled = self.previous
         if not osio.HEARS_SPEAKERS:
             log.info("transcribe mode: not available on this computer yet")
             return

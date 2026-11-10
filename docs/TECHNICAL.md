@@ -5,7 +5,10 @@ Dictate does, see the [README](../README.md).
 
 ## How it works
 - **Hotkey:** the keyboard is read directly (evdev on Linux), so **Ctrl+Win** works in every app, and any other key
-  pressed with it (e.g. Ctrl+Win+→ to switch desktop) is left to its own shortcut.
+  pressed with it (e.g. Ctrl+Win+→ to switch desktop) is left to its own shortcut. Transcribe mode starts or stops
+  on two taps of Win with Ctrl held, each under half a second, the second within a second of the first. A longer
+  press is always a dictation, so pressing Win again at the end of one, or tapping and then holding Win to speak,
+  dictates and doesn't transcribe.
 - **Microphone:** decided in one place (`dictate/microphone.py`): the first connected one in the order set on the
   Settings page, checked every 2 seconds. When it changes (a headset switched on or off, one plugged in or out, the
   order changed), every recording of the microphone that's running, a dictation or a call, is moved to it by

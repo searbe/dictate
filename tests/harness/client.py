@@ -83,7 +83,7 @@ class Dictate:
         return self.result(mark, timeout)
 
     def ctrl_win_win(self):
-        """Hold Ctrl+Win, lift Win, press it again, let go: starts or stops transcribe mode."""
+        """Holding Ctrl, two quick taps of Win: starts or stops transcribe mode."""
         self.send("keys", down=["ctrl", "meta"])
         self.send("keys", up=["meta"])
         self.send("keys", down=["meta"])

@@ -51,7 +51,7 @@ own. **Vocabulary** holds names and terms, spelled the way you spell them.
 
 ## Live call transcription, with topics and a summary
 
-Hold Ctrl+Win, lift Win and press it again, and Dictate transcribes what your computer plays and what you say
+Hold Ctrl and tap Win twice, and Dictate transcribes what your computer plays and what you say
 into your microphone: a Meet or Zoom call, a webinar, a podcast.
 
 - **Speakers.** Each voice is told apart word by word, so a short "yeah" in the middle of someone else's
@@ -114,7 +114,7 @@ speaking and unloaded after 30 seconds unused, so it doesn't hold the graphics c
 | **+ Alt** (tap, while holding) | Pick a refinement when you let go (Enter pastes as is, Esc only copies) |
 | **+ Alt+letter** | Use that refinement |
 | **+ any other key** | It's another app's shortcut (e.g. Ctrl+Win+→): nothing is pasted |
-| **Ctrl+Win, then Win again** | Start or stop transcribing a call: hold Ctrl+Win, lift Win, press it again (or **Stop**, or the menu) |
+| **Ctrl, then Win twice** | Start or stop transcribing a call: hold Ctrl and tap Win twice (or **Stop**, or the menu) |
 | **Right-click the capsule** | The menu: refine text on or off, the default refinement, your dictations, transcripts and settings |
 
 You can dictate as usual while a call is being transcribed; your dictations stay out of the transcript. On Linux,

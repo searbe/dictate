@@ -11,7 +11,7 @@ from harness.client import eventually
 pytestmark = needs_session
 REMINDER = "Still transcribing"  # the reminder's window
 PAUSED = "Transcript paused"  # the window saying it's been paused for being quiet
-WAYS = ["•  Stop, in Transcripts (click the capsule to open it)", "•  Ctrl+Win, lift Win and press it again",
+WAYS = ["•  Stop, in Transcripts (click the capsule to open it)", "•  Hold Ctrl and tap Win twice",
         "•  Stop transcribing, in the capsule's menu"]
 
 
@@ -112,7 +112,7 @@ def test_without_the_icon_on_screen_a_desktop_notification_says_it(start):
 
     note = app.wait_for("notified", after=mark)
     assert note["title"] == "⚠ Still transcribing"
-    assert "To stop it:" in note["body"] and "Ctrl+Win, lift Win and press it again" in note["body"]
+    assert "To stop it:" in note["body"] and "Hold Ctrl and tap Win twice" in note["body"]
     assert note["actions"] == ["Stop now", "Show transcript"] and note["image"]  # a picture of the icon
     assert REMINDER not in app.send("windows")["titles"]
     app.send("notification", button="stop")
