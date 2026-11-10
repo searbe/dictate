@@ -9,8 +9,11 @@ it's never swapped for another microphone that would hear you.
 
 Known (Linux, through /dev/hidraw: logind lets the seat's user read it):
 - Corsair HS70 Pro Wireless (1b1c:0a4f). Asked with the report C9 64, the dongle answers 64 b1 battery b3 state:
-  state 1 while the headset's on, 0 while it's off (the battery 0 then). Tried 2026-10-26: turning it on and off,
-  and muting and unmuting (mute doesn't change the answer at all; b1 is 0x80 for the 2 s it takes to power down).
+  state 0 while the headset's off (the battery 0 then); on, 1, or 2 with its battery low, 4 or 5 while it's
+  charging (HeadsetControl's lib/devices/corsair_device.hpp). Tried 2026-10-26: turning it on and off, and muting
+  and unmuting (mute doesn't change the answer at all; b1 is 0x80 for the 2 s it takes to power down). Until
+  2026-11-10 only 1 counted as on, so a headset with a low battery, or charging, was taken for off: the webcam
+  was recorded while you spoke into the headset.
 """
 import logging
 import os
@@ -33,7 +36,7 @@ def _corsair_on(fd):
             break
         reply = os.read(fd, 64)
         if reply[:1] == b"\x64" and len(reply) >= 5:  # (other reports may come too: not ours)
-            return reply[4] == 1
+            return reply[4] != 0
     return None
 
 

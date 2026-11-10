@@ -9,6 +9,7 @@ import pytest
 from dictate import headsets
 
 ON, OFF, POWERING_DOWN = "64 00 5a b1 01", "64 00 00 33 00", "64 80 5b b1 01"  # (the real dongle's answers)
+LOW, CHARGING, CHARGED = "64 00 0a b1 02", "64 00 32 b1 04", "64 00 64 b1 05"  # (per HeadsetControl)
 
 
 @pytest.fixture
@@ -69,6 +70,13 @@ def test_a_headset_that_is_on_is_not(machine):
     assert headsets.off(2) is False
     machine["answers"] = [POWERING_DOWN]  # (still connected, for the 2 s it takes)
     assert headsets.off(2) is False
+
+
+def test_a_headset_with_a_low_battery_or_charging_is_on(machine):
+    """It was taken for off, so the next microphone (the webcam) was recorded while you spoke into it."""
+    for answer in (LOW, CHARGING, CHARGED):
+        machine["answers"] = [answer]
+        assert headsets.off(2) is False, answer
 
 
 def test_other_reports_from_the_dongle_are_not_its_answer(machine):
