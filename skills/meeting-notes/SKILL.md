@@ -1,14 +1,13 @@
 ---
 name: meeting-notes
-description: Ask Dictate, the user's local transcription app, for their meeting transcripts or summaries about a topic. The user picks in a Dictate window which ones, if any, to share.
+description: Ask Dictate, the user's local transcription app, for their meeting transcripts or summaries about a topic. Use whenever the user's meetings or calls might help: asking is safe, because the user picks in a Dictate window which ones, if any, to share.
 argument-hint: <what you're looking for>
-disable-model-invocation: true
 allowed-tools: Bash(python3 {SCRIPT} *)
 ---
 
-The user wants you to look at their meeting transcripts, from Dictate. Dictate keeps them on this computer and only gives you the ones the user chooses, each time.
+This is how you look at the user's meeting transcripts, from Dictate. Dictate keeps them on this computer and only gives you the ones the user chooses, each time.
 
-1. Work out what you're looking for, in a sentence: from what the user wrote after /meeting-notes ($ARGUMENTS), and what you're working on together. If that's unclear, ask the user first. The user reads this sentence when they decide, so make it plain and specific.
+1. Work out what you're looking for, in a sentence: from what the user asked ($ARGUMENTS, if they ran /meeting-notes), and what you're working on together. If that's unclear, ask the user first. The user reads this sentence when they decide, so make it plain and specific.
 2. Run, with the Bash tool and a timeout of 600000 ms (the user may take a few minutes to choose):
    `python3 {SCRIPT} "<what you're looking for>"`
    A window opens on the user's screen; the command waits until they answer.

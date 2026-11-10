@@ -227,7 +227,7 @@ def test_settings_installs_the_skill_and_the_block_and_the_block_can_be_turned_o
 
     eventually(lambda: (claude / "skills/meeting-notes/SKILL.md").exists())
     skill = (claude / "skills/meeting-notes/SKILL.md").read_text()
-    assert str(ROOT / "scripts/meeting_notes.py") in skill and "disable-model-invocation: true" in skill
+    assert str(ROOT / "scripts/meeting_notes.py") in skill and "disable-model-invocation" not in skill
     rule = f"Read(/{app.data.resolve()}/**)"
     assert settings_json(app) == {"theme": "dark", "permissions": {"deny": ["Read(./.env)", rule]}}
 

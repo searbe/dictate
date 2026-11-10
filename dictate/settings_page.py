@@ -56,9 +56,9 @@ class SettingsPage:
                    there if there in [SAME, None, *names] else None,
                    lambda v: refinements.set_remote_default(v, same=v is SAME))),
             ("Claude Code",),
-            ("/meeting-notes", "A skill for every Claude Code session: /meeting-notes asks Dictate for transcripts "
-                               "about something, and you choose which to share, if any. Installing it also turns on "
-                               "the block below.",
+            ("/meeting-notes", "A skill for every Claude Code session: you or Claude can use it to ask Dictate for "
+                               "transcripts about something, and you choose which to share, if any. Installing it "
+                               "also turns on the block below.",
              d.button("Remove" if claude_code.skill_installed() else "Install", self.toggle_skill, small=True)),
             ("Let Claude Code ask for transcripts", "Each time, a window here asks which to share. Off: every request "
                                                     "is refused without asking.",
