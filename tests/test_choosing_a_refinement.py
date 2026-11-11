@@ -118,12 +118,13 @@ def test_alt_alone_asks_which_refinement_and_its_letter_applies_it(start, model)
 
 
 def test_an_alt_letter_that_is_no_refinements_is_another_apps_shortcut(start):
-    """Ctrl+Win+Alt+Z: not a refinement's letter, so it's someone else's shortcut, and nothing is pasted."""
+    """Ctrl+Win+Alt+Z: not a refinement's letter, so it's someone else's shortcut: nothing is pasted (what was said
+    is kept, as for any other key)."""
     app = start(refinements=REFINEMENTS)
 
     assert app.dictate("hello", alt=True, letter="z") is None
     assert "Refine" not in app.send("windows")["titles"]
-    assert app.dictations() == []
+    assert [d["text"] for d in app.dictations()] == ["hello"]
 
 
 def test_enter_in_the_picker_pastes_the_cleaned_up_text_as_is(start, model):

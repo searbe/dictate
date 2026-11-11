@@ -48,7 +48,7 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 
 | Area | File |
 |---|---|
-| Dictating: cleanup, clipboard, Ctrl+V / Ctrl+Shift+V in terminals, the Dictations list, nothing heard, refine off, recordings kept or not, the hotkey itself, another key with it being another app's shortcut, hands-free with Space (on through Ctrl+Win alone or another shortcut, ended by Ctrl+Win+Space, Alt+letter still choosing) | `test_dictation.py` |
+| Dictating: cleanup, clipboard, Ctrl+V / Ctrl+Shift+V in terminals, the Dictations list, nothing heard, refine off, recordings kept or not, the hotkey itself, another key with it (Shift too) being another app's shortcut (not pasted, but kept and copied, with a notification; nothing kept if nothing was said), hands-free with Space (on through Ctrl+Win alone or another shortcut, ended by Ctrl+Win+Space, Alt+letter still choosing) | `test_dictation.py` |
 | Choosing a refinement: by window title or app, title changes without refocusing, default refinement, Alt+letter (one that's no refinement's being another app's shortcut), the picker (letter, Enter, Escape, click) | `test_choosing_a_refinement.py` |
 | Real windows on a real KWin, reported by Dictate's KWin script (incl. the Gmail → WhatsApp tab bug) | `test_focused_window.py` |
 | The model: vocabulary and window context in the prompt, loading on key press, unloading when idle, never outliving Dictate, rejecting answers / placeholders / rewrites, errors and a missing llama-server | `test_refinement_model.py` |

@@ -127,11 +127,29 @@ def test_win_alone_or_ctrl_alone_does_nothing(start):
     assert not app.happened("recording", after=mark)
 
 
-def test_another_key_with_ctrl_win_is_another_apps_shortcut_and_drops_the_recording(start):
-    """e.g. Ctrl+Win+→ switches desktop: whatever you were saying meanwhile mustn't be pasted."""
-    app = start(refinements=[])
+def test_another_key_with_ctrl_win_ends_it_unpasted_but_keeps_and_copies_what_was_said(start):
+    """e.g. Ctrl+Win+→ switches desktop, or a key touched by accident: nothing's pasted, but nothing said is lost."""
+    app = start(refinements=[], settings={"refine": False})
     mark = app.mark()
     app.send("say", text="and then we talked about the budget")
+    app.send("keys", down=["ctrl", "meta"])
+    app.wait_for("recording", after=mark)
+
+    app.send("keys", down=["right"], up=["right"])
+
+    note = app.wait_for("notified", after=mark)  # (ended at once, without waiting for Ctrl+Win to be let go)
+    assert note["title"] == "Dictation copied, not pasted"
+    app.send("keys", up=["meta", "ctrl"])
+    time.sleep(0.8)
+    assert not app.happened("pasted", after=mark) and not app.happened("typed", after=mark)
+    assert app.send("clipboard")["text"] == "and then we talked about the budget"
+    assert app.dictations()[0]["text"] == "and then we talked about the budget"
+
+
+def test_another_apps_shortcut_with_nothing_said_leaves_no_trace(start):
+    app = start(refinements=[])
+    mark = app.mark()
+    app.send("say", text=None)
     app.send("keys", down=["ctrl", "meta"])
     app.wait_for("recording", after=mark)
 
@@ -140,21 +158,27 @@ def test_another_key_with_ctrl_win_is_another_apps_shortcut_and_drops_the_record
 
     app.wait_for("icon", after=mark, state="idle")
     time.sleep(0.8)
-    assert not app.happened("pasted", after=mark) and not app.happened("typed", after=mark)
+    assert not app.happened("notified", after=mark) and not app.happened("pasted", after=mark)
     assert app.dictations() == []
-    assert list((app.data / "audio").glob("*.wav")) == []  # the recording isn't kept either
+    assert list((app.data / "audio").glob("*.wav")) == []
 
 
-def test_ctrl_win_pressed_while_another_key_is_held_does_not_record(start):
-    """e.g. Shift held first: Shift+Ctrl+Win+→ moves a window to another desktop."""
-    app = start(refinements=[])
+def test_shift_touched_while_dictating_ends_it_like_any_other_key_keeping_what_was_said(start):
+    """Shift with Ctrl+Win may be another app's shortcut, so it isn't pasted; touched by accident, nothing's lost."""
+    app = start(refinements=[], settings={"refine": False})
     mark = app.mark()
+    app.send("say", text="an accidental shift")
+    app.send("keys", down=["ctrl", "meta"])
+    app.wait_for("recording", after=mark)
 
-    app.send("keys", down=["shift", "ctrl", "meta"])
-    app.send("keys", up=["meta", "ctrl", "shift"])
+    app.send("keys", down=["shift"], up=["shift"])
+    app.send("keys", up=["meta", "ctrl"])
 
-    time.sleep(0.5)
-    assert not app.happened("recording", after=mark)
+    app.wait_for("notified", after=mark)
+    time.sleep(0.8)
+    assert not app.happened("pasted", after=mark)
+    assert app.send("clipboard")["text"] == "an accidental shift"
+    assert app.dictations()[0]["text"] == "an accidental shift"
 
 
 def test_after_another_apps_shortcut_win_again_is_an_ordinary_dictation(start):

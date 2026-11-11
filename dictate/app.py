@@ -241,7 +241,8 @@ class App:
         else:
             log.info("recording")
 
-    def stop_recording(self, alt, letter):
+    def stop_recording(self, alt, letter, paste=True):
+        """paste False: it's kept and copied, not pasted (another key was pressed with Ctrl+Win)."""
         if self.session:
             self.session.mute("me", False)
         rec, self.rec = self.rec, None
@@ -253,14 +254,16 @@ class App:
         self.set_state("busy")
         refining = self.settings["refine"] or alt  # Alt asks for a refinement, which always includes cleanup
         dictation = Dictation(window, self.wav, cleanup=refining)
-        threading.Thread(target=self.process, args=(dictation, rec, self.live, alt, letter), daemon=True).start()
+        threading.Thread(target=self.process, args=(dictation, rec, self.live, alt, letter, paste),
+                         daemon=True).start()
 
     def on_other_shortcut(self):
-        """Another key pressed with Ctrl+Win (e.g. Ctrl+Win+→ switching desktops): another app's shortcut,
-        not a dictation. Drop the recording, so nothing said meanwhile is pasted."""
+        """Another key pressed with Ctrl+Win (e.g. Ctrl+Win+→ switching desktops, or a key touched by accident):
+        another app's shortcut, so nothing's pasted. Whatever was said so far isn't lost: it's kept in Dictations
+        and copied, and a notification says so."""
         if self.rec:
-            self.drop_recording()
-            log.info("recording dropped: Ctrl+Win was part of another shortcut")
+            log.info("recording ended: another key was pressed with Ctrl+Win; kept and copied, not pasted")
+            self.stop_recording(False, None, paste=False)
 
     def drop_recording(self):
         """Stop recording and throw it away: nothing said is pasted or kept."""
@@ -279,10 +282,11 @@ class App:
             Path(wav).unlink(missing_ok=True)
         threading.Thread(target=drop, daemon=True).start()
 
-    def process(self, dictation, rec, live, alt, letter):
+    def process(self, dictation, rec, live, alt, letter, paste=True):
         """On a worker thread: stop recording → transcribe → cleanup → a refinement: Alt+letter's, or (Alt alone,
         or a refinement's letter since deleted) ask which, or (no Alt) the refinement matching the focused app,
-        else the default refinement. Then paste (on the GTK thread)."""
+        else the default refinement. Then paste (on the GTK thread); paste False: only keep and copy it, and
+        say so."""
         d, context = dictation, dictation.window.describe()
         try:
             rec.stop()  # here, not on the GTK thread: pw-record takes ~0.35 s to finish the file
@@ -308,7 +312,15 @@ class App:
         finally:
             if d.cleanup:
                 llm.server.release()
-        GLib.idle_add(self.paste, d)
+        GLib.idle_add(self.paste, d) if paste else GLib.idle_add(self.keep_unpasted, d)
+
+    def keep_unpasted(self, d):
+        """Ended by another key: kept and copied, not pasted; say so (if anything was heard)."""
+        self.paste(d, paste=False)
+        if d.text and d.audio != self.cancelled:
+            osio.notify("Dictation copied, not pasted", "Another key was pressed while you held Ctrl+Win, so "
+                        "it wasn't pasted. It's on the clipboard and in Dictations.")
+        return False
 
     def pick_refinement(self, dictation):
         """Alt was tapped without a refinement's letter: ask which (or none) and paste the result."""

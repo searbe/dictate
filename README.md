@@ -114,7 +114,7 @@ speaking and unloaded after 30 seconds unused, so it doesn't hold the graphics c
 | **+ Alt** (tap, while holding) | Pick a refinement when you let go (Enter pastes as is, Esc only copies) |
 | **+ Alt+letter** | Use that refinement |
 | **+ Space** | Hands-free: let go and keep talking; **Ctrl+Win+Space** again ends it and pastes |
-| **+ any other key** | It's another app's shortcut (e.g. Ctrl+Win+→): nothing is pasted |
+| **+ any other key** | It's another app's shortcut (e.g. Ctrl+Win+→): the dictation ends and isn't pasted, but what you'd said is copied and kept in Dictations |
 | **Ctrl, then Win twice** | Start or stop transcribing a call: hold Ctrl and tap Win twice (or **Stop**, or the menu) |
 | **Right-click the capsule** | The menu: refine text on or off, the default refinement, your dictations, transcripts and settings |
 
