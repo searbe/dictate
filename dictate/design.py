@@ -732,6 +732,161 @@ def place_beside(win, near):
     win.move(max(left, area.x), top)
 
 
+
+class Toast:
+    """A moment's notice from the capsule: a small HUD card above or below its dot (toward the middle of the screen),
+    with a pointer on the edge nearest it, so it reads as the capsule speaking. It doesn't take focus. With buttons
+    (it asks you to do something) it stays until one's clicked or it's closed; without, it goes after SECONDS (not
+    while the pointer's on it) or when clicked. on_close() once it's gone, however."""
+    SECONDS = 6  # how long a toast without buttons stays
+    AGAIN = 3  # seconds it stays once the pointer's left it
+    MARGIN = 16  # room around the card for its shadow
+    POINTER = 8  # how far the pointer reaches out of the card (and half its width)
+    GAP = 4  # between the pointer's tip and the dot
+
+    def __init__(self, title, body=None, near=None, icon=None, warning=False, buttons=(), width=300,
+                 on_close=lambda: None):
+        """near: (x, y, w, h) of the capsule's dot on screen. buttons: (label, action, kind) each, the primary last;
+        clicking one closes the toast after its action."""
+        self.on_close, self.warning, self.timer, self.closed = on_close, warning, None, False
+        x, y, w, h = near
+        area = Gdk.Display.get_default().get_monitor_at_point(x + w // 2, y + h // 2).get_workarea()
+        self.side = "top" if y + h / 2 < area.y + area.height / 2 else "bottom"  # the pointer's edge: toward the dot
+        self.win = classes(Gtk.Window(title=title, decorated=False, resizable=False, app_paintable=True,
+                                      skip_taskbar_hint=True, skip_pager_hint=True, accept_focus=False,
+                                      focus_on_map=False, type_hint=Gdk.WindowTypeHint.NOTIFICATION), "hud-window")
+        visual = self.win.get_screen().get_rgba_visual()
+        if visual:
+            self.win.set_visual(visual)
+        grayscale(self.win)
+        self.win.set_keep_above(True)
+        m, pointer = self.MARGIN, self.MARGIN + self.POINTER
+        self.card = classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, width_request=width,
+                                    margin_start=m, margin_end=m, margin_top=pointer if self.side == "top" else m,
+                                    margin_bottom=pointer if self.side == "bottom" else m), "toast")
+        row = Gtk.Box(spacing=8)
+        if icon:
+            mark = classes(Icon(icon), "warning-text" if warning else "accent-text")
+            mark.set_valign(Gtk.Align.START)
+            row.pack_start(mark, False, False, 0)
+        words = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+        words.pack_start(text(title, "body-strong", wrap=True, max_chars=40), False, False, 0)
+        if body:
+            words.pack_start(text(body, "small", wrap=True, max_chars=44), False, False, 0)
+        row.pack_start(words, True, True, 0)
+        self.card.pack_start(row, False, False, 0)
+        if buttons:
+            actions = Gtk.Box(spacing=8)
+            for label, action, kind in reversed(buttons):
+                actions.pack_end(button(label, lambda a=action: (a(), self.close()), kind, small=True), False, False, 0)
+            self.card.pack_start(actions, False, False, 0)
+        self.win.add(self.card)
+        self.win.connect("draw", self._draw)
+        self.win.connect("map-event", lambda win, _: blur_behind(win, self.card) and False)
+        self.win.connect("destroy", lambda _: self._gone())
+        if not buttons:  # (a notice: it goes by itself, or when clicked)
+            self.win.add_events(Gdk.EventMask.BUTTON_PRESS_MASK | Gdk.EventMask.ENTER_NOTIFY_MASK
+                                | Gdk.EventMask.LEAVE_NOTIFY_MASK)
+            self.win.connect("button-press-event", lambda *_: self.close())
+            self.win.connect("enter-notify-event", lambda *_: self._wait(None))
+            self.win.connect("leave-notify-event", lambda *_: self._wait(self.AGAIN))
+            self._wait(self.SECONDS)
+        self.card.show_all()
+        self._place(near, area)
+        self.win.show_all()
+
+    def _place(self, near, area):
+        """Above or below the dot, the pointer's tip by it; the card reaching toward the middle of the screen."""
+        x, y, w, h = near
+        cw = self.card.get_preferred_size()[1].width
+        ch = self.card.get_preferred_size()[1].height
+        ww, wh = cw + 2 * self.MARGIN, ch + 2 * self.MARGIN + self.POINTER
+        dot = x + w / 2
+        inset = R_LG + 4 + self.POINTER  # (the pointer clear of the card's rounded corners)
+        left = dot - inset if dot < area.x + area.width / 2 else dot - cw + inset
+        left = min(max(left, area.x), area.x + area.width - cw)
+        self.point = min(max(dot - left, inset), cw - inset)  # where the pointer is, along the card
+        top = y + h + self.GAP if self.side == "top" else y - self.GAP - self.POINTER - ch
+        self.win.set_default_size(ww, wh)
+        self.win.move(int(left) - self.MARGIN, int(top) - self.MARGIN)  # (the window's margin: room for the shadow)
+
+    def _draw(self, widget, cr, clear=True):
+        """The card and its pointer as one shape: a soft shadow, the hud fill, its border and top highlight (on a
+        cleared window, unless not clear: e.g. over a picture of a desktop)."""
+        if clear:
+            cr.set_operator(cairo.OPERATOR_SOURCE)
+            cr.set_source_rgba(0, 0, 0, 0)
+            cr.paint()
+            cr.set_operator(cairo.OPERATOR_OVER)
+        a = self.card.get_allocation()
+        x, y, w, h = a.x + 0.5, a.y + 0.5, a.width - 1, a.height - 1
+        for i in range(6):  # a soft shadow, as the capsule's
+            cr.save()
+            cr.translate(0, 3)
+            self._outline(cr, x, y, w, h)
+            cr.set_line_width(2 * (6 - i))
+            cr.set_source_rgba(0, 0, 0, 0.035 if scheme == "dark" else 0.02)
+            cr.stroke()
+            cr.restore()
+        self._outline(cr, x, y, w, h)
+        source(cr, "hud")
+        cr.fill_preserve()
+        source(cr, "warning-weak" if self.warning else "line-strong")
+        cr.set_line_width(1)
+        cr.stroke()
+        cr.move_to(x + R_LG, y + 1)  # the top highlight
+        cr.line_to(x + w - R_LG, y + 1)
+        source(cr, "highlight")
+        cr.stroke()
+        return False  # (its content draws over it)
+
+    def _outline(self, cr, x, y, w, h):
+        """The card's rounded rectangle with the pointer on its side edge, one path."""
+        r, p, px = R_LG, self.POINTER, x + self.point
+        cr.new_path()
+        cr.move_to(x + r, y)
+        if self.side == "top":
+            cr.line_to(px - p, y)
+            cr.line_to(px, y - p)
+            cr.line_to(px + p, y)
+        cr.arc(x + w - r, y + r, r, -math.pi / 2, 0)
+        cr.arc(x + w - r, y + h - r, r, 0, math.pi / 2)
+        if self.side == "bottom":
+            cr.line_to(px + p, y + h)
+            cr.line_to(px, y + h + p)
+            cr.line_to(px - p, y + h)
+        cr.arc(x + r, y + h - r, r, math.pi / 2, math.pi)
+        cr.arc(x + r, y + r, r, math.pi, 3 * math.pi / 2)
+        cr.close_path()
+
+    def _wait(self, seconds):
+        """Go after seconds (None: not while the pointer's on it)."""
+        if self.timer:
+            GLib.source_remove(self.timer)
+        self.timer = seconds and GLib.timeout_add_seconds(seconds, lambda: self.close() and False)
+
+    def _gone(self):
+        if not self.closed:
+            self.closed = True
+            if self.timer:
+                GLib.source_remove(self.timer)
+                self.timer = None
+            self.on_close()
+
+    def close(self):
+        if not self.closed:
+            self.win.destroy()
+
+    @property
+    def open(self):
+        return not self.closed and self.win.get_mapped()
+
+def source(cr, colour):
+    """Paint with a token's colour (or any CSS colour)."""
+    c = rgba(colour)
+    cr.set_source_rgba(c.red, c.green, c.blue, c.alpha)
+
+
 # --- drawing text in cairo (the capsule) ---
 def layout(cr, words, kind="caption", colour="text", tabular=False):
     """A Pango layout of words in a type style, for drawing with cairo; returns (layout, width, height)."""

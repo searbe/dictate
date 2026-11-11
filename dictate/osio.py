@@ -50,30 +50,37 @@ def plain(text):
     return "".join(c for c in text if not unicodedata.combining(c))
 
 
-_notified = {}  # notification id: on_action, for the buttons of the ones still showing
+_notified = {}  # notification id: on_action, for those still showing
+_listening = []  # the session bus, once listening for clicks and closes (once: not again for every notification)
+NOTICE = 8000  # ms a notification without buttons stays (one with buttons asks you to do something: it stays)
 
 
 def notify(title, body, actions=(), on_action=lambda key: None, image=None):
-    """A desktop notification that stays until it's dismissed, with buttons (actions: [(key, label)]);
-    on_action(key) runs on the GTK thread when one's clicked; image: a PNG's path. Linux only (the
-    freedesktop Notifications service); elsewhere, or if there's none, it's only logged."""
+    """A desktop notification, with buttons (actions: [(key, label)]): it stays until it's dismissed; without
+    any, it goes after NOTICE. on_action(key) runs on the GTK thread when one's clicked; image: a PNG's path.
+    Linux only (the freedesktop Notifications service); elsewhere, or if there's none, it's only logged. Each is
+    forgotten once it's closed, however."""
     log.info("notification: %s - %s", title, body)
     if not LINUX:
         return
     from gi.repository import Gio
     try:
         bus = Gio.bus_get_sync(Gio.BusType.SESSION)
-        if not _notified:
-            bus.signal_subscribe("org.freedesktop.Notifications", "org.freedesktop.Notifications", "ActionInvoked",
-                                 "/org/freedesktop/Notifications", None, Gio.DBusSignalFlags.NONE,
-                                 lambda *a: _clicked(*a[5].unpack()))
+        if not _listening:
+            for signal, then in (("ActionInvoked", _clicked), ("NotificationClosed", _closed)):
+                bus.signal_subscribe("org.freedesktop.Notifications", "org.freedesktop.Notifications", signal,
+                                     "/org/freedesktop/Notifications", None, Gio.DBusSignalFlags.NONE,
+                                     lambda *a, then=then: then(*a[5].unpack()))
+            _listening.append(bus)
         hints = {"image-path": GLib.Variant("s", str(image))} if image else {}
         reply = bus.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications",
                               "org.freedesktop.Notifications", "Notify",
                               GLib.Variant("(susssasa{sv}i)", ("Dictate", 0, str(ROOT / "dictate/icon.png"), title,
-                                                               body, [x for a in actions for x in a], hints, 0)),
+                                                               body, [x for a in actions for x in a], hints,
+                                                               0 if actions else NOTICE)),
                               None, Gio.DBusCallFlags.NONE, 2000, None)
-        _notified[reply.unpack()[0]] = on_action
+        if actions:
+            _notified[reply.unpack()[0]] = on_action
     except GLib.Error as err:
         log.warning("notification: couldn't show it: %s", err.message)
 
@@ -81,6 +88,10 @@ def notify(title, body, actions=(), on_action=lambda key: None, image=None):
 def _clicked(nid, key):
     if nid in _notified:
         _notified.pop(nid)(key)
+
+
+def _closed(nid, _reason):
+    _notified.pop(nid, None)
 
 
 def dbus_register(conn, path, interface, method_call, get_property=None):

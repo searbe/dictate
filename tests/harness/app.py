@@ -27,7 +27,7 @@ dictate.bootstrap()
 import numpy as np
 from gi.repository import Gdk, GLib, Gtk
 
-from dictate import llm, microphone, osio, stt, summary, topics, transcript, voices
+from dictate import design, llm, microphone, osio, stt, summary, topics, transcript, voices
 
 
 def event(kind, **fields):
@@ -147,6 +147,8 @@ if not REAL_SPEECH and not REAL_SPEAKERS:
     stt.transcribe = lambda path: heard.get(str(path)) or ""
 llm.SERVER = Path(os.environ["DICTATE_TEST_LLAMA"])
 llm.CONTEXT = int(os.environ.get("DICTATE_TEST_CONTEXT", llm.CONTEXT))  # (the fake model's too: its command line)
+if os.environ.get("DICTATE_TEST_TOAST"):  # seconds a toast stays (and stays once the pointer's left it)
+    design.Toast.SECONDS = design.Toast.AGAIN = int(os.environ["DICTATE_TEST_TOAST"])
 if os.environ.get("DICTATE_TEST_SLOW_CUT"):  # preparing a transcript's playback takes a while (a long call)
     _cut = transcript.cut
     transcript.cut = lambda *a: (time.sleep(float(os.environ["DICTATE_TEST_SLOW_CUT"])), _cut(*a))[1]
@@ -436,6 +438,19 @@ def cmd_microphones(connected, noticed=True):
 def cmd_gpu(state):
     """The graphics card becomes "free" or "busy" (a game starts or stops)."""
     gpu["state"] = state
+
+
+def cmd_toast():
+    """The capsule's toast, as it's seen: its title, the window's place (x, y, w, h), which edge its pointer's on
+    (top: it's below the capsule) and where the pointer's tip is on screen; and where the capsule's dot is."""
+    t = app.toasting
+    if not (t and t.open):
+        return {"open": False}
+    (x, y), (w, h) = t.win.get_position(), t.win.get_size()
+    tip_y = y + t.MARGIN if t.side == "top" else y + h - t.MARGIN
+    return {"open": True, "title": t.win.get_title(), "window": [x, y, w, h], "side": t.side,
+            "tip": [x + t.MARGIN + t.point, tip_y], "dot": list(app.capsule.dot_rect()),
+            "focus": t.win.has_toplevel_focus()}
 
 
 def cmd_hide_icon():

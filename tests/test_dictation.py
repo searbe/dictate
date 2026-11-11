@@ -3,7 +3,7 @@ import os
 import time
 
 from conftest import needs_session
-from harness.client import refinement
+from harness.client import eventually, refinement
 
 pytestmark = needs_session
 
@@ -137,8 +137,8 @@ def test_another_key_with_ctrl_win_ends_it_unpasted_but_keeps_and_copies_what_wa
 
     app.send("keys", down=["right"], up=["right"])
 
-    note = app.wait_for("notified", after=mark)  # (ended at once, without waiting for Ctrl+Win to be let go)
-    assert note["title"] == "Dictation copied, not pasted"
+    eventually(lambda: app.send("toast")["open"])  # (ended at once, without waiting for Ctrl+Win to be let go)
+    assert app.send("toast")["title"] == "Copied, not pasted"
     app.send("keys", up=["meta", "ctrl"])
     time.sleep(0.8)
     assert not app.happened("pasted", after=mark) and not app.happened("typed", after=mark)
@@ -158,7 +158,7 @@ def test_another_apps_shortcut_with_nothing_said_leaves_no_trace(start):
 
     app.wait_for("icon", after=mark, state="idle")
     time.sleep(0.8)
-    assert not app.happened("notified", after=mark) and not app.happened("pasted", after=mark)
+    assert not app.send("toast")["open"] and not app.happened("pasted", after=mark)
     assert app.dictations() == []
     assert list((app.data / "audio").glob("*.wav")) == []
 
@@ -174,7 +174,7 @@ def test_shift_touched_while_dictating_ends_it_like_any_other_key_keeping_what_w
     app.send("keys", down=["shift"], up=["shift"])
     app.send("keys", up=["meta", "ctrl"])
 
-    app.wait_for("notified", after=mark)
+    eventually(lambda: app.send("toast")["open"])
     time.sleep(0.8)
     assert not app.happened("pasted", after=mark)
     assert app.send("clipboard")["text"] == "an accidental shift"

@@ -148,6 +148,13 @@ Build every surface from these, in `design.py`; add a component here before usin
   reminder): r-lg, `hud` fill, border and top highlight, 16 padding, a title, short body, buttons at the bottom
   right (the safe choice left of the primary). Opens with `fade`, near what it's about (the capsule, the pointer
   or the screen's centre). Escape cancels; Enter takes the primary.
+- **Toast.** A moment's notice from the capsule ("Copied, not pasted"): a small HUD card, 300 wide, 12/16
+  padding, an icon (accent; warning when it's one), a body-strong line and a small line under it. It sits above
+  or below the capsule's dot, toward the middle of the screen, with an 8 px pointer on that edge at the dot, so
+  it reads as the capsule speaking; card and pointer are one drawn shape with the HUD fill, border, highlight and
+  shadow. It never takes focus. A notice goes after 6 s (not while the pointer's on it; 3 s after it leaves) or
+  when clicked; one that asks for something has small buttons and stays until answered. One at a time. With the
+  capsule off screen, a desktop notification says it instead (which also goes by itself unless it asks).
 - **Warning strip.** warning-weak background, warning text and icon, r-sm, inside a page or HUD.
 - **Scrollbar.** Thin and quiet: a 3 px rounded line in `line-strong`, no trough or arrows; 6 px in `text-3`
   while hovered or dragged. Overlaid on the content where the desktop allows.

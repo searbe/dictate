@@ -6,7 +6,7 @@ Dictate does, see the [README](../README.md).
 ## How it works
 - **Hotkey:** the keyboard is read directly (evdev on Linux), so **Ctrl+Win** works in every app, and any other key
   pressed with it (e.g. Ctrl+Win+→ to switch desktop) is left to its own shortcut: the dictation ends there, unpasted, but what was said is
-  kept in Dictations and copied, with a notification saying so. Space with it makes the dictation
+  kept in Dictations and copied, with a toast by the capsule saying so. Space with it makes the dictation
   hands-free: it goes on after you let go, through Ctrl+Win alone or other shortcuts, until Ctrl+Win+Space again. Transcribe mode starts or stops
   on two taps of Win with Ctrl held, each under half a second, the second within a second of the first. A longer
   press is always a dictation, so pressing Win again at the end of one, or tapping and then holding Win to speak,

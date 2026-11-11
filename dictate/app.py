@@ -75,6 +75,7 @@ class App:
         self.session = None  # the call being transcribed
         self.hub = None  # the Dictate window, while open
         self.reminder = None  # the reminder that a transcript is still being recorded, while it's shown
+        self.toasting = None  # the capsule's toast (design.Toast), while it's shown
         self.flash_until = 0.0  # while the icons flash: until when
 
         self.capsule = capsule.Capsule()
@@ -318,9 +319,18 @@ class App:
         """Ended by another key: kept and copied, not pasted; say so (if anything was heard)."""
         self.paste(d, paste=False)
         if d.text and d.audio != self.cancelled:
-            osio.notify("Dictation copied, not pasted", "Another key was pressed while you held Ctrl+Win, so "
-                        "it wasn't pasted. It's on the clipboard and in Dictations.")
+            self.toast("Copied, not pasted", "Another key was pressed with Ctrl+Win. It's on the clipboard and in "
+                       "Dictations.", icon="copy")
         return False
+
+    def toast(self, title, body, icon=None):
+        """A moment's notice from the capsule, beside it (design.Toast); if it isn't on screen, a desktop
+        notification. It goes by itself; a new one replaces it."""
+        if self.toasting and self.toasting.open:
+            self.toasting.close()
+        if not self.capsule.on_screen():
+            return osio.notify(title, body)
+        self.toasting = design.Toast(title, body, near=self.capsule.dot_rect(), icon=icon)
 
     def pick_refinement(self, dictation):
         """Alt was tapped without a refinement's letter: ask which (or none) and paste the result."""

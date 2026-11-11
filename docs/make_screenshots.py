@@ -21,7 +21,7 @@ import cairo
 import gi
 
 gi.require_version("PangoCairo", "1.0")
-from gi.repository import GLib, Gtk, PangoCairo
+from gi.repository import Gdk, GLib, Gtk, PangoCairo
 
 from dictate import capsule, design, history, hub, huds, osio, refinements, summary, topics, transcript, voices
 from dictate.refinements_page import RefinementsPage
@@ -122,6 +122,32 @@ def paint_backdrop(cr, w, h):
         g.add_color_stop_rgb(1, 0.93, 0.91, 0.95)
     cr.set_source(g)
     cr.paint()
+
+
+def toast_shot(path, cap):
+    """A toast above the capsule (as when it's in the bottom corner), its pointer at the dot, over a backdrop."""
+    area = Gdk.Display.get_default().get_monitor(0).get_workarea()
+    toast = design.Toast("Copied, not pasted", "Another key was pressed with Ctrl+Win. It's on the clipboard and in "
+                         "Dictations.", near=(area.x + 200, area.y + area.height - 60, 36, 36), icon="copy")
+    toast.win.hide()
+    card = toast.card
+    toast.win.remove(card)
+    picture = cap.picture()
+    holder = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+    holder.pack_start(card, False, False, 0)
+    holder.pack_start(Gtk.Box(height_request=picture.get_height() - capsule.PAD + toast.GAP - toast.MARGIN + 8),
+                      False, False, 0)
+
+    def draw(widget, cr):
+        paint_backdrop(cr, widget.get_allocated_width(), widget.get_allocated_height())
+        toast._draw(widget, cr, clear=False)
+        a = card.get_allocation()
+        x = toast.MARGIN + toast.point - capsule.H / 2 - capsule.PAD
+        Gdk.cairo_set_source_pixbuf(cr, picture, x, a.y + a.height + toast.POINTER + toast.GAP - capsule.PAD)
+        cr.paint()
+    holder.connect("draw", draw)
+    save(holder, path, (-1, -1), ("hud-window",))
+    toast.win.destroy()
 
 
 def fake_app(tmp, session=None):
@@ -257,6 +283,10 @@ def main(out):
     save(reminder.hud.card, out / "reminder.png", (-1, -1), ("hud-window",), backdrop=True)
     reminder.hud.win.destroy()
     capsule_states(out / "capsule-states.png", live)
+    idle = capsule.Capsule()
+    idle.update("idle", None)
+    idle.width = idle.target
+    toast_shot(out / "toast.png", idle)
     if out == DOCS:
         wrote(design.save_app_icon())
     shutil.rmtree(tmp)
