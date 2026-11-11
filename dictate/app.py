@@ -208,15 +208,15 @@ class App:
     # --- dictating ---
     def on_hotkey(self, down, alt, letter):
         """Ctrl+Win pressed or let go (or Alt pressed mid-hold). alt: Alt was touched during the hold; letter:
-        a refinement's letter pressed with it."""
+        a refinement's letter pressed with it. (Hands-free, Ctrl+Win+Space: let go only on Ctrl+Win+Space again.)"""
         if down and not self.rec:
             if remote.on_remote_screen() and self.settings["remote_mode"] == "ignore":
-                return  # e.g. the other computer runs its own Dictate
+                return self.hotkey.chord.refuse()  # e.g. the other computer runs its own Dictate
             if self.paused_alert():
                 log.info("not dictating: the paused transcript needs resuming or stopping first")
                 self.reminder.asked_to_dictate()
                 self.draw_attention(focus=True)
-                return
+                return self.hotkey.chord.refuse()
             self.start_recording()
         if down and (self.settings["refine"] or alt):
             llm.server.warm()  # load the model while the user is still speaking

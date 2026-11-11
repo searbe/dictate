@@ -194,3 +194,34 @@ def test_another_key_while_dictating_is_still_another_apps_shortcut(plugged):
     kb.key(e.KEY_RIGHT, True)
 
     eventually(lambda: calls == [True, "other"])
+
+
+def test_space_while_dictating_makes_it_hands_free_until_space_again(plugged):
+    kb = plugged(1)
+    _, calls = hotkey(plugged)
+    chord(kb, True)
+    kb.key(e.KEY_SPACE, True), kb.key(e.KEY_SPACE, False)
+    chord(kb, False)
+    chord(kb, True), chord(kb, False)  # (Ctrl+Win alone: nothing)
+    time.sleep(0.2)
+    eventually(lambda: calls == [True])
+
+    chord(kb, True)
+    kb.key(e.KEY_SPACE, True), kb.key(e.KEY_SPACE, False)
+    chord(kb, False)
+
+    eventually(lambda: calls == [True, False])
+
+
+def test_space_does_not_make_it_hands_free_when_no_dictation_was_started(plugged):
+    """e.g. a paused transcript needs answering first: Ctrl+Win must work as usual next time."""
+    kb = plugged(1)
+    hk, calls = hotkey(plugged)
+    chord(kb, True)
+    eventually(lambda: calls == [True])
+    hk.chord.refuse()
+
+    kb.key(e.KEY_SPACE, True), kb.key(e.KEY_SPACE, False)
+    chord(kb, False)
+
+    eventually(lambda: calls == [True, False])

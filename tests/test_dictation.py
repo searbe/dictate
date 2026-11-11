@@ -169,3 +169,54 @@ def test_after_another_apps_shortcut_win_again_is_an_ordinary_dictation(start):
 
     assert app.result(mark)["text"] == "just a note"
     assert "Transcripts" not in app.send("windows")["titles"]
+
+
+def hands_free(app, speech):
+    """Ctrl+Win+Space, say speech, let go: still dictating. Returns the mark it started at."""
+    mark = app.mark()
+    app.send("say", text=speech)
+    app.send("keys", down=["ctrl", "meta"])
+    app.wait_for("recording", after=mark)
+    app.send("keys", down=["space"], up=["space"])
+    app.send("keys", up=["meta", "ctrl"])
+    return mark
+
+
+def ctrl_win_space(app):
+    app.send("keys", down=["ctrl", "meta", "space"])
+    app.send("keys", up=["space", "meta", "ctrl"])
+
+
+def test_ctrl_win_space_dictates_hands_free_until_ctrl_win_space_again(start):
+    app = start(refinements=[], settings={"refine": False})
+    mark = hands_free(app, "no hands needed")
+
+    time.sleep(0.8)
+    assert not app.happened("icon", after=mark + 1, state="idle")  # let go of Ctrl+Win: still dictating
+    ctrl_win_space(app)
+
+    assert app.result(mark)["text"] == "no hands needed"
+
+
+def test_hands_free_ctrl_win_alone_or_another_apps_shortcut_does_not_end_it(start):
+    app = start(refinements=[], settings={"refine": False})
+    mark = hands_free(app, "still going")
+
+    app.send("keys", down=["ctrl", "meta"], up=["meta", "ctrl"])
+    app.send("keys", down=["ctrl", "meta", "right"], up=["right", "meta", "ctrl"])  # e.g. switching desktops
+    time.sleep(0.8)
+    assert not app.happened("icon", after=mark + 1, state="idle")
+    ctrl_win_space(app)
+
+    assert app.result(mark)["text"] == "still going"
+
+
+def test_hands_free_alt_and_a_letter_choose_its_refinement_as_usual(start, model):
+    model.rules({"prompt": "CLEANUP", "reply": "Hi all."}, {"prompt": "REFINEMENT:Chat", "reply": "hi all!"})
+    app = start(refinements=[refinement("Chat", "c")])
+    mark = hands_free(app, "hi all")
+
+    app.send("keys", down=["ctrl", "meta", "space", "alt", "c"])
+    app.send("keys", up=["c", "alt", "space", "meta", "ctrl"])
+
+    assert app.result(mark)["text"] == "hi all!"

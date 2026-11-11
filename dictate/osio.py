@@ -104,7 +104,12 @@ class Chord:
 
     Any other key with Ctrl+Win (Ctrl+Win+→, Shift, Alt and a letter that's no refinement's: letters() gives the
     refinements' letters) makes it another app's shortcut, not a dictation: on_other() is called, if the hold has
-    been reported, and nothing more is said about it. So is Ctrl+Win pressed while another key's held."""
+    been reported, and nothing more is said about it. So is Ctrl+Win pressed while another key's held.
+
+    Space with Ctrl+Win makes it hands-free: letting go of Ctrl+Win isn't reported, and the dictation goes on until
+    Ctrl+Win+Space again, whose letting go is reported as the release (with any Alt and letter from either hold).
+    Meanwhile Ctrl+Win alone, or with another key (another app's shortcut), says nothing. refuse(): the app didn't
+    start a dictation for this hold, so Space doesn't make it hands-free."""
     AGAIN = 1.0
     TAP = 0.5  # seconds: held for less, a press of Win is a tap (half of the gesture that starts transcribing)
     MODIFIERS = {"ctrl", "meta", "alt"}
@@ -119,6 +124,9 @@ class Chord:
         self.second = False  # this hold may be the second tap of the gesture that starts transcribing
         self.going_again = False  # the gesture's been made: on_again() is about to be called
         self.other = False  # this hold is another app's shortcut: report nothing more about it
+        self.locked = False  # hands-free: the dictation goes on after Ctrl+Win's let go
+        self.unlocking = False  # Space pressed again: the dictation ends when Ctrl+Win's let go
+        self.refused = False  # the app didn't start a dictation for this hold
 
     def key(self, ident, kind, down, at=None):
         """ident: a stable id for the physical key; kind: "ctrl", "meta", "alt", a letter, or None;
@@ -133,21 +141,30 @@ class Chord:
         if "ctrl" not in kinds:
             self.lifted = None
         if self.active and down and not self.other:
-            if kind == "alt":
+            if kind == "space":
+                if not self.refused:
+                    self.unlocking, self.locked = self.locked, True
+            elif kind == "alt":
                 self.alt = True
                 GLib.idle_add(self.callback, True, True, None)
             elif kind and len(kind) == 1 and "alt" in kinds and (self.letters is None or kind in self.letters()):
                 self.letter = kind
             elif kind not in self.MODIFIERS:
                 self.other = True
-                GLib.idle_add(self.on_other)
+                if not self.locked:  # (hands-free, the dictation goes on through another app's shortcut)
+                    GLib.idle_add(self.on_other)
         on = {"ctrl", "meta"} <= kinds
         if on == self.active:
             return
         self.active = on
         if not on:
             second, self.second, self.lifted = self.second, False, None
-            if self.other:
+            if self.locked:
+                self.other = False
+                if self.unlocking:
+                    self.locked = self.unlocking = False
+                    GLib.idle_add(self.callback, False, self.alt, self.letter)
+            elif self.other:
                 self.other = False  # (pressing Win again isn't the gesture either)
             elif self.tapped() and second:
                 self.going_again = True
@@ -156,13 +173,19 @@ class Chord:
                 if self.tapped() and "ctrl" in kinds and self.on_again:
                     self.lifted = time.monotonic()
                 GLib.idle_add(self.callback, False, self.alt, self.letter)
+        elif self.locked:  # hands-free: this hold may end it (Space), or be another app's shortcut
+            self.other, self.since = bool(kinds - self.MODIFIERS), time.monotonic()
         elif kinds - self.MODIFIERS:  # another key was already down: its shortcut, never reported
             self.other, self.lifted = True, None
         else:
             self.second, self.lifted = self.may_go_again(), None
-            self.since = time.monotonic()
+            self.since, self.refused = time.monotonic(), False
             self.alt, self.letter, self.pressed_at = "alt" in kinds, None, at or time.time()
             GLib.idle_add(self.callback, True, self.alt, self.letter)
+
+    def refuse(self):
+        """The app didn't start a dictation for this hold: Space doesn't make it hands-free."""
+        self.refused, self.locked, self.unlocking = True, False, False
 
     def release_all(self):
         """Every key counts as let go (the keyboard holding them was unplugged)."""
@@ -194,7 +217,7 @@ if LINUX:
     from evdev import ecodes as e
 
     KINDS = {e.KEY_LEFTCTRL: "ctrl", e.KEY_RIGHTCTRL: "ctrl", e.KEY_LEFTMETA: "meta", e.KEY_RIGHTMETA: "meta",
-             e.KEY_LEFTALT: "alt", e.KEY_RIGHTALT: "alt",
+             e.KEY_LEFTALT: "alt", e.KEY_RIGHTALT: "alt", e.KEY_SPACE: "space",
              **{getattr(e, f"KEY_{c}"): c.lower() for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"}}
 
     VIRTUAL = "Dictate virtual keyboard"  # the one Paster types with: not one to watch
@@ -464,7 +487,7 @@ else:
 
     K = keyboard.Key
     KINDS = {K.ctrl: "ctrl", K.ctrl_l: "ctrl", K.ctrl_r: "ctrl", K.cmd: "meta", K.cmd_l: "meta", K.cmd_r: "meta",
-             K.alt: "alt", K.alt_l: "alt", K.alt_r: "alt", getattr(K, "alt_gr", K.alt_r): "alt"}
+             K.alt: "alt", K.alt_l: "alt", K.alt_r: "alt", getattr(K, "alt_gr", K.alt_r): "alt", K.space: "space"}
 
     def _ident_kind(key):
         if isinstance(key, keyboard.KeyCode):

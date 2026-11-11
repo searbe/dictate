@@ -48,7 +48,7 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 
 | Area | File |
 |---|---|
-| Dictating: cleanup, clipboard, Ctrl+V / Ctrl+Shift+V in terminals, the Dictations list, nothing heard, refine off, recordings kept or not, the hotkey itself, another key with it being another app's shortcut | `test_dictation.py` |
+| Dictating: cleanup, clipboard, Ctrl+V / Ctrl+Shift+V in terminals, the Dictations list, nothing heard, refine off, recordings kept or not, the hotkey itself, another key with it being another app's shortcut, hands-free with Space (on through Ctrl+Win alone or another shortcut, ended by Ctrl+Win+Space, Alt+letter still choosing) | `test_dictation.py` |
 | Choosing a refinement: by window title or app, title changes without refocusing, default refinement, Alt+letter (one that's no refinement's being another app's shortcut), the picker (letter, Enter, Escape, click) | `test_choosing_a_refinement.py` |
 | Real windows on a real KWin, reported by Dictate's KWin script (incl. the Gmail → WhatsApp tab bug) | `test_focused_window.py` |
 | The model: vocabulary and window context in the prompt, loading on key press, unloading when idle, never outliving Dictate, rejecting answers / placeholders / rewrites, errors and a missing llama-server | `test_refinement_model.py` |
@@ -57,7 +57,7 @@ setting's title. `tests/harness/client.py` has the vocabulary (`dictate()`, `cli
 | Another computer (Synergy's log): typed not pasted, its own default refinement, ignoring the hotkey, switching back | `test_other_computer.py` |
 | Quit (menu and signal) with the reason logged, the microphone never left recording (quitting mid-dictation, or crashing mid-recording), run at startup, single instance, switching to `.venv` | `test_running_dictate.py` |
 | Tray icon over the StatusNotifierItem protocol: registers, same menu, turns red while recording, its tooltip saying how long it has been transcribing (paused or not) and the topic now | `test_tray.py` |
-| Keyboards coming and going (Linux): Ctrl+Win still works after one is unplugged, one plugged in later (or dropping out and coming back) works, unplugged mid-dictation counts as let go, Dictate's own virtual keyboard not watched | `test_keyboards.py` |
+| Keyboards coming and going (Linux): Ctrl+Win still works after one is unplugged, one plugged in later (or dropping out and coming back) works, unplugged mid-dictation counts as let go, Dictate's own virtual keyboard not watched, Space making it hands-free (not when no dictation was started) | `test_keyboards.py` |
 | Microphone: the system's default one used until the order on the Settings page is changed, moving one up records with it, the next one used while the preferred one is unplugged (and it again once it's back), transcribe mode too, a call's and a dictation's recording moved to the one preferred once it's there (and back) as they're recorded, not one that's stopped, forgetting one that isn't connected, the Settings page showing one connected or gone while it's open | `test_microphones.py` |
 | Wireless headsets: one that's off (its dongle says so) isn't a connected microphone; on, or powering down, it is; the dongle's other reports aren't its answer; a dongle that doesn't answer, or a device it doesn't know, counts as connected (a stand-in dongle and /sys) | `test_headsets.py` |
 | Keys typed and pasted on US and UK layouts, Shift+Enter for new lines, plain punctuation | `test_typing_and_pasting.py` |
