@@ -744,7 +744,8 @@ class Toast:
     POINTER = 8  # how far the pointer reaches out of the card (and half its width)
     GAP = 4  # between the pointer's tip and the dot
 
-    def __init__(self, title, body=None, near=None, icon=None, warning=False, buttons=(), on_close=lambda: None):
+    def __init__(self, title, body=None, near=None, icon=None, warning=False, buttons=(), width=300,
+                 on_close=lambda: None):
         """near: (x, y, w, h) of the capsule's dot on screen. buttons: (label, action, kind) each, the primary last;
         clicking one closes the toast after its action."""
         self.on_close, self.warning, self.timer, self.closed = on_close, warning, None, False
@@ -760,7 +761,7 @@ class Toast:
         grayscale(self.win)
         self.win.set_keep_above(True)
         m, pointer = self.MARGIN, self.MARGIN + self.POINTER
-        self.card = classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8,  # (as wide as its words)
+        self.card = classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, width_request=width,
                                     margin_start=m, margin_end=m, margin_top=pointer if self.side == "top" else m,
                                     margin_bottom=pointer if self.side == "bottom" else m), "toast")
         row = Gtk.Box(spacing=8)
@@ -769,9 +770,10 @@ class Toast:
             mark.set_valign(Gtk.Align.START)
             row.pack_start(mark, False, False, 0)
         words = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        words.pack_start(text(title, "body-strong", wrap=True, max_chars=40), False, False, 0)
+        # (max_chars 1: the words never widen it past width; they wrap at whatever width it gives them)
+        words.pack_start(text(title, "body-strong", wrap=True, max_chars=1), False, False, 0)
         if body:
-            words.pack_start(text(body, "small", wrap=True, max_chars=44), False, False, 0)
+            words.pack_start(text(body, "small", wrap=True, max_chars=1), False, False, 0)
         row.pack_start(words, True, True, 0)
         self.card.pack_start(row, False, False, 0)
         if buttons:
@@ -780,8 +782,6 @@ class Toast:
                 actions.pack_end(button(label, lambda a=action: (a(), self.close()), kind, small=True), False, False, 0)
             self.card.pack_start(actions, False, False, 0)
         self.card.show_all()
-        self.card.set_size_request(self._size()[0], -1)  # as wide as its words (wrapped at their max_chars), not
-        # their narrowest: wrapped labels would let it shrink to a word a line
         self.win.add(self.card)
         self.win.connect("draw", self._draw)
         self.win.connect("map-event", lambda win, _: blur_behind(win, self.card) and False)
@@ -809,8 +809,8 @@ class Toast:
         self.win.move(int(left) - self.MARGIN, int(top) - self.MARGIN)  # (the window's margin: room for the shadow)
 
     def _size(self):
-        """The card's natural width and its height at that width (wrapped, it'd be taller narrower), without the
-        margins around it (GTK's sizes include them)."""
+        """The card's width and its height at that width: only as tall as its words (wrapped, they'd be taller
+        narrower), without the margins around it (GTK's sizes include them)."""
         c = self.card
         across, down = c.get_margin_start() + c.get_margin_end(), c.get_margin_top() + c.get_margin_bottom()
         width = c.get_preferred_width()[1]

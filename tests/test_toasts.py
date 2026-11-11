@@ -157,11 +157,10 @@ print(json.dumps([short.win.get_size(), long.win.get_size()]))
 """
 
 
-def test_a_toast_is_only_as_big_as_its_words():
+def test_a_toast_is_only_as_tall_as_its_words():
     """(Drawn in a Dictate of its own, as the app draws it.)"""
     out = subprocess.run([sys.executable, "-c", SIZES], cwd=ROOT, capture_output=True, text=True, timeout=30)
     (short_w, short_h), (long_w, long_h) = json.loads(out.stdout.strip().splitlines()[-1])
 
-    assert short_w < long_w / 2 and short_h < long_h  # (the short one isn't padded out to the long one's size)
-    assert 250 < long_w < 420  # (long words wrap, at a readable width: not wider and wider, nor a word a line)
-    assert short_h < 100  # ("Copied" on one line)
+    assert short_w == long_w  # (always the same width)
+    assert short_h < 90 < long_h  # ("Copied": one line, no room under it; the longer one taller for its lines)
