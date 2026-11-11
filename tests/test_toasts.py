@@ -2,12 +2,15 @@
 pointer at it, that doesn't take focus and goes by itself; a desktop notification if the capsule isn't on screen.
 Desktop notifications: without buttons they go by themselves; with buttons they stay; each is forgotten once
 closed."""
+import json
+import subprocess
+import sys
 import threading
 import time
 
 from gi.repository import Gio, GLib
 
-from conftest import needs_session
+from conftest import ROOT, needs_session
 from dictate import osio
 from harness.client import eventually
 
@@ -139,3 +142,26 @@ def test_a_button_works_once_and_closed_notifications_are_forgotten():
 
     assert clicked == ["stop"]
     assert osio._notified == {}  # nothing kept for notifications that are gone
+
+
+SIZES = """
+import json, dictate
+dictate.bootstrap()
+from dictate import design
+design.install()
+near = (100, 600, 36, 36)
+short = design.Toast("Copied", near=near)
+long = design.Toast("Copied, not pasted", "Another key was pressed with Ctrl+Win. It's on the clipboard and in "
+                    "Dictations, where you can paste it from later.", near=near)
+print(json.dumps([short.win.get_size(), long.win.get_size()]))
+"""
+
+
+def test_a_toast_is_only_as_big_as_its_words():
+    """(Drawn in a Dictate of its own, as the app draws it.)"""
+    out = subprocess.run([sys.executable, "-c", SIZES], cwd=ROOT, capture_output=True, text=True, timeout=30)
+    (short_w, short_h), (long_w, long_h) = json.loads(out.stdout.strip().splitlines()[-1])
+
+    assert short_w < long_w / 2 and short_h < long_h  # (the short one isn't padded out to the long one's size)
+    assert 250 < long_w < 420  # (long words wrap, at a readable width: not wider and wider, nor a word a line)
+    assert short_h < 100  # ("Copied" on one line)

@@ -744,8 +744,7 @@ class Toast:
     POINTER = 8  # how far the pointer reaches out of the card (and half its width)
     GAP = 4  # between the pointer's tip and the dot
 
-    def __init__(self, title, body=None, near=None, icon=None, warning=False, buttons=(), width=300,
-                 on_close=lambda: None):
+    def __init__(self, title, body=None, near=None, icon=None, warning=False, buttons=(), on_close=lambda: None):
         """near: (x, y, w, h) of the capsule's dot on screen. buttons: (label, action, kind) each, the primary last;
         clicking one closes the toast after its action."""
         self.on_close, self.warning, self.timer, self.closed = on_close, warning, None, False
@@ -761,7 +760,7 @@ class Toast:
         grayscale(self.win)
         self.win.set_keep_above(True)
         m, pointer = self.MARGIN, self.MARGIN + self.POINTER
-        self.card = classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8, width_request=width,
+        self.card = classes(Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8,  # (as wide as its words)
                                     margin_start=m, margin_end=m, margin_top=pointer if self.side == "top" else m,
                                     margin_bottom=pointer if self.side == "bottom" else m), "toast")
         row = Gtk.Box(spacing=8)
@@ -780,6 +779,9 @@ class Toast:
             for label, action, kind in reversed(buttons):
                 actions.pack_end(button(label, lambda a=action: (a(), self.close()), kind, small=True), False, False, 0)
             self.card.pack_start(actions, False, False, 0)
+        self.card.show_all()
+        self.card.set_size_request(self._size()[0], -1)  # as wide as its words (wrapped at their max_chars), not
+        # their narrowest: wrapped labels would let it shrink to a word a line
         self.win.add(self.card)
         self.win.connect("draw", self._draw)
         self.win.connect("map-event", lambda win, _: blur_behind(win, self.card) and False)
@@ -791,24 +793,28 @@ class Toast:
             self.win.connect("enter-notify-event", lambda *_: self._wait(None))
             self.win.connect("leave-notify-event", lambda *_: self._wait(self.AGAIN))
             self._wait(self.SECONDS)
-        self.card.show_all()
         self._place(near, area)
         self.win.show_all()
 
     def _place(self, near, area):
         """Above or below the dot, the pointer's tip by it; the card reaching toward the middle of the screen."""
         x, y, w, h = near
-        cw = self.card.get_preferred_size()[1].width
-        ch = self.card.get_preferred_size()[1].height
-        ww, wh = cw + 2 * self.MARGIN, ch + 2 * self.MARGIN + self.POINTER
+        cw, ch = self._size()
         dot = x + w / 2
         inset = R_LG + 4 + self.POINTER  # (the pointer clear of the card's rounded corners)
         left = dot - inset if dot < area.x + area.width / 2 else dot - cw + inset
         left = min(max(left, area.x), area.x + area.width - cw)
         self.point = min(max(dot - left, inset), cw - inset)  # where the pointer is, along the card
         top = y + h + self.GAP if self.side == "top" else y - self.GAP - self.POINTER - ch
-        self.win.set_default_size(ww, wh)
         self.win.move(int(left) - self.MARGIN, int(top) - self.MARGIN)  # (the window's margin: room for the shadow)
+
+    def _size(self):
+        """The card's natural width and its height at that width (wrapped, it'd be taller narrower), without the
+        margins around it (GTK's sizes include them)."""
+        c = self.card
+        across, down = c.get_margin_start() + c.get_margin_end(), c.get_margin_top() + c.get_margin_bottom()
+        width = c.get_preferred_width()[1]
+        return width - across, c.get_preferred_height_for_width(width)[1] - down
 
     def _draw(self, widget, cr, clear=True):
         """The card and its pointer as one shape: a soft shadow, the hud fill, its border and top highlight (on a
